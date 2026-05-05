@@ -2,27 +2,33 @@ import { createRouter, createWebHistory } from 'vue-router'
 import DashboardView from '@/views/DashboardView.vue'
 import UsersView from '@/views/UsersView.vue'
 import LoginView from '@/views/LoginView.vue'
+import MainLayout from '@/layouts/MainLayout.vue' // Importamos el layout
 import { useAuthStore } from '@/stores/auth'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
   routes: [
     {
-      path: '/dashboard',
-      name: 'dashboard',
-      component: DashboardView,
-      meta: { requiresAuth: true } // 🔒 Etiqueta de seguridad
-    },
-    {
-      path: '/users',
-      name: 'users',
-      component: UsersView,
-      meta: { requiresAuth: true } // 🔒 Etiqueta de seguridad
-    },
-    {
       path: '/',
       name: 'login',
-      component: LoginView,
+      component: LoginView, // El login sigue independiente
+    },
+    {
+      path: '/app', // Un prefijo para las rutas protegidas
+      component: MainLayout,
+      meta: { requiresAuth: true }, // Protegemos todo el edificio
+      children: [
+        {
+          path: 'dashboard', // La ruta final será /app/dashboard
+          name: 'dashboard',
+          component: DashboardView,
+        },
+        {
+          path: 'users',
+          name: 'users',
+          component: UsersView,
+        }
+      ]
     }
   ],
 })
