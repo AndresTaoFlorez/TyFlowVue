@@ -1,14 +1,55 @@
 <script setup>
 import { ref, onMounted } from 'vue';
-import { supabase } from '@/api/supabase'; // 🔌 Nuestro cable a Supabase
+import { supabase } from '@/api/supabase';
 
-// 1. Memoria reactiva. Ahora inicia como un arreglo vacío.
+// 1. Memorias Reactivas Principales
 const usuarios = ref([]);
+const mostrarModal = ref(false);
 
-// 2. Función asíncrona para ir a buscar la información
+// 2. Memorias para los selectores (listas desplegables)
+const listaRoles = ref([]);
+const listaAreas = ref([]);
+
+// 3. Memoria para el nuevo usuario (con todos los campos de BD)
+const nuevoUsuario = ref({
+  primerNombre: '',
+  segundoNombre: '',
+  primerApellido: '',
+  segundoApellido: '',
+  numeroDocumento: '',
+  email: '',
+  rolID: '',
+  areaID: ''
+});
+
+// 4. Función para cerrar y limpiar el formulario
+const cerrarModal = () => {
+  mostrarModal.value = false;
+  nuevoUsuario.value = {
+    primerNombre: '', segundoNombre: '', primerApellido: '', 
+    segundoApellido: '', numeroDocumento: '', email: '', 
+    rolID: '', areaID: '' 
+  };
+};
+
+// 5. Función para traer Roles y Áreas (Los catálogos)
+const fetchSelects = async () => {
+  try {
+    const [resRoles, resAreas] = await Promise.all([
+      supabase.from('roles').select('id, nombreRol'),
+      supabase.from('areas').select('id, nombreArea')
+    ]);
+
+    if (!resRoles.error) listaRoles.value = resRoles.data;
+    if (!resAreas.error) listaAreas.value = resAreas.data;
+  } catch (error) {
+    console.error("Error cargando listas:", error);
+  }
+};
+
+// 6. Función para traer la lista de usuarios para la tabla
 const fetchUsuarios = async () => {
   try {
-    // 1. Hacemos una consulta relacional (JOIN) al estilo Supabase
     const { data, error } = await supabase
       .from('usuarios')
       .select(`
@@ -23,11 +64,7 @@ const fetchUsuarios = async () => {
 
     if (error) throw error;
 
-    console.log('Datos crudos de la BD:', data);
-
-    // 2. Transformamos (mapeamos) los datos para que la tabla de Vue los entienda
     const usuariosFormateados = data.map(u => {
-      // Extraemos el rol y el área de forma segura (por si algún usuario no tiene)
       const nombreRol = u.usuarioRol?.[0]?.roles?.nombreRol || 'Sin rol';
       const nombreArea = u.usuarioArea?.[0]?.areas?.nombreArea || 'Sin área';
 
@@ -35,34 +72,32 @@ const fetchUsuarios = async () => {
         id: u.id,
         nombreCompleto: `${u.primerNombre} ${u.primerApellido}`,
         documento: u.numeroDocumento,
-        email: 'correo@oculto.com', // Por seguridad, temporalmente lo dejamos así
+        email: 'correo@oculto.com', 
         estado: u.estado === true ? 'ACTIVO' : 'INACTIVO',
         rol: nombreRol,
         area: nombreArea
       };
     });
 
-    // 3. Le pasamos los datos formateados a nuestra variable reactiva
     usuarios.value = usuariosFormateados; 
-
   } catch (error) {
     console.error('Error al cargar los usuarios:', error.message);
   }
 };
 
-// 4. Ejecutamos la función apenas la pantalla de Usuarios aparece
+// 7. Evento que dispara las descargas al cargar la página
 onMounted(() => {
   fetchUsuarios();
+  fetchSelects();
 });
 </script>
-
 <template>
   <section class="content">
     
     <!-- Cabecera -->
     <div class="page-header">
         <h1 class="page-header__title">Registro de Usuarios</h1>
-        <button class="btn-primary">
+        <button @click="mostrarModal = true" class="btn-primary">
             <i class='bx bx-plus'></i> Crear nuevo usuario
         </button>
     </div>
@@ -121,6 +156,68 @@ onMounted(() => {
         </table>
     </div>
 
+
+    <div v-if="mostrarModal" class="modal-overlay">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h2>Registrar Nuevo Usuario</h2>
+          <button @click="cerrarModal" class="btn-close"><i class='bx bx-x'></i></button>
+        </div>
+        
+        <form @submit.prevent="guardarUsuario" class="modal-form">
+          <div class="form-grid">
+              <div class="form-group">
+                <label>Primer Nombre *</label>
+                <input v-model="nuevoUsuario.primerNombre" type="text" required class="form-input">
+              </div>
+              <div class="form-group">
+                <label>Segundo Nombre</label>
+                <input v-model="nuevoUsuario.segundoNombre" type="text" class="form-input">
+              </div>
+              <div class="form-group">
+                <label>Primer Apellido *</label>
+                <input v-model="nuevoUsuario.primerApellido" type="text" required class="form-input">
+              </div>
+              <div class="form-group">
+                <label>Segundo Apellido</label>
+                <input v-model="nuevoUsuario.segundoApellido" type="text" class="form-input">
+              </div>
+              <div class="form-group">
+                <label>Número de Documento *</label>
+                <input v-model="nuevoUsuario.numeroDocumento" type="text" required class="form-input">
+              </div>
+              <div class="form-group">
+                <label>Correo Electrónico *</label>
+                <input v-model="nuevoUsuario.email" type="email" required class="form-input">
+              </div>
+              
+              <div class="form-group">
+                <label>Rol Asignado *</label>
+                <select v-model="nuevoUsuario.rolID" required class="form-input">
+                  <option value="" disabled>Seleccione un rol...</option>
+                  <option v-for="rol in listaRoles" :key="rol.id" :value="rol.id">
+                    {{ rol.nombreRol }}
+                  </option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label>Área Asignada *</label>
+                <select v-model="nuevoUsuario.areaID" required class="form-input">
+                  <option value="" disabled>Seleccione un área...</option>
+                  <option v-for="area in listaAreas" :key="area.id" :value="area.id">
+                    {{ area.nombreArea }}
+                  </option>
+                </select>
+              </div>
+          </div>
+          
+          <div class="modal-actions">
+            <button type="button" @click="cerrarModal" class="btn-secondary">Cancelar</button>
+            <button type="submit" class="btn-primary">Guardar Usuario</button>
+          </div>
+        </form>
+      </div>
+    </div>
   </section>
 </template>
 
@@ -273,5 +370,44 @@ onMounted(() => {
 .btn-icon-small:hover {
   color: var(--primary-500);
   background-color: var(--bg-card);
+}
+
+/* --- Estilos del Modal --- */
+.modal-overlay {
+  position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+  background: rgba(0, 0, 0, 0.5); backdrop-filter: blur(4px);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 100;
+}
+.modal-content {
+  background: var(--bg-main); width: 100%; max-width: 600px; /* Lo hice un poquito más ancho */
+  border-radius: 12px; padding: 2rem;
+  box-shadow: var(--shadow-lg);
+}
+.modal-header {
+  display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;
+}
+.btn-close {
+  background: transparent; font-size: 1.5rem; color: var(--text-secondary);
+}
+.modal-form {
+  display: flex; flex-direction: column; gap: 1rem;
+}
+.form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+.form-group label {
+  font-size: 0.85rem; font-weight: 600; color: var(--text-secondary); margin-bottom: 0.3rem; display: block;
+}
+.form-input {
+  width: 100%; padding: 0.8rem; border: 1px solid var(--border-light); border-radius: 8px;
+}
+.form-input:focus {
+  outline: none; border-color: var(--primary-500);
+}
+.modal-actions {
+  display: flex; justify-content: flex-end; gap: 1rem; margin-top: 1.5rem;
 }
 </style>
