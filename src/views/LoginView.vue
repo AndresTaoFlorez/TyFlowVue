@@ -29,7 +29,7 @@ const handleSubmit = async () => {
     await authStore.login(email.value, password.value);
     
     console.log('¡Bienvenido! Navegando al Dashboard...');
-    router.push('/dashboard')
+    router.push({ name: 'dashboard' })
 
   } catch (error) {
     // 🛠️ MAPEAMOS EL ERROR AQUÍ:

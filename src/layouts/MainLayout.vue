@@ -28,7 +28,22 @@ const handleLogout = async () => {
     <!-- ... el resto del sidebar se mantiene igual ... -->
 
     <aside class="layout__sidebar sidebar">
-        <!-- ... (código anterior de navegación) ... -->
+        <ul class="sidebar__list">
+            <li class="sidebar__item">
+                <!-- Navegación por nombre al Dashboard -->
+                <RouterLink :to="{ name: 'dashboard' }" class="sidebar__link" active-class="sidebar__link--active">
+                    <i class='bx bx-home-alt-2 sidebar__icon'></i> 
+                    Inicio
+                </RouterLink>
+            </li>
+            <li class="sidebar__item admin-only">
+                <!-- Navegación por nombre a Usuarios -->
+                <RouterLink :to="{ name: 'users' }" class="sidebar__link" active-class="sidebar__link--active">
+                    <i class='bx bx-user sidebar__icon'></i> 
+                    Usuarios
+                </RouterLink>
+            </li>
+        </ul>
 
         <div class="sidebar__footer">
             <!-- 2. Conectamos el botón con nuestra función de logout -->
