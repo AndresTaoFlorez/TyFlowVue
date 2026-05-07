@@ -125,5 +125,153 @@ onMounted(() => {
 </template>
 
 <style scoped>
-/* Por ahora no necesitamos estilos extra porque ya tienes todo en tus estilos globales de assets/main.css */
+/* Contenedor principal */
+.content {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+/* Cabecera y Título */
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.page-header__title {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+/* Botón Principal (El que no se veía) */
+.btn-primary {
+  background-color: var(--primary-500);
+  color: white;
+  padding: 0.6rem 1.2rem;
+  border-radius: 8px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  transition: background-color 0.2s ease;
+}
+
+.btn-primary:hover {
+  background-color: var(--primary-600);
+}
+
+/* Barra de Búsqueda / Filtros */
+.filter-bar {
+  display: flex;
+  gap: 1rem;
+  background: white;
+  padding: 1rem;
+  border-radius: 8px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+}
+
+.filter-bar__group {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  border: 1px solid var(--border-light);
+  padding: 0.6rem 1rem;
+  border-radius: 6px;
+  flex: 1;
+  background-color: var(--bg-main);
+}
+
+.filter-bar__icon {
+  color: var(--text-secondary);
+  font-size: 1.2rem;
+}
+
+.filter-bar__input {
+  border: none;
+  outline: none;
+  width: 100%;
+  color: var(--text-primary);
+  background: transparent;
+}
+
+/* Tabla de Datos */
+.table-container {
+  background: white;
+  border-radius: 8px;
+  padding: 1rem;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+  overflow-x: auto;
+}
+
+.datatable {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+}
+
+.datatable th, .datatable td {
+  padding: 1rem;
+  border-bottom: 1px solid var(--border-light);
+}
+
+.datatable__header {
+  color: var(--text-secondary);
+  font-weight: 600;
+  background-color: var(--bg-card);
+}
+
+.datatable__row:hover {
+  background-color: #f9fafb;
+}
+
+.datatable__cell--bold {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+/* Etiquetas de Estado (Badges) */
+.status-badge {
+  padding: 0.3rem 0.8rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.status-badge--active {
+  background-color: #D1FAE5; /* Verde muy claro */
+  color: #065F46; /* Verde oscuro */
+}
+
+.status-badge--inactive {
+  background-color: #FEE2E2; /* Rojo muy claro */
+  color: #991B1B; /* Rojo oscuro */
+}
+
+/* Etiqueta de Rol */
+.role-tag {
+  background: #E0E7FF;
+  color: #3730A3;
+  padding: 0.3rem 0.6rem;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+/* Botón de Acciones (Editar) */
+.btn-icon-small {
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 1.25rem;
+  padding: 0.3rem;
+  border-radius: 4px;
+  transition: 0.2s;
+}
+
+.btn-icon-small:hover {
+  color: var(--primary-500);
+  background-color: var(--bg-card);
+}
 </style>
