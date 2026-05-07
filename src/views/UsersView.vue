@@ -9,6 +9,7 @@ const mostrarModal = ref(false);
 // 2. Memorias para los selectores (listas desplegables)
 const listaRoles = ref([]);
 const listaAreas = ref([]);
+const errores = ref({});
 
 // 3. Memoria para el nuevo usuario (con todos los campos de BD)
 const nuevoUsuario = ref({
@@ -18,6 +19,7 @@ const nuevoUsuario = ref({
   segundoApellido: '',
   numeroDocumento: '',
   email: '',
+  password: '', // <-- ¡NUEVO CAMPO!
   rolID: '',
   areaID: ''
 });
@@ -28,10 +30,10 @@ const cerrarModal = () => {
   nuevoUsuario.value = {
     primerNombre: '', segundoNombre: '', primerApellido: '', 
     segundoApellido: '', numeroDocumento: '', email: '', 
+    password: '', // <-- ¡TAMBIÉN LO LIMPIAMOS AQUÍ!
     rolID: '', areaID: '' 
   };
 };
-
 // 5. Función para traer Roles y Áreas (Los catálogos)
 const fetchSelects = async () => {
   try {
@@ -84,7 +86,43 @@ const fetchUsuarios = async () => {
     console.error('Error al cargar los usuarios:', error.message);
   }
 };
+// Función para validar campos clave
+const validarFormulario = () => {
+  errores.value = {}; // Limpiamos errores anteriores
+  let esValido = true;
 
+  // 1. Validar Documento (Ejemplo: que tenga al menos 6 números)
+  if (nuevoUsuario.value.numeroDocumento.length < 6) {
+    errores.value.numeroDocumento = 'El documento debe tener al menos 6 dígitos.';
+    esValido = false;
+  }
+
+  // 2. Validar Correo (Formato correcto)
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!emailRegex.test(nuevoUsuario.value.email)) {
+    errores.value.email = 'Por favor, ingresa un correo electrónico válido.';
+    esValido = false;
+  }
+
+  // 3. Validar Contraseña (Mínimo 6 caracteres para Supabase)
+  if (nuevoUsuario.value.password.length < 6) {
+    errores.value.password = 'La contraseña temporal debe tener al menos 6 caracteres.';
+    esValido = false;
+  }
+
+  return esValido;
+};
+
+// Función principal que se dispara al dar clic en "Guardar Usuario"
+const guardarUsuario = async () => {
+  // Primero pasamos por el filtro de validación
+  if (!validarFormulario()) {
+    return; // Si la función devuelve falso, detenemos la ejecución aquí
+  }
+
+  // Si todo está correcto, aquí irá la lógica de Supabase...
+  console.log('✅ Formulario perfecto. Listo para enviar a Supabase:', nuevoUsuario.value);
+};
 // 7. Evento que dispara las descargas al cargar la página
 onMounted(() => {
   fetchUsuarios();
@@ -164,31 +202,45 @@ onMounted(() => {
           <button @click="cerrarModal" class="btn-close"><i class='bx bx-x'></i></button>
         </div>
         
-        <form @submit.prevent="guardarUsuario" class="modal-form">
+<form @submit.prevent="guardarUsuario" class="modal-form">
           <div class="form-grid">
+              
               <div class="form-group">
                 <label>Primer Nombre *</label>
                 <input v-model="nuevoUsuario.primerNombre" type="text" required class="form-input">
               </div>
+              
               <div class="form-group">
                 <label>Segundo Nombre</label>
                 <input v-model="nuevoUsuario.segundoNombre" type="text" class="form-input">
               </div>
+              
               <div class="form-group">
                 <label>Primer Apellido *</label>
                 <input v-model="nuevoUsuario.primerApellido" type="text" required class="form-input">
               </div>
+              
               <div class="form-group">
                 <label>Segundo Apellido</label>
                 <input v-model="nuevoUsuario.segundoApellido" type="text" class="form-input">
               </div>
+              
               <div class="form-group">
                 <label>Número de Documento *</label>
-                <input v-model="nuevoUsuario.numeroDocumento" type="text" required class="form-input">
+                <input v-model="nuevoUsuario.numeroDocumento" type="text" required class="form-input" :class="{ 'input-error': errores.numeroDocumento }">
+                <span v-if="errores.numeroDocumento" class="error-text">{{ errores.numeroDocumento }}</span>
               </div>
+              
               <div class="form-group">
                 <label>Correo Electrónico *</label>
-                <input v-model="nuevoUsuario.email" type="email" required class="form-input">
+                <input v-model="nuevoUsuario.email" type="email" required class="form-input" :class="{ 'input-error': errores.email }">
+                <span v-if="errores.email" class="error-text">{{ errores.email }}</span>
+              </div>
+              
+              <div class="form-group">
+                <label>Contraseña Temporal *</label>
+                <input v-model="nuevoUsuario.password" type="password" required minlength="6" class="form-input" :class="{ 'input-error': errores.password }">
+                <span v-if="errores.password" class="error-text">{{ errores.password }}</span>
               </div>
               
               <div class="form-group">
@@ -200,6 +252,7 @@ onMounted(() => {
                   </option>
                 </select>
               </div>
+              
               <div class="form-group">
                 <label>Área Asignada *</label>
                 <select v-model="nuevoUsuario.areaID" required class="form-input">
@@ -209,6 +262,7 @@ onMounted(() => {
                   </option>
                 </select>
               </div>
+              
           </div>
           
           <div class="modal-actions">
@@ -409,5 +463,23 @@ onMounted(() => {
 }
 .modal-actions {
   display: flex; justify-content: flex-end; gap: 1rem; margin-top: 1.5rem;
+}
+
+/* --- Clases Dinámicas de Error --- */
+.input-error {
+  border-color: #EF4444 !important; /* Rojo de error */
+  background-color: #FEF2F2;
+}
+
+.input-error:focus {
+  outline-color: #EF4444 !important;
+}
+
+.error-text {
+  color: #EF4444;
+  font-size: 0.75rem;
+  font-weight: 500;
+  margin-top: 0.3rem;
+  display: block;
 }
 </style>
