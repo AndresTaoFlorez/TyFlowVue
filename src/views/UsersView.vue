@@ -2,128 +2,128 @@
 import { ref, onMounted } from 'vue';
 import { supabase } from '@/api/supabase';
 
-// 1. Memorias Reactivas Principales
+// 1. Memorias Reactivas
 const usuarios = ref([]);
 const mostrarModal = ref(false);
-
-// 2. Memorias para los selectores (listas desplegables)
-const listaRoles = ref([]);
-const listaAreas = ref([]);
+const cargando = ref(false); // Para mostrar que está trabajando
 const errores = ref({});
 
-// 3. Memoria para el nuevo usuario (con todos los campos de BD)
+const listaRoles = ref([]);
+const listaAreas = ref([]);
+
 const nuevoUsuario = ref({
-  primerNombre: '',
-  segundoNombre: '',
-  primerApellido: '',
-  segundoApellido: '',
-  numeroDocumento: '',
-  email: '',
-  password: '', // <-- ¡NUEVO CAMPO!
-  rolID: '',
-  areaID: ''
+  primerNombre: '', segundoNombre: '',
+  primerApellido: '', segundoApellido: '',
+  numeroDocumento: '', email: '',
+  password: '', rolID: '', areaID: ''
 });
 
-// 4. Función para cerrar y limpiar el formulario
+// 2. Funciones de Control
 const cerrarModal = () => {
   mostrarModal.value = false;
-  nuevoUsuario.value = {
+  errores.value = {};
+  nuevoUsuario.value = { 
     primerNombre: '', segundoNombre: '', primerApellido: '', 
     segundoApellido: '', numeroDocumento: '', email: '', 
-    password: '', // <-- ¡TAMBIÉN LO LIMPIAMOS AQUÍ!
-    rolID: '', areaID: '' 
+    password: '', rolID: '', areaID: '' 
   };
 };
-// 5. Función para traer Roles y Áreas (Los catálogos)
-const fetchSelects = async () => {
-  try {
-    const [resRoles, resAreas] = await Promise.all([
-      supabase.from('roles').select('id, nombreRol'),
-      supabase.from('areas').select('id, nombreArea')
-    ]);
 
-    if (!resRoles.error) listaRoles.value = resRoles.data;
-    if (!resAreas.error) listaAreas.value = resAreas.data;
-  } catch (error) {
-    console.error("Error cargando listas:", error);
-  }
-};
-
-// 6. Función para traer la lista de usuarios para la tabla
-const fetchUsuarios = async () => {
-  try {
-    const { data, error } = await supabase
-      .from('usuarios')
-      .select(`
-        id,
-        primerNombre,
-        primerApellido,
-        numeroDocumento,
-        estado,
-        usuarioRol ( roles ( nombreRol ) ),
-        usuarioArea ( areas ( nombreArea ) )
-      `);
-
-    if (error) throw error;
-
-    const usuariosFormateados = data.map(u => {
-      const nombreRol = u.usuarioRol?.[0]?.roles?.nombreRol || 'Sin rol';
-      const nombreArea = u.usuarioArea?.[0]?.areas?.nombreArea || 'Sin área';
-
-      return {
-        id: u.id,
-        nombreCompleto: `${u.primerNombre} ${u.primerApellido}`,
-        documento: u.numeroDocumento,
-        email: 'correo@oculto.com', 
-        estado: u.estado === true ? 'ACTIVO' : 'INACTIVO',
-        rol: nombreRol,
-        area: nombreArea
-      };
-    });
-
-    usuarios.value = usuariosFormateados; 
-  } catch (error) {
-    console.error('Error al cargar los usuarios:', error.message);
-  }
-};
-// Función para validar campos clave
 const validarFormulario = () => {
-  errores.value = {}; // Limpiamos errores anteriores
+  errores.value = {};
   let esValido = true;
-
-  // 1. Validar Documento (Ejemplo: que tenga al menos 6 números)
-  if (nuevoUsuario.value.numeroDocumento.length < 6) {
-    errores.value.numeroDocumento = 'El documento debe tener al menos 6 dígitos.';
+  if (nuevoUsuario.value.numeroDocumento.length < 5) {
+    errores.value.numeroDocumento = 'Documento demasiado corto.';
     esValido = false;
   }
-
-  // 2. Validar Correo (Formato correcto)
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  if (!emailRegex.test(nuevoUsuario.value.email)) {
-    errores.value.email = 'Por favor, ingresa un correo electrónico válido.';
-    esValido = false;
-  }
-
-  // 3. Validar Contraseña (Mínimo 6 caracteres para Supabase)
   if (nuevoUsuario.value.password.length < 6) {
-    errores.value.password = 'La contraseña temporal debe tener al menos 6 caracteres.';
+    errores.value.password = 'Mínimo 6 caracteres.';
     esValido = false;
   }
-
   return esValido;
 };
 
-// Función principal que se dispara al dar clic en "Guardar Usuario"
+// 3. LA FUNCIÓN MAESTRA: Guardar en Supabase
 const guardarUsuario = async () => {
-  // Primero pasamos por el filtro de validación
-  if (!validarFormulario()) {
-    return; // Si la función devuelve falso, detenemos la ejecución aquí
-  }
+  if (!validarFormulario()) return;
+  
+  cargando.value = true;
+  try {
+    // PASO 1: Crear el usuario en la Autenticación (auth.users)
+    const { data: authData, error: authError } = await supabase.auth.signUp({
+      email: nuevoUsuario.value.email,
+      password: nuevoUsuario.value.password,
+    });
 
-  // Si todo está correcto, aquí irá la lógica de Supabase...
-  console.log('✅ Formulario perfecto. Listo para enviar a Supabase:', nuevoUsuario.value);
+    if (authError) throw authError;
+
+    const newUserId = authData.user.id;
+
+    // PASO 2: Crear el perfil en tu tabla 'usuarios'
+    const { error: perfilError } = await supabase
+      .from('usuarios')
+      .insert([{
+        id: newUserId, // Usamos el mismo ID de auth
+        primerNombre: nuevoUsuario.value.primerNombre,
+        segundoNombre: nuevoUsuario.value.segundoNombre,
+        primerApellido: nuevoUsuario.value.primerApellido,
+        segundoApellido: nuevoUsuario.value.segundoApellido,
+        numeroDocumento: nuevoUsuario.value.numeroDocumento,
+        estado: true
+      }]);
+
+    if (perfilError) throw perfilError;
+
+    // PASO 3: Asignar Rol y Área (Tablas relacionales)
+    await Promise.all([
+      supabase.from('usuarioRol').insert([{ usuarioID: newUserId, rolID: nuevoUsuario.value.rolID }]),
+      supabase.from('usuarioArea').insert([{ usuarioID: newUserId, areaID: nuevoUsuario.value.areaID }])
+    ]);
+
+    // ÉXITO
+    alert('¡Usuario creado con éxito!');
+    cerrarModal();
+    fetchUsuarios(); // Recargamos la tabla para ver al nuevo usuario
+
+  } catch (error) {
+    alert('Error al guardar: ' + error.message);
+  } finally {
+    cargando.value = false;
+  }
 };
-// 7. Evento que dispara las descargas al cargar la página
+
+// 4. Cargar Datos Iniciales
+const fetchSelects = async () => {
+  const [resRoles, resAreas] = await Promise.all([
+    supabase.from('roles').select('id, nombreRol'),
+    supabase.from('areas').select('id, nombreArea')
+  ]);
+  if (!resRoles.error) listaRoles.value = resRoles.data;
+  if (!resAreas.error) listaAreas.value = resAreas.data;
+};
+
+const fetchUsuarios = async () => {
+  const { data, error } = await supabase
+    .from('usuarios')
+    .select(`
+      id, primerNombre, primerApellido, numeroDocumento, estado,
+      usuarioRol ( roles ( nombreRol ) ),
+      usuarioArea ( areas ( nombreArea ) )
+    `);
+
+  if (!error) {
+    usuarios.value = data.map(u => ({
+      id: u.id,
+      nombreCompleto: `${u.primerNombre} ${u.primerApellido}`,
+      documento: u.numeroDocumento,
+      email: 'Cargando...', // El email vive en auth, luego veremos cómo traerlo
+      estado: u.estado ? 'ACTIVO' : 'INACTIVO',
+      rol: u.usuarioRol?.[0]?.roles?.nombreRol || 'N/A',
+      area: u.usuarioArea?.[0]?.areas?.nombreArea || 'N/A'
+    }));
+  }
+};
+
 onMounted(() => {
   fetchUsuarios();
   fetchSelects();
@@ -202,7 +202,7 @@ onMounted(() => {
           <button @click="cerrarModal" class="btn-close"><i class='bx bx-x'></i></button>
         </div>
         
-<form @submit.prevent="guardarUsuario" class="modal-form">
+        <form @submit.prevent="guardarUsuario" class="modal-form">
           <div class="form-grid">
               
               <div class="form-group">
