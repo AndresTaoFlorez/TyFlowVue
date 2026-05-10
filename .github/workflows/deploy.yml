@@ -18,8 +18,8 @@ jobs:
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_KEY }}
           script: |
-            rm -rf /opt/tyflow-vue
-            mkdir -p /opt/tyflow-vue
+            rm -rf /home/pages/fd_tyflow
+            mkdir -p /home/pages/fd_tyflow
 
       - name: Copy files to server
         uses: appleboy/scp-action@v0.1.7
@@ -28,7 +28,7 @@ jobs:
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_KEY }}
           source: "."
-          target: "/opt/tyflow-vue"
+          target: "/home/pages/fd_tyflow"
 
       - name: Build and deploy on server
         uses: appleboy/ssh-action@v1.0.3
@@ -37,7 +37,7 @@ jobs:
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_KEY }}
           script: |
-            cd /opt/tyflow-vue
+            cd /home/pages/fd_tyflow
             docker build \
               --build-arg VITE_API_URL=${{ vars.VITE_API_URL }} \
               -t tyflow-vue .
