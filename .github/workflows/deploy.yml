@@ -1,0 +1,50 @@
+name: Deploy TyFlowVue
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Clean remote directory
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          script: |
+            rm -rf /opt/tyflow-vue
+            mkdir -p /opt/tyflow-vue
+
+      - name: Copy files to server
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          source: "."
+          target: "/opt/tyflow-vue"
+
+      - name: Build and deploy on server
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          script: |
+            cd /opt/tyflow-vue
+            docker build \
+              --build-arg VITE_API_URL=${{ vars.VITE_API_URL }} \
+              -t tyflow-vue .
+            docker stop tyflow-vue || true
+            docker rm tyflow-vue || true
+            docker run -d \
+              --name tyflow-vue \
+              -p 8182:8182 \
+              --restart unless-stopped \
+              tyflow-vue

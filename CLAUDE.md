@@ -1,0 +1,77 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## Commands
+
+```bash
+npm run dev       # Start Vite dev server with hot reload
+npm run build     # Production build
+npm run preview   # Preview production build locally
+```
+
+No test or lint commands are configured.
+
+## Architecture
+
+Vue 3 + Vite user management dashboard with a Python REST API backend (Litestar + Supabase). The UI is in Spanish. Clean Architecture with four layers.
+
+### Stack
+- **Vue 3** with Composition API (`<script setup>`)
+- **Pinia** for state management
+- **Vue Router** with auth guards
+- **Axios** for HTTP requests to the REST API
+- **Boxicons** via CDN for icons
+- Custom CSS with design tokens (no CSS framework)
+
+### Key directories (Clean Architecture)
+- `src/domain/entities/` — Domain entities (User, Role, Area)
+- `src/domain/errors/` — Domain error classes
+- `src/infrastructure/http/` — Axios HTTP client singleton with interceptors
+- `src/infrastructure/repositories/` — API data access (UserRepository, RoleRepository, AreaRepository)
+- `src/application/use-cases/` — Business use cases (auth, users, roles, areas)
+- `src/presentation/views/` — Page components (LoginView, DashboardView, UsersView)
+- `src/presentation/layouts/` — MainLayout (sidebar + topbar + content area)
+- `src/presentation/stores/` — Pinia stores (useAuthStore, useUserStore)
+- `src/presentation/components/` — Reusable UI components
+- `src/router/` — Route definitions with `requiresAuth` meta and navigation guards
+- `src/styles/` — Design tokens, CSS reset, and utility styles
+
+### Data flow
+```
+View → Store → UseCase → Repository → HTTP Client → REST API
+```
+
+### Routing
+- `/` — LoginView (public)
+- `/app/*` — Protected routes (require auth)
+  - `/app/dashboard` — DashboardView
+  - `/app/users` — UsersView
+
+### Auth flow
+1. Login via `POST /auth/login` → receives `access_token` + `refresh_token`
+2. Tokens stored in `localStorage` (`tyflow_token`, `tyflow_refresh_token`)
+3. Axios interceptor attaches `Authorization: Bearer` header to all requests
+4. On 401, interceptor attempts token refresh via `POST /auth/refresh`
+5. `initAuth()` decodes existing JWT and fetches user profile on app load
+6. Inactive users are auto-logged out
+7. Router guard redirects based on `isAuthenticated` computed property
+
+### API Endpoints (backend at VITE_API_URL)
+- `POST /auth/login` — Authenticate, returns tokens
+- `POST /auth/refresh` — Refresh expired token
+- `GET /users` — List all users (dashboard view with roles/areas)
+- `GET /users/:id` — Get user by UUID
+- `POST /users` — Create user profile
+- `PATCH /users/:id/status` — Toggle user active/inactive
+- `GET /roles` — List all roles
+- `GET /areas` — List all areas
+
+## Conventions
+
+- **Path alias:** `@` maps to `src/` (configured in vite.config.js and jsconfig.json)
+- **CSS variables:** Primary color `--primary-500: #2AC78F`; full palette in `src/styles/tokens.css`
+- **Naming:** PascalCase components, BEM-inspired CSS classes, `useXxxStore()` for Pinia
+- **Error messages:** API errors are mapped to Spanish user-facing messages in views
+- **Commit messages:** Written in Spanish
+- **Environment:** `VITE_API_URL` in `.env` points to the backend API base URL

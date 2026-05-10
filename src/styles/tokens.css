@@ -1,0 +1,41 @@
+/* =========================================
+   Design Tokens
+   ========================================= */
+:root {
+  /* Brand */
+  --primary-500: #2AC78F;
+  --primary-600: #249F75;
+  --primary-gradient: linear-gradient(135deg, #2AC78F 0%, #3EE0A1 100%);
+
+  /* Backgrounds */
+  --bg-main: #ffffff;
+  --bg-card: #f5f2f2;
+
+  /* Text */
+  --text-primary: #1F2937;
+  --text-secondary: #4B5563;
+  --text-main: #1F2937;
+
+  /* Borders & Shadows */
+  --border-light: #E5E7EB;
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.05);
+  --shadow-lg: 0 10px 25px rgba(0, 0, 0, 0.1);
+
+  /* Status */
+  --success-bg: #D1FAE5;
+  --success-text: #065F46;
+  --error-bg: #FEE2E2;
+  --error-text: #991B1B;
+  --error-500: #EF4444;
+
+  /* Layout */
+  --sidebar-width: 260px;
+  --topbar-height: 64px;
+
+  /* Radius */
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-full: 999px;
+}

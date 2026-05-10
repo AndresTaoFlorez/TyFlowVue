@@ -1,20 +1,19 @@
-import './assets/main.css'
+import '@/styles/tokens.css'
+import '@/styles/reset.css'
+import '@/styles/utilities.css'
 
 import { createApp } from 'vue'
 import { createPinia } from 'pinia'
 
 import App from './App.vue'
 import router from './router'
-import { useAuthStore } from '@/stores/auth'
+import { useAuthStore } from '@/presentation/stores/useAuthStore'
 
 const app = createApp(App)
 app.use(createPinia())
-const authStore = useAuthStore() // <-- 2. Creamos la constante
 
+const authStore = useAuthStore()
 await authStore.initAuth()
+
 app.use(router)
-// agregamos esta línea para inicializar la autenticación al cargar la aplicación, para ver si ya hay una sesion activa
-
 app.mount('#app')
-
-

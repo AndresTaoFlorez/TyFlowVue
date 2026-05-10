@@ -1,38 +1,40 @@
-# tyflow
+# TYFLOW
 
-This template should help get you started developing with Vue 3 in Vite.
+TyFlow is a delivery management platform designed to help teams organize, assign, and track distribution operations efficiently. It provides a centralized dashboard where administrators can manage users, roles, and work areas — keeping the entire operation visible and under control.
 
-## Recommended IDE Setup
+## WHAT IT DOES
 
-[VS Code](https://code.visualstudio.com/) + [Vue (Official)](https://marketplace.visualstudio.com/items?itemName=Vue.volar) (and disable Vetur).
+- **User Management** — Create, activate/deactivate, and organize team members with assigned roles and areas.
+- **Role & Area Assignment** — Define operational roles (e.g., Administrator, Specialist) and work areas (e.g., Support, Sales) to structure your team.
+- **Secure Authentication** — Login with email/password, session recovery, and self-service password reset via email.
+- **Admin Dashboard** — A clean, real-time view of your team and operations.
 
-## Recommended Browser Setup
+## GETTING STARTED
 
-- Chromium-based browsers (Chrome, Edge, Brave, etc.):
-  - [Vue.js devtools](https://chromewebstore.google.com/detail/vuejs-devtools/nhdogjmejiglipccpnnnanhbledajbpd)
-  - [Turn on Custom Object Formatter in Chrome DevTools](http://bit.ly/object-formatters)
-- Firefox:
-  - [Vue.js devtools](https://addons.mozilla.org/en-US/firefox/addon/vue-js-devtools/)
-  - [Turn on Custom Object Formatter in Firefox DevTools](https://fxdx.dev/firefox-devtools-custom-object-formatters/)
-
-## Customize configuration
-
-See [Vite Configuration Reference](https://vite.dev/config/).
-
-## Project Setup
-
-```sh
+```bash
 npm install
-```
-
-### Compile and Hot-Reload for Development
-
-```sh
 npm run dev
 ```
 
-### Compile and Minify for Production
+Create a `.env` file with:
 
-```sh
-npm run build
 ```
+VITE_API_URL=http://localhost:8181
+```
+
+## DEPLOYMENT
+
+The app deploys automatically to the production server via GitHub Actions on every push to `main`.
+
+Required GitHub configuration (Settings → Secrets and Variables → Actions):
+
+**Secrets:** `SSH_HOST`, `SSH_USER`, `SSH_KEY`
+
+**Variables:** `VITE_API_URL`
+
+## BUILT WITH
+
+- Vue 3
+- Pinia
+- Vue Router
+- Axios

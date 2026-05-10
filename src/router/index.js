@@ -1,9 +1,11 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import DashboardView from '@/views/DashboardView.vue'
-import UsersView from '@/views/UsersView.vue'
-import LoginView from '@/views/LoginView.vue'
-import MainLayout from '@/layouts/MainLayout.vue' // Importamos el layout
-import { useAuthStore } from '@/stores/auth'
+import LoginView from '@/presentation/views/LoginView.vue'
+import ForgotPasswordView from '@/presentation/views/ForgotPasswordView.vue'
+import ResetPasswordView from '@/presentation/views/ResetPasswordView.vue'
+import MainLayout from '@/presentation/layouts/MainLayout.vue'
+import DashboardView from '@/presentation/views/DashboardView.vue'
+import UsersView from '@/presentation/views/UsersView.vue'
+import { useAuthStore } from '@/presentation/stores/useAuthStore'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -11,15 +13,25 @@ const router = createRouter({
     {
       path: '/',
       name: 'login',
-      component: LoginView, // El login sigue independiente
+      component: LoginView,
     },
     {
-      path: '/app', // Un prefijo para las rutas protegidas
+      path: '/forgot-password',
+      name: 'forgot-password',
+      component: ForgotPasswordView,
+    },
+    {
+      path: '/reset-password',
+      name: 'reset-password',
+      component: ResetPasswordView,
+    },
+    {
+      path: '/app',
       component: MainLayout,
-      meta: { requiresAuth: true }, // Protegemos todo el edificio
+      meta: { requiresAuth: true },
       children: [
         {
-          path: 'dashboard', // La ruta final será /app/dashboard
+          path: 'dashboard',
           name: 'dashboard',
           component: DashboardView,
         },
@@ -27,37 +39,22 @@ const router = createRouter({
           path: 'users',
           name: 'users',
           component: UsersView,
-        }
-      ]
-    }
+        },
+      ],
+    },
   ],
 })
 
-
 router.beforeEach((to, from, next) => {
-  // 1. Instanciamos el store aquí adentro, cuando Pinia ya está listo
   const authStore = useAuthStore()
-  
-  // 2. Revisamos si la ruta a la que va tiene nuestra etiqueta
-  const requiereAutenticacion = to.meta.requiresAuth
+  const requiresAuth = to.meta.requiresAuth
 
-  // ---------------------------------------------------------
-  // 🚦 TU TURNO:
-  // Sabemos que en auth.js declaraste 'const session = ref(null)'
-  // ¿Cómo escribirías esta variable para saber si la sesión existe?
-  const tieneSesionActiva = authStore.session !== null 
-  // ---------------------------------------------------------
-
-  // 3. Lógica de control de tráfico
-  if (requiereAutenticacion && !tieneSesionActiva) {
-    // Es área restringida y NO tiene sesión -> Lo mandamos al login
-    next({ name: 'login' }) 
-  } else if (!requiereAutenticacion && tieneSesionActiva && to.name === 'login') {
-    // Extra: Si YA tiene sesión e intenta ir al Login, lo regresamos al dashboard
+  if (requiresAuth && !authStore.isAuthenticated) {
+    next({ name: 'login' })
+  } else if (!requiresAuth && authStore.isAuthenticated && to.name === 'login') {
     next({ name: 'dashboard' })
   } else {
-    // En cualquier otro caso, lo dejamos pasar a donde iba
-    next() 
+    next()
   }
 })
 
