@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ssh root@mothius-do:*)",
+      "Bash(ls:*)",
+      "Bash(ssh-keygen:*)",
+      "Bash(ssh:*)"
+    ]
+  }
+}
