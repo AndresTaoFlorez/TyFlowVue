@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { fetchUsersUseCase } from '@/application/use-cases/users/FetchUsersUseCase'
 import { createUserUseCase } from '@/application/use-cases/users/CreateUserUseCase'
+import { updateUserUseCase } from '@/application/use-cases/users/UpdateUserUseCase'
 import { toggleUserStatusUseCase } from '@/application/use-cases/users/ToggleUserStatusUseCase'
 import { fetchRolesUseCase } from '@/application/use-cases/roles/FetchRolesUseCase'
 import { fetchAreasUseCase } from '@/application/use-cases/areas/FetchAreasUseCase'
@@ -40,6 +41,20 @@ export const useUserStore = defineStore('users', () => {
     return newUser
   }
 
+  async function updateUser(userId, userData) {
+    const updated = await updateUserUseCase(userId, {
+      first_name: userData.firstName || undefined,
+      second_name: userData.secondName || undefined,
+      first_surname: userData.firstSurname || undefined,
+      second_surname: userData.secondSurname || undefined,
+      document_number: userData.documentNumber || undefined,
+      role_ids: userData.roleIds?.length ? userData.roleIds : undefined,
+      area_ids: userData.areaIds?.length ? userData.areaIds : undefined,
+    })
+    await loadUsers()
+    return updated
+  }
+
   async function toggleStatus(userId) {
     const updated = await toggleUserStatusUseCase(userId)
     const idx = users.value.findIndex((u) => u.id === userId)
@@ -56,6 +71,7 @@ export const useUserStore = defineStore('users', () => {
     loadUsers,
     loadSelects,
     createUser,
+    updateUser,
     toggleStatus,
   }
 })

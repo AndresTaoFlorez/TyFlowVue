@@ -17,6 +17,11 @@ export const UserRepository = {
     return new User(data)
   },
 
+  async update(userId, userData) {
+    const { data } = await client.put(`/users/${userId}`, userData)
+    return new User(data)
+  },
+
   async toggleStatus(userId) {
     const { data } = await client.patch(`/users/${userId}/status`)
     return new User(data)

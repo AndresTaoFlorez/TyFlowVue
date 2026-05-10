@@ -35,12 +35,19 @@ export const useAuthStore = defineStore('auth', () => {
     if (!token) return
 
     try {
-      // Decode JWT to get user id (payload is the second segment)
       const payload = JSON.parse(atob(token.split('.')[1]))
+
+      // Check if token is expired
+      if (payload.exp * 1000 < Date.now()) {
+        logout()
+        return
+      }
+
       user.value = { id: payload.sub, email: payload.email }
       await fetchProfile(payload.sub)
     } catch {
-      logout()
+      // Profile fetch failed but token is valid — keep the session
+      if (!user.value) logout()
     }
   }
 

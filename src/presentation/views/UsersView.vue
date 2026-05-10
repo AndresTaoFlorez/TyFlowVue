@@ -1,34 +1,89 @@
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useUserStore } from '@/presentation/stores/useUserStore'
 
 const userStore = useUserStore()
 
+const buscarNombre = ref('')
+const buscarCorreo = ref('')
+
+const usuariosFiltrados = computed(() => {
+  let lista = userStore.users
+  const nombre = buscarNombre.value.toLowerCase().trim()
+  const correo = buscarCorreo.value.toLowerCase().trim()
+  if (nombre) {
+    lista = lista.filter(u => u.fullName.toLowerCase().includes(nombre))
+  }
+  if (correo) {
+    lista = lista.filter(u => (u.email || '').toLowerCase().includes(correo))
+  }
+  return lista
+})
+
 const mostrarModal = ref(false)
+const modoEdicion = ref(false)
+const editandoUserId = ref(null)
 const cargando = ref(false)
 const errores = ref({})
 
-const nuevoUsuario = ref({
+const formulario = ref({
   firstName: '', secondName: '',
   firstSurname: '', secondSurname: '',
   documentNumber: '',
+  roleIds: [],
+  areaIds: [],
 })
 
-const cerrarModal = () => {
-  mostrarModal.value = false
-  errores.value = {}
-  nuevoUsuario.value = {
+const abrirCrear = () => {
+  modoEdicion.value = false
+  editandoUserId.value = null
+  formulario.value = {
     firstName: '', secondName: '',
     firstSurname: '', secondSurname: '',
     documentNumber: '',
+    roleIds: [],
+    areaIds: [],
   }
+  mostrarModal.value = true
+}
+
+const resolverIds = (nombresCsv, lista) => {
+  if (!nombresCsv) return []
+  const nombres = nombresCsv.split(',').map(n => n.trim())
+  return lista.filter(item => nombres.includes(item.name)).map(item => item.id)
+}
+
+const abrirEditar = (user) => {
+  modoEdicion.value = true
+  editandoUserId.value = user.id
+  formulario.value = {
+    firstName: user.firstName || '',
+    secondName: user.secondName || '',
+    firstSurname: user.firstSurname || '',
+    secondSurname: user.secondSurname || '',
+    documentNumber: user.documentNumber || '',
+    roleIds: resolverIds(user.roleName, userStore.roles),
+    areaIds: resolverIds(user.areaName, userStore.areas),
+  }
+  mostrarModal.value = true
+}
+
+const cerrarModal = () => {
+  mostrarModal.value = false
+  modoEdicion.value = false
+  editandoUserId.value = null
+  errores.value = {}
 }
 
 const validarFormulario = () => {
   errores.value = {}
   let esValido = true
-  if (nuevoUsuario.value.documentNumber.length < 5) {
+  if (formulario.value.documentNumber.length < 5) {
     errores.value.documentNumber = 'Documento demasiado corto.'
+    esValido = false
+  }
+  if (modoEdicion.value && formulario.value.roleIds.length === 0) {
+    errores.value.roles = 'Debe seleccionar al menos un rol.'
     esValido = false
   }
   return esValido
@@ -39,7 +94,11 @@ const guardarUsuario = async () => {
 
   cargando.value = true
   try {
-    await userStore.createUser(nuevoUsuario.value)
+    if (modoEdicion.value) {
+      await userStore.updateUser(editandoUserId.value, formulario.value)
+    } else {
+      await userStore.createUser(formulario.value)
+    }
     cerrarModal()
   } catch (error) {
     alert('Error al guardar: ' + error.message)
@@ -68,7 +127,7 @@ onMounted(() => {
     <!-- Cabecera -->
     <div class="page-header">
       <h1 class="page-header__title">Registro de Usuarios</h1>
-      <button @click="mostrarModal = true" class="btn-primary">
+      <button @click="abrirCrear" class="btn-primary">
         <i class='bx bx-plus'></i> Crear nuevo usuario
       </button>
     </div>
@@ -77,11 +136,11 @@ onMounted(() => {
     <div class="filter-bar">
       <div class="filter-bar__group">
         <i class='bx bx-search filter-bar__icon'></i>
-        <input type="text" class="filter-bar__input" placeholder="Buscar por nombre...">
+        <input v-model="buscarNombre" type="text" class="filter-bar__input" placeholder="Buscar por nombre...">
       </div>
       <div class="filter-bar__group">
         <i class='bx bx-envelope filter-bar__icon'></i>
-        <input type="text" class="filter-bar__input" placeholder="Buscar por correo...">
+        <input v-model="buscarCorreo" type="text" class="filter-bar__input" placeholder="Buscar por correo...">
       </div>
     </div>
 
@@ -100,7 +159,7 @@ onMounted(() => {
           </tr>
         </thead>
         <tbody>
-          <tr v-for="user in userStore.users" :key="user.id" class="datatable__row">
+          <tr v-for="user in usuariosFiltrados" :key="user.id" class="datatable__row">
             <td>
               <span v-if="user.isActive" class="status-badge status-badge--active">Activo</span>
               <span v-else class="status-badge status-badge--inactive">Inactivo</span>
@@ -108,13 +167,23 @@ onMounted(() => {
             <td class="datatable__cell--bold">{{ user.fullName }}</td>
             <td>{{ user.documentNumber }}</td>
             <td>{{ user.email || '—' }}</td>
-            <td><span class="role-tag">{{ user.roleName || 'N/A' }}</span></td>
-            <td>{{ user.areaName || 'N/A' }}</td>
+            <td>
+              <template v-if="user.roleName">
+                <span v-for="rol in user.roleName.split(', ')" :key="rol" class="role-tag">{{ rol }}</span>
+              </template>
+              <span v-else>N/A</span>
+            </td>
+            <td>
+              <template v-if="user.areaName">
+                <span v-for="area in user.areaName.split(', ')" :key="area" class="area-tag">{{ area }}</span>
+              </template>
+              <span v-else>N/A</span>
+            </td>
             <td>
               <button class="btn-icon-small" @click="toggleEstado(user.id)" :title="user.isActive ? 'Desactivar' : 'Activar'">
                 <i :class="user.isActive ? 'bx bx-toggle-right' : 'bx bx-toggle-left'"></i>
               </button>
-              <button class="btn-icon-small">
+              <button class="btn-icon-small" @click="abrirEditar(user)" title="Editar">
                 <i class='bx bx-edit-alt'></i>
               </button>
             </td>
@@ -127,7 +196,7 @@ onMounted(() => {
     <div v-if="mostrarModal" class="modal-overlay">
       <div class="modal-content">
         <div class="modal-header">
-          <h2>Registrar Nuevo Usuario</h2>
+          <h2>{{ modoEdicion ? 'Editar Usuario' : 'Registrar Nuevo Usuario' }}</h2>
           <button @click="cerrarModal" class="btn-close"><i class='bx bx-x'></i></button>
         </div>
 
@@ -135,32 +204,51 @@ onMounted(() => {
           <div class="form-grid">
             <div class="form-group">
               <label>Primer Nombre *</label>
-              <input v-model="nuevoUsuario.firstName" type="text" required class="form-input">
+              <input v-model="formulario.firstName" type="text" required class="form-input">
             </div>
             <div class="form-group">
               <label>Segundo Nombre</label>
-              <input v-model="nuevoUsuario.secondName" type="text" class="form-input">
+              <input v-model="formulario.secondName" type="text" class="form-input">
             </div>
             <div class="form-group">
               <label>Primer Apellido *</label>
-              <input v-model="nuevoUsuario.firstSurname" type="text" required class="form-input">
+              <input v-model="formulario.firstSurname" type="text" required class="form-input">
             </div>
             <div class="form-group">
               <label>Segundo Apellido</label>
-              <input v-model="nuevoUsuario.secondSurname" type="text" class="form-input">
+              <input v-model="formulario.secondSurname" type="text" class="form-input">
             </div>
             <div class="form-group">
               <label>Numero de Documento *</label>
-              <input v-model="nuevoUsuario.documentNumber" type="text" required class="form-input"
+              <input v-model="formulario.documentNumber" type="text" required class="form-input"
                 :class="{ 'input-error': errores.documentNumber }">
               <span v-if="errores.documentNumber" class="error-text">{{ errores.documentNumber }}</span>
+            </div>
+            <div v-if="modoEdicion" class="form-group">
+              <label>Roles *</label>
+              <div class="checkbox-group" :class="{ 'input-error': errores.roles }">
+                <label v-for="role in userStore.roles" :key="role.id" class="checkbox-label">
+                  <input type="checkbox" :value="role.id" v-model="formulario.roleIds">
+                  {{ role.name }}
+                </label>
+              </div>
+              <span v-if="errores.roles" class="error-text">{{ errores.roles }}</span>
+            </div>
+            <div v-if="modoEdicion" class="form-group">
+              <label>Areas</label>
+              <div class="checkbox-group">
+                <label v-for="area in userStore.areas" :key="area.id" class="checkbox-label">
+                  <input type="checkbox" :value="area.id" v-model="formulario.areaIds">
+                  {{ area.name }}
+                </label>
+              </div>
             </div>
           </div>
 
           <div class="modal-actions">
             <button type="button" @click="cerrarModal" class="btn-secondary">Cancelar</button>
             <button type="submit" class="btn-primary" :disabled="cargando">
-              {{ cargando ? 'Guardando...' : 'Guardar Usuario' }}
+              {{ cargando ? 'Guardando...' : (modoEdicion ? 'Actualizar' : 'Guardar Usuario') }}
             </button>
           </div>
         </form>
@@ -274,13 +362,23 @@ onMounted(() => {
   color: var(--error-text);
 }
 
-.role-tag {
-  background: #E0E7FF;
-  color: #3730A3;
+.role-tag, .area-tag {
+  display: inline-block;
   padding: 0.3rem 0.6rem;
   border-radius: var(--radius-sm);
   font-size: 0.85rem;
   font-weight: 600;
+  margin: 0.15rem;
+}
+
+.role-tag {
+  background: #E0E7FF;
+  color: #3730A3;
+}
+
+.area-tag {
+  background: #DBEAFE;
+  color: #1E40AF;
 }
 
 .btn-icon-small {
@@ -342,6 +440,39 @@ onMounted(() => {
 
 .modal-actions {
   display: flex; justify-content: flex-end; gap: 1rem; margin-top: 1.5rem;
+}
+
+.checkbox-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding: 0.6rem;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  background: white;
+}
+
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.85rem;
+  color: var(--text-primary);
+  cursor: pointer;
+  padding: 0.3rem 0.6rem;
+  border-radius: var(--radius-sm);
+  transition: background 0.15s;
+}
+
+.checkbox-label:hover {
+  background-color: var(--bg-card);
+}
+
+.checkbox-label input[type="checkbox"] {
+  accent-color: var(--primary-500);
+  width: 1rem;
+  height: 1rem;
+  cursor: pointer;
 }
 
 .input-error {

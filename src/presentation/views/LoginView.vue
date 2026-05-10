@@ -18,9 +18,11 @@ const email = ref('')
 const password = ref('')
 const authStore = useAuthStore()
 const errorMessage = ref('')
+const cargando = ref(false)
 
 const handleSubmit = async () => {
   errorMessage.value = ''
+  cargando.value = true
 
   try {
     await authStore.login(email.value, password.value)
@@ -28,6 +30,8 @@ const handleSubmit = async () => {
   } catch (error) {
     const key = error.name === 'UserInactiveError' ? error.name : error.message
     errorMessage.value = ERROR_MESSAGES[key] || error.message || 'Ocurrio un error inesperado. Intentalo de nuevo.'
+  } finally {
+    cargando.value = false
   }
 }
 </script>
@@ -63,7 +67,9 @@ const handleSubmit = async () => {
           >
 
           <p v-if="errorMessage" id="msg" class="errorMessage">{{ errorMessage }}</p>
-          <button type="submit" class="btn-submit">Iniciar Sesion</button>
+          <button type="submit" class="btn-submit" :disabled="cargando">
+            {{ cargando ? 'Ingresando...' : 'Iniciar Sesion' }}
+          </button>
         </form>
 
         <div class="form-footer">

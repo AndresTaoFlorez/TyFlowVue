@@ -4,7 +4,9 @@
       "Bash(ssh root@mothius-do:*)",
       "Bash(ls:*)",
       "Bash(ssh-keygen:*)",
-      "Bash(ssh:*)"
+      "Bash(ssh:*)",
+      "Bash(npm install:*)",
+      "Bash(npm run:*)"
     ]
   }
 }
