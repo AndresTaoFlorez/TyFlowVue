@@ -3,7 +3,8 @@ import UserCard from '@/presentation/components/UserCard.vue'
 
 defineProps({
   users: { type: Array, required: true },
-  toggling: { type: Set, required: true }
+  toggling: { type: Set, required: true },
+  loadingEditId: { type: String, default: null }
 })
 
 defineEmits(['toggle', 'edit'])
@@ -16,6 +17,7 @@ defineEmits(['toggle', 'edit'])
       :key="user.id"
       :user="user"
       :toggling="toggling.has(user.id)"
+      :loading-edit="loadingEditId === user.id"
       @toggle="$emit('toggle', $event)"
       @edit="$emit('edit', $event)"
     />

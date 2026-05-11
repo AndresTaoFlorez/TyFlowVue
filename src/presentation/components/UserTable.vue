@@ -1,7 +1,8 @@
 <script setup>
 defineProps({
   users: { type: Array, required: true },
-  toggling: { type: Set, required: true }
+  toggling: { type: Set, required: true },
+  loadingEditId: { type: String, default: null }
 })
 
 defineEmits(['toggle', 'edit'])
@@ -52,8 +53,8 @@ defineEmits(['toggle', 'edit'])
             >
               <i :class="toggling.has(user.id) ? 'bx bx-loader-alt bx-spin' : (user.isActive ? 'bx bx-toggle-right' : 'bx bx-toggle-left')"></i>
             </button>
-            <button class="btn-icon-small" @click="$emit('edit', user)" :title="user.isActive ? 'Editar' : 'Ver detalle'">
-              <i :class="user.isActive ? 'bx bx-edit-alt' : 'bx bx-show'"></i>
+            <button class="btn-icon-small" @click="$emit('edit', user)" :title="user.isActive ? 'Editar' : 'Ver detalle'" :disabled="loadingEditId === user.id">
+              <i :class="loadingEditId === user.id ? 'bx bx-loader-alt bx-spin' : (user.isActive ? 'bx bx-edit-alt' : 'bx bx-show')"></i>
             </button>
           </td>
         </tr>
@@ -161,5 +162,11 @@ defineEmits(['toggle', 'edit'])
 .btn-icon-small:hover:not(:disabled) {
   color: var(--primary-500);
   background-color: var(--bg-card);
+}
+
+.btn-icon-small:disabled {
+  color: var(--primary-500);
+  opacity: 0.7;
+  cursor: not-allowed;
 }
 </style>

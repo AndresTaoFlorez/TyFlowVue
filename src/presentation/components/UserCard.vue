@@ -1,7 +1,8 @@
 <script setup>
 defineProps({
   user: { type: Object, required: true },
-  toggling: { type: Boolean, default: false }
+  toggling: { type: Boolean, default: false },
+  loadingEdit: { type: Boolean, default: false }
 })
 
 defineEmits(['toggle', 'edit'])
@@ -56,8 +57,8 @@ defineEmits(['toggle', 'edit'])
       >
         <i :class="toggling ? 'bx bx-loader-alt bx-spin' : (user.isActive ? 'bx bx-toggle-right' : 'bx bx-toggle-left')"></i>
       </button>
-      <button class="btn-icon-small" @click="$emit('edit', user)" :title="user.isActive ? 'Editar' : 'Ver detalle'">
-        <i :class="user.isActive ? 'bx bx-edit-alt' : 'bx bx-show'"></i>
+      <button class="btn-icon-small" @click="$emit('edit', user)" :title="user.isActive ? 'Editar' : 'Ver detalle'" :disabled="loadingEdit">
+        <i :class="loadingEdit ? 'bx bx-loader-alt bx-spin' : (user.isActive ? 'bx bx-edit-alt' : 'bx bx-show')"></i>
       </button>
     </div>
   </div>
@@ -232,5 +233,11 @@ defineEmits(['toggle', 'edit'])
 .btn-icon-small:hover:not(:disabled) {
   color: var(--primary-500);
   background-color: var(--bg-card);
+}
+
+.btn-icon-small:disabled {
+  color: var(--primary-500);
+  opacity: 0.7;
+  cursor: not-allowed;
 }
 </style>

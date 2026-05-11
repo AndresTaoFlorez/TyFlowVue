@@ -25,6 +25,7 @@ const modoVista = ref(false)
 const editandoUserId = ref(null)
 const cargando = ref(false)
 const toggling = ref(new Set())
+const cargandoEditar = ref(null)
 const vistaCards = ref(true)
 const errores = ref({})
 
@@ -60,21 +61,27 @@ const resolverIds = (nombresCsv, lista) => {
 }
 
 const abrirEditar = async (user) => {
-  modoVista.value = !user.isActive
-  modoEdicion.value = user.isActive
-  editandoUserId.value = user.id
-  await userStore.loadSelects()
-  formulario.value = {
-    firstName: user.firstName || '',
-    secondName: user.secondName || '',
-    firstSurname: user.firstSurname || '',
-    secondSurname: user.secondSurname || '',
-    documentNumber: user.documentNumber || '',
-    email: user.email || '',
-    roleIds: resolverIds(user.roleName, userStore.roles),
-    areaIds: resolverIds(user.areaName, userStore.areas),
+  if (cargandoEditar.value) return
+  cargandoEditar.value = user.id
+  try {
+    modoVista.value = !user.isActive
+    modoEdicion.value = user.isActive
+    editandoUserId.value = user.id
+    await userStore.loadSelects()
+    formulario.value = {
+      firstName: user.firstName || '',
+      secondName: user.secondName || '',
+      firstSurname: user.firstSurname || '',
+      secondSurname: user.secondSurname || '',
+      documentNumber: user.documentNumber || '',
+      email: user.email || '',
+      roleIds: resolverIds(user.roleName, userStore.roles),
+      areaIds: resolverIds(user.areaName, userStore.areas),
+    }
+    mostrarModal.value = true
+  } finally {
+    cargandoEditar.value = null
   }
-  mostrarModal.value = true
 }
 
 const cerrarModal = () => {
@@ -154,10 +161,8 @@ onMounted(() => {
     <!-- Cabecera -->
     <div class="page-header">
       <h1 class="page-header__title">Registro de Usuarios</h1>
-    </div>
-    <div class="page-actions">
-      <button @click="abrirCrear" class="btn-primary">
-        <i class='bx bx-plus'></i> <span class="btn-label-full">Crear nuevo usuario</span><span class="btn-label-short">Nuevo</span>
+      <button @click="abrirCrear" class="btn-create">
+        <i class='bx bx-plus'></i> <span class="btn-create__label">Crear nuevo usuario</span><span class="btn-create__short">Nuevo</span>
       </button>
     </div>
 
@@ -181,6 +186,7 @@ onMounted(() => {
       v-else-if="!vistaCards"
       :users="usuariosFiltrados"
       :toggling="toggling"
+      :loading-edit-id="cargandoEditar"
       @toggle="toggleEstado"
       @edit="abrirEditar"
     />
@@ -190,6 +196,7 @@ onMounted(() => {
       v-else
       :users="usuariosFiltrados"
       :toggling="toggling"
+      :loading-edit-id="cargandoEditar"
       @toggle="toggleEstado"
       @edit="abrirEditar"
     />
@@ -301,6 +308,7 @@ onMounted(() => {
 .page-header {
   display: flex;
   align-items: center;
+  justify-content: space-between;
 }
 
 .page-header__title {
@@ -309,17 +317,42 @@ onMounted(() => {
   color: var(--text-primary);
 }
 
-.page-actions {
+.btn-create {
   display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.6rem 0.8rem 0.8rem;
+  background-color: var(--primary-500);
+  color: white;
+  font-weight: 600;
+  font-size: 0.9rem;
+  border-radius: var(--radius-md);
+  border: none;
+  cursor: pointer;
+  transition: background-color 0.2s ease, box-shadow 0.2s ease;
+  box-shadow: 0 1px 3px rgba(42, 199, 143, 0.3);
 }
 
-.btn-label-short {
+.btn-create:hover {
+  background-color: var(--primary-600);
+  box-shadow: 0 3px 8px rgba(42, 199, 143, 0.35);
+}
+
+.btn-create:active {
+  transform: scale(0.97);
+}
+
+.btn-create i {
+  font-size: 1.2rem;
+}
+
+.btn-create__short {
   display: none;
 }
 
 @media (max-width: 768px) {
-  .btn-label-full { display: none; }
-  .btn-label-short { display: inline; }
+  .btn-create__label { display: none; }
+  .btn-create__short { display: inline; }
 
   .modal-overlay {
     padding: 1rem 0.5rem;
