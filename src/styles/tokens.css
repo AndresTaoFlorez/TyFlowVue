@@ -30,6 +30,7 @@
 
   /* Layout */
   --sidebar-width: 260px;
+  --sidebar-width-collapsed: 72px;
   --topbar-height: 64px;
 
   /* Radius */

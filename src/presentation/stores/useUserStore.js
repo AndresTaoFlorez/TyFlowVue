@@ -48,6 +48,7 @@ export const useUserStore = defineStore('users', () => {
       first_surname: userData.firstSurname || undefined,
       second_surname: userData.secondSurname || undefined,
       document_number: userData.documentNumber || undefined,
+      email: userData.email || undefined,
       role_ids: userData.roleIds?.length ? userData.roleIds : undefined,
       area_ids: userData.areaIds?.length ? userData.areaIds : undefined,
     })

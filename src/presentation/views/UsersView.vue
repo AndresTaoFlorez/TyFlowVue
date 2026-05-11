@@ -4,26 +4,24 @@ import { useUserStore } from '@/presentation/stores/useUserStore'
 
 const userStore = useUserStore()
 
-const buscarNombre = ref('')
-const buscarCorreo = ref('')
+const busqueda = ref('')
 
 const usuariosFiltrados = computed(() => {
-  let lista = userStore.users
-  const nombre = buscarNombre.value.toLowerCase().trim()
-  const correo = buscarCorreo.value.toLowerCase().trim()
-  if (nombre) {
-    lista = lista.filter(u => u.fullName.toLowerCase().includes(nombre))
-  }
-  if (correo) {
-    lista = lista.filter(u => (u.email || '').toLowerCase().includes(correo))
-  }
-  return lista
+  const termino = busqueda.value.toLowerCase().trim()
+  if (!termino) return userStore.users
+  return userStore.users.filter(u =>
+    u.fullName.toLowerCase().includes(termino) ||
+    (u.email || '').toLowerCase().includes(termino) ||
+    (u.documentNumber || '').toLowerCase().includes(termino)
+  )
 })
 
 const mostrarModal = ref(false)
 const modoEdicion = ref(false)
 const editandoUserId = ref(null)
 const cargando = ref(false)
+const toggling = ref(new Set())
+const vistaCards = ref(true)
 const errores = ref({})
 
 const formulario = ref({
@@ -62,6 +60,7 @@ const abrirEditar = (user) => {
     firstSurname: user.firstSurname || '',
     secondSurname: user.secondSurname || '',
     documentNumber: user.documentNumber || '',
+    email: user.email || '',
     roleIds: resolverIds(user.roleName, userStore.roles),
     areaIds: resolverIds(user.areaName, userStore.areas),
   }
@@ -108,10 +107,14 @@ const guardarUsuario = async () => {
 }
 
 const toggleEstado = async (userId) => {
+  if (toggling.value.has(userId)) return
+  toggling.value.add(userId)
   try {
     await userStore.toggleStatus(userId)
   } catch (error) {
     alert('Error al cambiar estado: ' + error.message)
+  } finally {
+    toggling.value.delete(userId)
   }
 }
 
@@ -127,8 +130,10 @@ onMounted(() => {
     <!-- Cabecera -->
     <div class="page-header">
       <h1 class="page-header__title">Registro de Usuarios</h1>
+    </div>
+    <div class="page-actions">
       <button @click="abrirCrear" class="btn-primary">
-        <i class='bx bx-plus'></i> Crear nuevo usuario
+        <i class='bx bx-plus'></i> <span class="btn-label-full">Crear nuevo usuario</span><span class="btn-label-short">Nuevo</span>
       </button>
     </div>
 
@@ -136,16 +141,15 @@ onMounted(() => {
     <div class="filter-bar">
       <div class="filter-bar__group">
         <i class='bx bx-search filter-bar__icon'></i>
-        <input v-model="buscarNombre" type="text" class="filter-bar__input" placeholder="Buscar por nombre...">
+        <input v-model="busqueda" type="text" class="filter-bar__input" placeholder="Buscar por nombre, correo o número de identificación...">
       </div>
-      <div class="filter-bar__group">
-        <i class='bx bx-envelope filter-bar__icon'></i>
-        <input v-model="buscarCorreo" type="text" class="filter-bar__input" placeholder="Buscar por correo...">
-      </div>
+      <button class="btn-view-toggle" @click="vistaCards = !vistaCards" :title="vistaCards ? 'Ver como tabla' : 'Ver como cards'">
+        <i :class="vistaCards ? 'bx bx-table' : 'bx bx-grid-alt'"></i>
+      </button>
     </div>
 
     <!-- Tabla -->
-    <div class="table-container">
+    <div v-if="!vistaCards" class="table-container">
       <table class="datatable">
         <thead>
           <tr class="datatable__header">
@@ -180,8 +184,14 @@ onMounted(() => {
               <span v-else>N/A</span>
             </td>
             <td>
-              <button class="btn-icon-small" @click="toggleEstado(user.id)" :title="user.isActive ? 'Desactivar' : 'Activar'">
-                <i :class="user.isActive ? 'bx bx-toggle-right' : 'bx bx-toggle-left'"></i>
+              <button
+                class="btn-toggle"
+                :class="[toggling.has(user.id) ? 'btn-toggle--loading' : (user.isActive ? 'btn-toggle--active' : 'btn-toggle--inactive')]"
+                @click="toggleEstado(user.id)"
+                :title="user.isActive ? 'Desactivar' : 'Activar'"
+                :disabled="toggling.has(user.id)"
+              >
+                <i :class="toggling.has(user.id) ? 'bx bx-loader-alt bx-spin' : (user.isActive ? 'bx bx-toggle-right' : 'bx bx-toggle-left')"></i>
               </button>
               <button class="btn-icon-small" @click="abrirEditar(user)" title="Editar">
                 <i class='bx bx-edit-alt'></i>
@@ -190,6 +200,63 @@ onMounted(() => {
           </tr>
         </tbody>
       </table>
+    </div>
+
+    <!-- Cards -->
+    <div v-else class="cards-grid">
+      <div v-for="user in usuariosFiltrados" :key="user.id" class="user-card" :class="{ 'user-card--inactive': !user.isActive }">
+        <div class="user-card__header">
+          <div class="user-card__avatar">
+            <i class='bx bx-user'></i>
+          </div>
+          <div class="user-card__identity">
+            <h3 class="user-card__name">{{ user.fullName }}</h3>
+            <span class="user-card__email">{{ user.email || '—' }}</span>
+          </div>
+          <span v-if="user.isActive" class="status-badge status-badge--active">Activo</span>
+          <span v-else class="status-badge status-badge--inactive">Inactivo</span>
+        </div>
+
+        <div class="user-card__body">
+          <div class="user-card__field">
+            <i class='bx bx-id-card'></i>
+            <span>{{ user.documentNumber }}</span>
+          </div>
+          <div class="user-card__field">
+            <i class='bx bx-shield'></i>
+            <div class="user-card__tags">
+              <template v-if="user.roleName">
+                <span v-for="rol in user.roleName.split(', ')" :key="rol" class="role-tag">{{ rol }}</span>
+              </template>
+              <span v-else class="user-card__na">N/A</span>
+            </div>
+          </div>
+          <div class="user-card__field">
+            <i class='bx bx-buildings'></i>
+            <div class="user-card__tags">
+              <template v-if="user.areaName">
+                <span v-for="area in user.areaName.split(', ')" :key="area" class="area-tag">{{ area }}</span>
+              </template>
+              <span v-else class="user-card__na">N/A</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="user-card__actions">
+          <button
+            class="btn-toggle"
+            :class="[toggling.has(user.id) ? 'btn-toggle--loading' : (user.isActive ? 'btn-toggle--active' : 'btn-toggle--inactive')]"
+            @click="toggleEstado(user.id)"
+            :title="user.isActive ? 'Desactivar' : 'Activar'"
+            :disabled="toggling.has(user.id)"
+          >
+            <i :class="toggling.has(user.id) ? 'bx bx-loader-alt bx-spin' : (user.isActive ? 'bx bx-toggle-right' : 'bx bx-toggle-left')"></i>
+          </button>
+          <button class="btn-icon-small" @click="abrirEditar(user)" title="Editar">
+            <i class='bx bx-edit-alt'></i>
+          </button>
+        </div>
+      </div>
     </div>
 
     <!-- Modal Crear Usuario -->
@@ -223,6 +290,11 @@ onMounted(() => {
               <input v-model="formulario.documentNumber" type="text" required class="form-input"
                 :class="{ 'input-error': errores.documentNumber }">
               <span v-if="errores.documentNumber" class="error-text">{{ errores.documentNumber }}</span>
+            </div>
+            <div v-if="modoEdicion" class="form-group">
+              <label>Correo electrónico</label>
+              <input v-model="formulario.email" type="email" class="form-input" placeholder="nuevo@correo.com">
+              <span class="hint-text">Si se cambia, el usuario recibirá un correo de confirmación.</span>
             </div>
             <div v-if="modoEdicion" class="form-group">
               <label>Roles *</label>
@@ -267,7 +339,6 @@ onMounted(() => {
 
 .page-header {
   display: flex;
-  justify-content: space-between;
   align-items: center;
 }
 
@@ -275,6 +346,61 @@ onMounted(() => {
   font-size: 1.5rem;
   font-weight: 700;
   color: var(--text-primary);
+}
+
+.page-actions {
+  display: flex;
+}
+
+.btn-label-short {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  .btn-label-full { display: none; }
+  .btn-label-short { display: inline; }
+
+  .modal-overlay {
+    padding: 1rem 0.5rem;
+    align-items: flex-start;
+  }
+  .modal-content {
+    padding: 1.25rem;
+    margin: 0 auto;
+    max-height: none;
+  }
+  .form-grid {
+    grid-template-columns: 1fr;
+  }
+  .cards-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 480px) {
+  .page-header__title { font-size: 1.2rem; }
+  .modal-content {
+    padding: 1rem;
+    border-radius: var(--radius-md);
+  }
+}
+
+.btn-view-toggle {
+  background: white;
+  border: 1px solid var(--border-light);
+  color: var(--text-secondary);
+  font-size: 1.25rem;
+  padding: 0.5rem 0.6rem;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: color 0.2s, border-color 0.2s;
+  display: flex;
+  align-items: center;
+}
+
+.btn-view-toggle:hover {
+  color: var(--primary-500);
+  border-color: var(--primary-500);
 }
 
 .filter-bar {
@@ -344,6 +470,116 @@ onMounted(() => {
   color: var(--text-primary);
 }
 
+.cards-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 1rem;
+}
+
+.user-card {
+  background: white;
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+  padding: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  border-left: 3px solid var(--success-text, #16a34a);
+  transition: box-shadow 0.2s;
+}
+
+.user-card:hover {
+  box-shadow: var(--shadow-md, 0 4px 6px -1px rgba(0,0,0,.1));
+}
+
+.user-card--inactive {
+  border-left-color: var(--error-text, #dc2626);
+  opacity: 0.75;
+}
+
+.user-card__header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.user-card__avatar {
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: var(--radius-full, 50%);
+  background: var(--bg-card, #f3f4f6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.25rem;
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+
+.user-card__identity {
+  flex: 1;
+  min-width: 0;
+}
+
+.user-card__name {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.user-card__email {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.user-card__body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.user-card__field {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+  color: var(--text-primary);
+}
+
+.user-card__field > i {
+  color: var(--text-secondary);
+  font-size: 1.1rem;
+  margin-top: 0.1rem;
+  flex-shrink: 0;
+}
+
+.user-card__tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+}
+
+.user-card__na {
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+}
+
+.user-card__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  border-top: 1px solid var(--border-light);
+  padding-top: 0.75rem;
+}
+
 .status-badge {
   padding: 0.3rem 0.8rem;
   border-radius: var(--radius-full);
@@ -390,22 +626,56 @@ onMounted(() => {
   transition: 0.2s;
 }
 
-.btn-icon-small:hover {
+.btn-icon-small:hover:not(:disabled) {
   color: var(--primary-500);
   background-color: var(--bg-card);
+}
+
+.btn-toggle {
+  background: transparent;
+  font-size: 1.4rem;
+  padding: 0.3rem;
+  border-radius: 4px;
+  transition: color 0.2s, background-color 0.2s;
+  cursor: pointer;
+}
+
+.btn-toggle--active {
+  color: var(--success-text, #16a34a);
+}
+
+.btn-toggle--active:hover {
+  background-color: var(--success-bg, #f0fdf4);
+}
+
+.btn-toggle--inactive {
+  color: var(--error-text, #dc2626);
+}
+
+.btn-toggle--inactive:hover {
+  background-color: var(--error-bg, #fef2f2);
+}
+
+.btn-toggle--loading {
+  color: var(--text-secondary);
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 .modal-overlay {
   position: fixed; top: 0; left: 0; width: 100%; height: 100%;
   background: rgba(0, 0, 0, 0.5); backdrop-filter: blur(4px);
-  display: flex; align-items: center; justify-content: center;
+  display: flex; align-items: flex-start; justify-content: center;
   z-index: 100;
+  overflow-y: auto;
+  padding: 2rem 1rem;
 }
 
 .modal-content {
   background: var(--bg-main); width: 100%; max-width: 600px;
   border-radius: var(--radius-lg); padding: 2rem;
   box-shadow: var(--shadow-lg);
+  margin: auto;
 }
 
 .modal-header {
@@ -485,6 +755,13 @@ onMounted(() => {
   font-size: 0.75rem;
   font-weight: 500;
   margin-top: 0.3rem;
+  display: block;
+}
+
+.hint-text {
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  margin-top: 0.25rem;
   display: block;
 }
 </style>
