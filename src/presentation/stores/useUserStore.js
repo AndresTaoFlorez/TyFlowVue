@@ -52,9 +52,9 @@ export const useUserStore = defineStore('users', () => {
     return newUser
   }
 
-  async function updateUser(userId, userData) {
-    const updated = await updateUserUseCase(userId, userData)
-    await loadUsers()
+  async function updateUser(userId, userData, options = {}) {
+    const updated = await updateUserUseCase(userId, userData, options)
+    if (!options.skipReload) await loadUsers()
     return updated
   }
 

@@ -60,6 +60,8 @@ router.beforeEach((to) => {
     return { name: 'login' }
   } else if (to.meta.requiresAdmin && !authStore.isAdmin) {
     return { name: 'profile' }
+  } else if (to.name === 'profile' && authStore.isAdmin) {
+    return { name: 'users' }
   } else if (!requiresAuth && authStore.isAuthenticated && to.name === 'login') {
     return { name: 'dashboard' }
   }

@@ -1,8 +1,12 @@
 <script setup>
-import { ref } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import { changePasswordUseCase } from '@/application/use-cases/auth/ChangePasswordUseCase'
 
 const emit = defineEmits(['close'])
+
+const onEsc = (e) => { if (e.key === 'Escape') emit('close') }
+onMounted(() => window.addEventListener('keydown', onEsc))
+onUnmounted(() => window.removeEventListener('keydown', onEsc))
 
 const newPassword = ref('')
 const confirmPassword = ref('')

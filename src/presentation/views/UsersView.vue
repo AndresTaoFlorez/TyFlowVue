@@ -1,11 +1,16 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useUserStore } from '@/presentation/stores/useUserStore'
+import { useAuthStore } from '@/presentation/stores/useAuthStore'
+import { useRouter } from 'vue-router'
 import SkeletonCard from '@/presentation/components/SkeletonCard.vue'
 import UserTable from '@/presentation/components/UserTable.vue'
 import UserCardGrid from '@/presentation/components/UserCardGrid.vue'
+import ToastNotification from '@/presentation/components/ToastNotification.vue'
 
 const userStore = useUserStore()
+const authStore = useAuthStore()
+const router = useRouter()
 
 const busqueda = ref('')
 
@@ -26,8 +31,12 @@ const editandoUserId = ref(null)
 const cargando = ref(false)
 const toggling = ref(new Set())
 const cargandoEditar = ref(null)
+const emailOriginal = ref('')
+const confirmandoEmail = ref(false)
 const vistaCards = ref(true)
 const errores = ref({})
+const toastVisible = ref(false)
+const toastMessage = ref('')
 
 const formulario = ref({
   firstName: '', secondName: '',
@@ -56,8 +65,10 @@ const abrirCrear = () => {
 
 const resolverIds = (nombresCsv, lista) => {
   if (!nombresCsv) return []
-  const nombres = nombresCsv.split(',').map(n => n.trim())
-  return lista.filter(item => nombres.includes(item.displayName || item.name)).map(item => item.id)
+  const nombres = nombresCsv.split(',').map(n => n.trim().toLowerCase())
+  return lista
+    .filter(item => nombres.includes((item.displayName || item.name || '').toLowerCase()))
+    .map(item => item.id)
 }
 
 const abrirEditar = async (user) => {
@@ -68,6 +79,7 @@ const abrirEditar = async (user) => {
     modoEdicion.value = user.isActive
     editandoUserId.value = user.id
     await userStore.loadSelects()
+    emailOriginal.value = user.email || ''
     formulario.value = {
       firstName: user.firstName || '',
       secondName: user.secondName || '',
@@ -89,6 +101,7 @@ const cerrarModal = () => {
   modoEdicion.value = false
   modoVista.value = false
   editandoUserId.value = null
+  confirmandoEmail.value = false
   errores.value = {}
 }
 
@@ -110,21 +123,61 @@ const validarFormulario = () => {
   return esValido
 }
 
+const emailCambio = computed(() =>
+  modoEdicion.value &&
+  formulario.value.email.trim().toLowerCase() !== emailOriginal.value.trim().toLowerCase()
+)
+
+const esEdicionPropia = computed(() =>
+  editandoUserId.value === authStore.profile?.id
+)
+
 const guardarUsuario = async () => {
   if (modoVista.value) return
   if (!validarFormulario()) return
 
+  // Paso de confirmación si se cambió el correo
+  if (emailCambio.value && !confirmandoEmail.value) {
+    confirmandoEmail.value = true
+    return
+  }
+
+  const cambioEmailPropio = emailCambio.value && esEdicionPropia.value
   cargando.value = true
   try {
-    if (modoEdicion.value) {
-      await userStore.updateUser(editandoUserId.value, formulario.value)
+    const esEdicion = modoEdicion.value
+    if (esEdicion) {
+      await userStore.updateUser(editandoUserId.value, formulario.value, {
+        emailChanged: emailCambio.value,
+        skipReload: cambioEmailPropio,
+      })
     } else {
       await userStore.createUser(formulario.value)
     }
     cerrarModal()
+
+    if (cambioEmailPropio) {
+      authStore.logout()
+      router.push('/')
+      return
+    }
+
+    toastMessage.value = esEdicion ? 'Usuario actualizado correctamente.' : 'Usuario creado correctamente.'
+    toastVisible.value = true
   } catch (error) {
+    // Si cambió su propio email y el PUT fue exitoso pero algo posterior falló,
+    // el token ya es inválido — cerrar sesión directamente
+    if (cambioEmailPropio) {
+      cerrarModal()
+      authStore.logout()
+      router.push('/')
+      return
+    }
+    confirmandoEmail.value = false
     if (error.isConflict) {
       errores.value.email = 'Este correo ya está registrado.'
+    } else if (error.isForbidden) {
+      errores.value.general = 'No tienes permisos para editar este usuario.'
     } else if (error.isNotFound) {
       errores.value.general = 'Un rol o área seleccionado no existe.'
     } else if (error.hasFieldErrors) {
@@ -135,6 +188,10 @@ const guardarUsuario = async () => {
   } finally {
     cargando.value = false
   }
+}
+
+const cancelarConfirmacion = () => {
+  confirmandoEmail.value = false
 }
 
 const toggleEstado = async (userId) => {
@@ -149,9 +206,16 @@ const toggleEstado = async (userId) => {
   }
 }
 
+const onEsc = (e) => { if (e.key === 'Escape' && mostrarModal.value) cerrarModal() }
+
 onMounted(() => {
   userStore.loadUsers()
   userStore.loadSelects()
+  window.addEventListener('keydown', onEsc)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('keydown', onEsc)
 })
 </script>
 
@@ -281,8 +345,31 @@ onMounted(() => {
             <span>{{ errores.general }}</span>
           </div>
 
+          <!-- Confirmación de cambio de correo -->
+          <div v-if="confirmandoEmail" class="confirm-banner">
+            <div class="confirm-banner__icon">
+              <i class='bx bx-envelope'></i>
+            </div>
+            <div class="confirm-banner__body">
+              <p class="confirm-banner__title">Cambio de correo electrónico</p>
+              <p class="confirm-banner__text">
+                El correo cambiará a <strong>{{ formulario.email }}</strong>.
+                <template v-if="esEdicionPropia">Tu sesión se cerrará y deberás iniciar sesión con el nuevo correo.</template>
+                <template v-else>El usuario deberá iniciar sesión con el nuevo correo.</template>
+              </p>
+            </div>
+          </div>
+
           <div class="modal-actions">
             <button v-if="modoVista" type="button" @click="cerrarModal" class="btn-secondary">Cerrar</button>
+            <template v-else-if="confirmandoEmail">
+              <button type="button" @click="cancelarConfirmacion" class="btn-secondary" :disabled="cargando">Volver</button>
+              <button type="submit" class="btn-primary btn-primary--warning" :class="{ 'btn-primary--loading': cargando }" :disabled="cargando">
+                <i v-if="cargando" class='bx bx-loader-alt bx-spin'></i>
+                <i v-else class='bx bx-check'></i>
+                {{ cargando ? 'Guardando...' : 'Confirmar cambio' }}
+              </button>
+            </template>
             <template v-else>
               <button type="button" @click="cerrarModal" class="btn-secondary" :disabled="cargando">Cancelar</button>
               <button type="submit" class="btn-primary" :class="{ 'btn-primary--loading': cargando }" :disabled="cargando">
@@ -294,6 +381,12 @@ onMounted(() => {
         </form>
       </div>
     </div>
+
+    <ToastNotification
+      :visible="toastVisible"
+      :message="toastMessage"
+      @close="toastVisible = false"
+    />
 
   </section>
 </template>
@@ -492,6 +585,43 @@ onMounted(() => {
 .form-error-banner i {
   font-size: 1.2rem;
   flex-shrink: 0;
+}
+
+.confirm-banner {
+  display: flex;
+  gap: 0.75rem;
+  padding: 1rem;
+  background-color: #FFF7ED;
+  border-radius: var(--radius-md);
+  border-left: 3px solid #F59E0B;
+}
+
+.confirm-banner__icon {
+  font-size: 1.4rem;
+  color: #D97706;
+  flex-shrink: 0;
+  margin-top: 0.1rem;
+}
+
+.confirm-banner__title {
+  font-weight: 700;
+  font-size: 0.85rem;
+  color: #92400E;
+  margin-bottom: 0.25rem;
+}
+
+.confirm-banner__text {
+  font-size: 0.82rem;
+  color: #78350F;
+  line-height: 1.4;
+}
+
+.btn-primary--warning {
+  background-color: #F59E0B;
+}
+
+.btn-primary--warning:hover:not(:disabled) {
+  background-color: #D97706;
 }
 
 .modal-actions {
