@@ -7,8 +7,8 @@ export const UserRepository = {
     return data.map((item) => new User(item))
   },
 
-  async fetchById(userId) {
-    const { data } = await client.get(`/users/${userId}`)
+  async fetchMe() {
+    const { data } = await client.get('/users/me')
     return new User(data)
   },
 
@@ -25,5 +25,10 @@ export const UserRepository = {
   async toggleStatus(userId) {
     const { data } = await client.patch(`/users/${userId}/status`)
     return new User(data)
+  },
+
+  async delete(userId) {
+    const { data } = await client.delete(`/users/${userId}`)
+    return data
   },
 }

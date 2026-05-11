@@ -228,7 +228,9 @@
   gap: 0.5rem;
   transition: background-color 0.2s ease;
 }
-.btn-primary:hover { background-color: var(--primary-600); }
+.btn-primary:hover:not(:disabled) { background-color: var(--primary-600); }
+.btn-primary:disabled { opacity: 0.7; cursor: not-allowed; }
+.btn-primary--loading { pointer-events: none; }
 
 .btn-secondary {
   background-color: white;

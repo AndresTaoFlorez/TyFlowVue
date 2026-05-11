@@ -5,7 +5,7 @@ export class User {
     second_name = null,
     first_surname,
     second_surname = null,
-    document_number,
+    id_document,
     created_at = null,
     is_active = true,
     email = null,
@@ -18,7 +18,7 @@ export class User {
     this.secondName = second_name
     this.firstSurname = first_surname
     this.secondSurname = second_surname
-    this.documentNumber = document_number
+    this.documentNumber = id_document
     this.createdAt = created_at
     this.isActive = is_active
     this.email = email

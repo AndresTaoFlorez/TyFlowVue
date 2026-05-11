@@ -22,12 +22,24 @@ client.interceptors.request.use((config) => {
 client.interceptors.response.use(
   (response) => response,
   async (error) => {
-    const status = error.response?.status
-    const data = error.response?.data
+    // Error de red (sin respuesta del servidor)
+    if (!error.response) {
+      return Promise.reject(ApiError.networkError(error))
+    }
+
+    const status = error.response.status
+    const data = error.response.data
 
     if (status === 401) {
-      // Try to refresh token before giving up
       const originalRequest = error.config
+      const isAuthEndpoint = originalRequest.url?.startsWith('/auth/')
+
+      // En endpoints de auth (login, check-email, etc.) no intentar refresh ni redirigir
+      if (isAuthEndpoint) {
+        return Promise.reject(ApiError.fromResponse(401, data))
+      }
+
+      // Try to refresh token before giving up
       if (!originalRequest._retry) {
         originalRequest._retry = true
         const refreshed = await tryRefreshToken()

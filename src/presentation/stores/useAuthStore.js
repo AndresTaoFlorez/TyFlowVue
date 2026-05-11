@@ -2,7 +2,7 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { loginUseCase } from '@/application/use-cases/auth/LoginUseCase'
 import { logoutUseCase } from '@/application/use-cases/auth/LogoutUseCase'
-import { fetchUserByIdUseCase } from '@/application/use-cases/users/FetchUserByIdUseCase'
+import { fetchMeUseCase } from '@/application/use-cases/users/FetchMeUseCase'
 import { TOKEN_KEY } from '@/infrastructure/http/client'
 import { UserInactiveError } from '@/domain/errors/DomainErrors'
 
@@ -11,16 +11,20 @@ export const useAuthStore = defineStore('auth', () => {
   const profile = ref(null)
 
   const isAuthenticated = computed(() => !!user.value && !!localStorage.getItem(TOKEN_KEY))
+  const isAdmin = computed(() => {
+    const roles = profile.value?.roleName || ''
+    return roles.split(',').map(r => r.trim().toLowerCase()).includes('administrador')
+  })
 
   async function login(email, password) {
     const authUser = await loginUseCase(email, password)
     user.value = authUser
 
-    await fetchProfile(authUser.id)
+    await fetchProfile()
   }
 
-  async function fetchProfile(userId) {
-    const userProfile = await fetchUserByIdUseCase(userId)
+  async function fetchProfile() {
+    const userProfile = await fetchMeUseCase()
 
     if (!userProfile.isActive) {
       logout()
@@ -44,9 +48,8 @@ export const useAuthStore = defineStore('auth', () => {
       }
 
       user.value = { id: payload.sub, email: payload.email }
-      await fetchProfile(payload.sub)
+      await fetchProfile()
     } catch {
-      // Profile fetch failed but token is valid — keep the session
       if (!user.value) logout()
     }
   }
@@ -61,6 +64,7 @@ export const useAuthStore = defineStore('auth', () => {
     user,
     profile,
     isAuthenticated,
+    isAdmin,
     login,
     logout,
     initAuth,
