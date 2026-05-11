@@ -85,6 +85,7 @@
   padding: 1.5rem 1rem;
   color: white;
   overflow: hidden;
+  height: 100%;
 }
 .sidebar__list { display: flex; flex-direction: column; gap: 0.5rem; }
 .sidebar__icon {
@@ -170,7 +171,7 @@
     top: 0;
     left: 0;
     width: var(--sidebar-width);
-    height: 100vh;
+    height: 100dvh;
     z-index: 100;
     transform: translateX(-100%);
     transition: transform 0.3s ease;
