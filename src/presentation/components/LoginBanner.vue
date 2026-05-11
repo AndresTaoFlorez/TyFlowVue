@@ -29,14 +29,27 @@ function startAnimation(canvasEl) {
   function resize() {
     dpr = window.devicePixelRatio || 1
     const rect = canvasEl.parentElement.getBoundingClientRect()
-    w = rect.width
-    h = rect.height
-    canvasEl.width = w * dpr
-    canvasEl.height = h * dpr
-    canvasEl.style.width = w + 'px'
-    canvasEl.style.height = h + 'px'
+    const newW = rect.width
+    const newH = rect.height
+    canvasEl.width = newW * dpr
+    canvasEl.height = newH * dpr
+    canvasEl.style.width = newW + 'px'
+    canvasEl.style.height = newH + 'px'
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
-    nodes = createNodes(w, h)
+
+    if (!nodes) {
+      w = newW
+      h = newH
+      nodes = createNodes(w, h)
+    } else {
+      // Reubicar nodos que quedaron fuera de los nuevos limites
+      for (const n of nodes) {
+        n.x = Math.min(n.x, newW - 20)
+        n.y = Math.min(n.y, newH - 20)
+      }
+      w = newW
+      h = newH
+    }
   }
 
   resize()
