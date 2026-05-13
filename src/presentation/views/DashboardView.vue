@@ -1,33 +1,11 @@
 <script setup>
-import { ref, onMounted, onUnmounted } from 'vue'
-import { startNodeGraph } from '@/presentation/utils/nodeGraph'
-
-const canvas = ref(null)
-let cleanup = null
-
-onMounted(() => {
-  if (canvas.value) {
-    cleanup = startNodeGraph(canvas.value, {
-      nodeCount: 20,
-      connectDist: 140,
-      speed: 0.3,
-      minRadius: 2,
-      maxRadius: 4.5,
-      lineAlpha: 0.3,
-      haloAlpha: 0.12,
-    })
-  }
-})
-
-onUnmounted(() => {
-  if (cleanup) cleanup()
-})
+import NodeGraphCanvas from '@/presentation/components/NodeGraphCanvas.vue'
 </script>
 
 <template>
   <section class="content">
     <div class="coming-soon">
-      <canvas ref="canvas" class="coming-soon__canvas"></canvas>
+      <NodeGraphCanvas />
       <div class="coming-soon__body">
         <div class="coming-soon__icon-wrap">
           <i class='bx bx-envelope coming-soon__icon'></i>
@@ -77,30 +55,23 @@ onUnmounted(() => {
   min-height: 420px;
   border-radius: var(--radius-lg);
   overflow: hidden;
-  background: linear-gradient(160deg, #1a9e6f 0%, #2AC78F 40%, #3EE0A1 100%);
-  background-size: 200% 200%;
-  animation: gradientShift 14s ease-in-out infinite;
+  background: transparent;
   display: flex;
   align-items: center;
   justify-content: center;
-}
-
-.coming-soon__canvas {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  pointer-events: none;
 }
 
 .coming-soon__body {
   position: relative;
   z-index: 1;
   text-align: center;
-  color: white;
+  color: var(--neutral-800, #1e293b);
   padding: 3rem 2rem;
   max-width: 600px;
   animation: fadeUp 0.8s ease-out both;
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+  border-radius: var(--radius-lg);
 }
 
 .coming-soon__icon-wrap {
@@ -154,7 +125,7 @@ onUnmounted(() => {
   line-height: 1.6;
   opacity: 0;
   animation: fadeUp 0.6s ease-out both 1.7s;
-  color: rgba(255, 255, 255, 0.9);
+  color: var(--neutral-600, #475569);
   margin-bottom: 2rem;
 }
 
@@ -171,8 +142,8 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  background: rgba(255, 255, 255, 0.15);
-  backdrop-filter: blur(6px);
+  background: rgba(42, 199, 143, 0.1);
+  backdrop-filter: blur(3px);
   padding: 0.5rem 1rem;
   border-radius: var(--radius-md);
   font-size: 0.82rem;
@@ -182,7 +153,7 @@ onUnmounted(() => {
 .coming-soon__step-number {
   width: 1.5rem;
   height: 1.5rem;
-  background: rgba(255, 255, 255, 0.3);
+  background: rgba(42, 199, 143, 0.25);
   border-radius: 50%;
   display: flex;
   align-items: center;
@@ -195,11 +166,6 @@ onUnmounted(() => {
 .coming-soon__step-arrow {
   font-size: 1.2rem;
   opacity: 0.6;
-}
-
-@keyframes gradientShift {
-  0%, 100% { background-position: 0% 50%; }
-  50% { background-position: 100% 50%; }
 }
 
 @keyframes fadeUp {
@@ -215,7 +181,7 @@ onUnmounted(() => {
 
 @keyframes letterGlow {
   0%, 100% { text-shadow: 0 0 0 transparent; }
-  50% { text-shadow: 0 0 18px rgba(255, 255, 255, 0.4); }
+  50% { text-shadow: 0 0 18px rgba(42, 199, 143, 0.4); }
 }
 
 @keyframes iconFloat {
