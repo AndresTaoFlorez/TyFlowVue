@@ -1,12 +1,13 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import LoginView from '@/presentation/views/LoginView.vue'
-import ForgotPasswordView from '@/presentation/views/ForgotPasswordView.vue'
-import ResetPasswordView from '@/presentation/views/ResetPasswordView.vue'
-import MainLayout from '@/presentation/layouts/MainLayout.vue'
-import DashboardView from '@/presentation/views/DashboardView.vue'
-import UsersView from '@/presentation/views/UsersView.vue'
-import ProfileView from '@/presentation/views/ProfileView.vue'
 import { useAuthStore } from '@/presentation/stores/useAuthStore'
+
+const LoginView = () => import('@/presentation/views/LoginView.vue')
+const ForgotPasswordView = () => import('@/presentation/views/ForgotPasswordView.vue')
+const ResetPasswordView = () => import('@/presentation/views/ResetPasswordView.vue')
+const MainLayout = () => import('@/presentation/layouts/MainLayout.vue')
+const DashboardView = () => import('@/presentation/views/DashboardView.vue')
+const UsersView = () => import('@/presentation/views/UsersView.vue')
+const ProfileView = () => import('@/presentation/views/ProfileView.vue')
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),

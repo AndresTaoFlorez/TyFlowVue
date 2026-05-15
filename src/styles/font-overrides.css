@@ -1,0 +1,9 @@
+/* Override boxicons font-display to avoid render blocking */
+@font-face {
+  font-family: boxicons;
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+  src: url('../../node_modules/boxicons/fonts/boxicons.woff2') format('woff2'),
+       url('../../node_modules/boxicons/fonts/boxicons.woff') format('woff');
+}

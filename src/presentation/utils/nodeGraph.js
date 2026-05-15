@@ -11,6 +11,8 @@
  *   - Batching de lineas en un solo path por rango de alpha
  *   - Distancia al cuadrado (sin sqrt)
  *   - Sin creacion de objetos en el loop de dibujo
+ *   - Halos pre-renderizados en offscreen canvas (evita createRadialGradient por frame)
+ *   - Inicio diferido con requestIdleCallback para no bloquear FCP
  */
 
 const REF_DIAGONAL = 1600
@@ -34,6 +36,7 @@ function createNode(w, h, speed, minRadius, maxRadius) {
     vy: (Math.random() - 0.5) * speed * 2,
     r: minRadius + Math.random() * (maxRadius - minRadius),
     pulseOffset: Math.random() * Math.PI * 2,
+    haloCanvas: null,
   }
 }
 
@@ -45,6 +48,22 @@ function createNodes(w, h, count, cfg) {
   return arr
 }
 
+/** Pre-render a halo sprite for a node at a fixed size */
+function createHaloSprite(radius, cr, cg, cb, haloAlpha) {
+  const size = Math.ceil(radius * 2) + 2
+  const oc = document.createElement('canvas')
+  oc.width = size
+  oc.height = size
+  const octx = oc.getContext('2d')
+  const cx = size / 2
+  const grad = octx.createRadialGradient(cx, cx, 0, cx, cx, radius)
+  grad.addColorStop(0, `rgba(${cr},${cg},${cb},${haloAlpha})`)
+  grad.addColorStop(1, `rgba(${cr},${cg},${cb},0)`)
+  octx.fillStyle = grad
+  octx.fillRect(0, 0, size, size)
+  return oc
+}
+
 // Numero de buckets de alpha para batching de lineas
 const ALPHA_BUCKETS = 4
 
@@ -54,6 +73,7 @@ export function startNodeGraph(canvasEl, opts = {}) {
   let w, h, nodes, dpr, animId, connectDist2, connectDist, cellSize
   let cols, rows
   let grid = []  // flat array como spatial hash
+  let cancelled = false
 
   function buildGrid() {
     cellSize = connectDist || 160
@@ -78,6 +98,16 @@ export function startNodeGraph(canvasEl, opts = {}) {
     }
   }
 
+  const [cr, cg, cb] = cfg.color
+
+  function buildHaloSprites() {
+    for (let i = 0; i < nodes.length; i++) {
+      const n = nodes[i]
+      const maxHaloRadius = n.r * 1.25 * 4
+      n.haloCanvas = createHaloSprite(maxHaloRadius, cr, cg, cb, cfg.haloAlpha)
+    }
+  }
+
   let needsResize = true
 
   function applyResize() {
@@ -96,12 +126,14 @@ export function startNodeGraph(canvasEl, opts = {}) {
     const scale = diag / REF_DIAGONAL
     connectDist = cfg.connectDist * scale
     connectDist2 = connectDist * connectDist
-    const targetCount = Math.max(6, Math.round(cfg.nodeCount * scale * scale))
+    const maxCount = cfg.nodeCount * 2
+    const targetCount = Math.min(maxCount, Math.max(6, Math.round(cfg.nodeCount * scale)))
 
     if (!nodes) {
       w = newW
       h = newH
       nodes = createNodes(w, h, targetCount, cfg)
+      buildHaloSprites()
     } else {
       const sx = newW / w
       const sy = newH / h
@@ -109,10 +141,17 @@ export function startNodeGraph(canvasEl, opts = {}) {
         n.x *= sx
         n.y *= sy
       }
+      const prevLen = nodes.length
       while (nodes.length < targetCount) {
         nodes.push(createNode(newW, newH, cfg.speed, cfg.minRadius, cfg.maxRadius))
       }
       if (nodes.length > targetCount) nodes.length = targetCount
+      // Build sprites for new nodes only
+      for (let i = prevLen; i < nodes.length; i++) {
+        const n = nodes[i]
+        const maxHaloRadius = n.r * 1.25 * 4
+        n.haloCanvas = createHaloSprite(maxHaloRadius, cr, cg, cb, cfg.haloAlpha)
+      }
       w = newW
       h = newH
     }
@@ -121,16 +160,18 @@ export function startNodeGraph(canvasEl, opts = {}) {
     needsResize = false
   }
 
-  applyResize()
-  const ro = new ResizeObserver(() => { needsResize = true })
-  ro.observe(canvasEl.parentElement)
-
-  const [cr, cg, cb] = cfg.color
-  // Pre-computar strings de color para los buckets de alpha
+  // Pre-computar strings de color para los buckets de alpha (inmutable)
   const bucketColors = new Array(ALPHA_BUCKETS)
+  for (let b = 0; b < ALPHA_BUCKETS; b++) {
+    const a = ((b + 0.5) / ALPHA_BUCKETS) * cfg.lineAlpha
+    bucketColors[b] = `rgba(${cr},${cg},${cb},${a.toFixed(3)})`
+  }
+  const solidColor = `rgba(${cr},${cg},${cb},0.7)`
+
   let time = 0
 
   function draw() {
+    if (cancelled) return
     if (needsResize) applyResize()
     time += 0.016
     ctx.clearRect(0, 0, w, h)
@@ -158,12 +199,6 @@ export function startNodeGraph(canvasEl, opts = {}) {
     insertGrid()
 
     // --- Lineas con batching por alpha ---
-    // Preparar buckets de paths
-    for (let b = 0; b < ALPHA_BUCKETS; b++) {
-      const a = ((b + 0.5) / ALPHA_BUCKETS) * cfg.lineAlpha
-      bucketColors[b] = `rgba(${cr},${cg},${cb},${a.toFixed(3)})`
-    }
-
     // Un path por bucket
     const paths = new Array(ALPHA_BUCKETS)
     for (let b = 0; b < ALPHA_BUCKETS; b++) paths[b] = new Path2D()
@@ -198,22 +233,17 @@ export function startNodeGraph(canvasEl, opts = {}) {
       ctx.stroke(paths[b])
     }
 
-    // --- Dibujar nodos (batch solidos + halos separados) ---
-    // Halos primero
+    // --- Dibujar nodos (halos con sprites pre-renderizados) ---
     for (let i = 0; i < nodes.length; i++) {
       const n = nodes[i]
       const pulse = 1 + Math.sin(time * 2 + n.pulseOffset) * 0.25
-      const rd = n.r * pulse * 4
-      const grad = ctx.createRadialGradient(n.x, n.y, 0, n.x, n.y, rd)
-      grad.addColorStop(0, `rgba(${cr},${cg},${cb},${cfg.haloAlpha})`)
-      grad.addColorStop(1, `rgba(${cr},${cg},${cb},0)`)
-      ctx.beginPath()
-      ctx.arc(n.x, n.y, rd, 0, 6.2832)
-      ctx.fillStyle = grad
-      ctx.fill()
+      const haloSize = n.r * pulse * 4 * 2
+      if (n.haloCanvas) {
+        ctx.drawImage(n.haloCanvas, n.x - haloSize / 2, n.y - haloSize / 2, haloSize, haloSize)
+      }
     }
 
-    // Nodos solidos en un solo batch por alpha similar
+    // Nodos solidos en un solo batch
     const solidPath = new Path2D()
     for (let i = 0; i < nodes.length; i++) {
       const n = nodes[i]
@@ -222,7 +252,7 @@ export function startNodeGraph(canvasEl, opts = {}) {
       solidPath.moveTo(n.x + rd, n.y)
       solidPath.arc(n.x, n.y, rd, 0, 6.2832)
     }
-    ctx.fillStyle = `rgba(${cr},${cg},${cb},0.7)`
+    ctx.fillStyle = solidColor
     ctx.fill(solidPath)
 
     animId = requestAnimationFrame(draw)
@@ -250,10 +280,23 @@ export function startNodeGraph(canvasEl, opts = {}) {
     }
   }
 
-  draw()
+  // Defer animation start to avoid blocking initial paint
+  const scheduleStart = window.requestIdleCallback || ((cb) => setTimeout(cb, 1))
+  scheduleStart(() => {
+    if (cancelled) return
+    applyResize()
+    const ro = new ResizeObserver(() => { needsResize = true })
+    ro.observe(canvasEl.parentElement)
+    canvasEl._ro = ro
+    draw()
+  })
 
   return () => {
+    cancelled = true
     cancelAnimationFrame(animId)
-    ro.disconnect()
+    if (canvasEl._ro) {
+      canvasEl._ro.disconnect()
+      canvasEl._ro = null
+    }
   }
 }

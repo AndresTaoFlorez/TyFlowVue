@@ -3,8 +3,8 @@ import { ref, onMounted, onUnmounted } from 'vue'
 import { startNodeGraph } from '@/presentation/utils/nodeGraph'
 
 const props = defineProps({
-  nodeCount:   { type: Number, default: 60 },
-  connectDist: { type: Number, default: 310 },
+  nodeCount:   { type: Number, default: 24 },
+  connectDist: { type: Number, default: 220 },
   speed:       { type: Number, default: 0.3 },
   minRadius:   { type: Number, default: 1.5 },
   maxRadius:   { type: Number, default: 4 },

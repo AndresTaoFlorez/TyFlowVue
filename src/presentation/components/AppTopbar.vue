@@ -19,7 +19,7 @@ defineEmits(['toggle-sidebar', 'change-password'])
       <h2 class="topbar__title">Bienvenido, {{ authStore.profile?.firstName }}</h2>
     </div>
     <div class="topbar__actions">
-      <button class="btn-secondary" @click="$emit('change-password')">
+      <button class="btn-secondary" @click="$emit('change-password')" aria-label="Cambiar Clave">
         <i class='bx bx-lock-alt'></i> <span class="hide-mobile">Cambiar Clave</span>
       </button>
     </div>

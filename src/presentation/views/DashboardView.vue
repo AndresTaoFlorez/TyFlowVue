@@ -109,7 +109,7 @@ import NodeGraphCanvas from '@/presentation/components/NodeGraphCanvas.vue'
   animation:
     letterDrop 0.6s cubic-bezier(0.22, 1, 0.36, 1) forwards calc(0.4s + var(--i) * 0.07s),
     letterGlow 4s ease-in-out infinite calc(1.5s + var(--i) * 0.12s);
-  will-change: transform, opacity;
+  will-change: auto;
 }
 
 .coming-soon__subtitle {
