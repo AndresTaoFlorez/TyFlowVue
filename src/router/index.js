@@ -1,13 +1,13 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { useAuthStore } from '@/presentation/stores/useAuthStore'
+import MainLayout from '@/presentation/layouts/MainLayout.vue'
+import DashboardView from '@/presentation/views/DashboardView.vue'
+import UsersView from '@/presentation/views/UsersView.vue'
+import ProfileView from '@/presentation/views/ProfileView.vue'
 
 const LoginView = () => import('@/presentation/views/LoginView.vue')
 const ForgotPasswordView = () => import('@/presentation/views/ForgotPasswordView.vue')
 const ResetPasswordView = () => import('@/presentation/views/ResetPasswordView.vue')
-const MainLayout = () => import('@/presentation/layouts/MainLayout.vue')
-const DashboardView = () => import('@/presentation/views/DashboardView.vue')
-const UsersView = () => import('@/presentation/views/UsersView.vue')
-const ProfileView = () => import('@/presentation/views/ProfileView.vue')
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -61,8 +61,6 @@ router.beforeEach((to) => {
     return { name: 'login' }
   } else if (to.meta.requiresAdmin && !authStore.isAdmin) {
     return { name: 'profile' }
-  } else if (to.name === 'profile' && authStore.isAdmin) {
-    return { name: 'users' }
   } else if (!requiresAuth && authStore.isAuthenticated && to.name === 'login') {
     return { name: 'dashboard' }
   }

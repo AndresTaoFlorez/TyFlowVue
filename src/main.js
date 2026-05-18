@@ -16,20 +16,16 @@ app.use(createPinia())
 
 const authStore = useAuthStore()
 
-// Decode JWT synchronously to set auth state before routing,
-// then fetch profile in background after mount (non-blocking FCP/LCP)
 const token = localStorage.getItem('tyflow_token')
 if (token) {
   try {
     const payload = JSON.parse(atob(token.split('.')[1]))
     if (payload.exp * 1000 > Date.now()) {
       authStore.user = { id: payload.sub, email: payload.email }
+      await authStore.fetchProfile()
     }
-  } catch { /* invalid token, will be handled by initAuth */ }
+  } catch { /* token invalido, se ignora */ }
 }
 
 app.use(router)
 app.mount('#app')
-
-// Fetch profile after mount so it doesn't block rendering
-authStore.initAuth()

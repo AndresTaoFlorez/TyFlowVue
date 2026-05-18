@@ -29,6 +29,12 @@ const handleSubmit = async () => {
       return
     }
 
+    // Error de red (backend no disponible, sin conexión, timeout)
+    if (error.isNetworkError || error.isServerError) {
+      errorMessage.value = error.userMessage
+      return
+    }
+
     // Login falló (401) → verificar si el correo existe
     let exists = false
     try { exists = await checkEmailUseCase(email.value.trim()) } catch {}

@@ -47,13 +47,19 @@ View → Store → UseCase → Repository → HTTP Client → REST API
 - `/app/*` — Protected routes (require auth)
   - `/app/dashboard` — DashboardView
   - `/app/users` — UsersView
+  - `/app/profile` — ProfileView
+
+### Route imports: static vs lazy-load
+- **Static imports** for protected views (MainLayout, DashboardView, UsersView, ProfileView): these are always needed after login, so they load with the main bundle. This avoids race conditions when navigating quickly between routes (lazy chunks can get cancelled mid-load).
+- **Lazy imports** (`() => import(...)`) only for public views (LoginView, ForgotPasswordView, ResetPasswordView): an authenticated user never needs them, so they stay out of the main bundle.
+- **Rule:** when adding a new protected view, import it statically. Only lazy-load views that belong to a different auth context.
 
 ### Auth flow
 1. Login via `POST /auth/login` → receives `access_token` + `refresh_token`
 2. Tokens stored in `localStorage` (`tyflow_token`, `tyflow_refresh_token`)
 3. Axios interceptor attaches `Authorization: Bearer` header to all requests
 4. On 401, interceptor attempts token refresh via `POST /auth/refresh`
-5. `initAuth()` decodes existing JWT and fetches user profile on app load
+5. On app load (`main.js`), JWT is decoded synchronously and `fetchProfile()` is awaited before mounting — this ensures `isAdmin`, sidebar items, and profile data are ready on first render
 6. Inactive users are auto-logged out
 7. Router guard redirects based on `isAuthenticated` computed property
 

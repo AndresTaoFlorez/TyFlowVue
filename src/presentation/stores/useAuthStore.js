@@ -34,26 +34,6 @@ export const useAuthStore = defineStore('auth', () => {
     profile.value = userProfile
   }
 
-  async function initAuth() {
-    const token = localStorage.getItem(TOKEN_KEY)
-    if (!token) return
-
-    try {
-      const payload = JSON.parse(atob(token.split('.')[1]))
-
-      // Check if token is expired
-      if (payload.exp * 1000 < Date.now()) {
-        logout()
-        return
-      }
-
-      user.value = { id: payload.sub, email: payload.email }
-      await fetchProfile()
-    } catch {
-      if (!user.value) logout()
-    }
-  }
-
   function logout() {
     logoutUseCase()
     user.value = null
@@ -67,6 +47,6 @@ export const useAuthStore = defineStore('auth', () => {
     isAdmin,
     login,
     logout,
-    initAuth,
+    fetchProfile,
   }
 })

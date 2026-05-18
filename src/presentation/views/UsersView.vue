@@ -14,10 +14,13 @@ const router = useRouter()
 
 const busqueda = ref('')
 
+const currentUserId = computed(() => authStore.profile?.id)
+
 const usuariosFiltrados = computed(() => {
+  const sinActual = userStore.users.filter(u => u.id !== currentUserId.value)
   const termino = busqueda.value.toLowerCase().trim()
-  if (!termino) return userStore.users
-  return userStore.users.filter(u =>
+  if (!termino) return sinActual
+  return sinActual.filter(u =>
     u.fullName.toLowerCase().includes(termino) ||
     (u.email || '').toLowerCase().includes(termino) ||
     (u.documentNumber || '').toLowerCase().includes(termino)

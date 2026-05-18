@@ -28,10 +28,10 @@ const handleLogout = () => {
           <span class="sidebar__label">Usuarios</span>
         </RouterLink>
       </li>
-      <li v-else class="sidebar__item">
+      <li class="sidebar__item">
         <RouterLink :to="{ name: 'profile' }" class="sidebar__link" active-class="sidebar__link--active" @click="$emit('navigate')">
           <i class='bx bx-user sidebar__icon'></i>
-          <span class="sidebar__label">Perfil</span>
+          <span class="sidebar__label">Mi Perfil</span>
         </RouterLink>
       </li>
     </ul>
