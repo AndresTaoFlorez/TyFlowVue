@@ -5,13 +5,14 @@ import { createUserUseCase } from '@/application/use-cases/users/CreateUserUseCa
 import { updateUserUseCase } from '@/application/use-cases/users/UpdateUserUseCase'
 import { toggleUserStatusUseCase } from '@/application/use-cases/users/ToggleUserStatusUseCase'
 import { deleteUserUseCase } from '@/application/use-cases/users/DeleteUserUseCase'
+import { updateMeUseCase } from '@/application/use-cases/users/UpdateMeUseCase'
 import { fetchRolesUseCase } from '@/application/use-cases/roles/FetchRolesUseCase'
-import { fetchAreasUseCase } from '@/application/use-cases/areas/FetchAreasUseCase'
+import { fetchSupportLevelsUseCase } from '@/application/use-cases/support-levels/FetchSupportLevelsUseCase'
 
 export const useUserStore = defineStore('users', () => {
   const users = ref([])
   const roles = ref([])
-  const areas = ref([])
+  const supportLevels = ref([])
   const loading = ref(false)
   const loadingSelects = ref(false)
   const error = ref(null)
@@ -31,16 +32,16 @@ export const useUserStore = defineStore('users', () => {
   }
 
   async function loadSelects() {
-    // No recargar si ya se tienen roles y áreas
-    if (roles.value.length > 0 && areas.value.length > 0) return
+    // No recargar si ya se tienen roles y niveles
+    if (roles.value.length > 0 && supportLevels.value.length > 0) return
     loadingSelects.value = true
     try {
-      const [rolesData, areasData] = await Promise.all([
+      const [rolesData, supportLevelsData] = await Promise.all([
         fetchRolesUseCase(),
-        fetchAreasUseCase(),
+        fetchSupportLevelsUseCase(),
       ])
       roles.value = rolesData
-      areas.value = areasData
+      supportLevels.value = supportLevelsData
     } finally {
       loadingSelects.value = false
     }
@@ -59,12 +60,17 @@ export const useUserStore = defineStore('users', () => {
   }
 
   async function toggleStatus(userId) {
-    const updated = await toggleUserStatusUseCase(userId)
+    const user = users.value.find((u) => u.id === userId)
+    const updated = await toggleUserStatusUseCase(userId, user?.isActive ?? true)
     const idx = users.value.findIndex((u) => u.id === userId)
     if (idx !== -1) {
       users.value[idx].isActive = updated.isActive
     }
     return updated
+  }
+
+  async function updateMe(userData, options = {}) {
+    return updateMeUseCase(userData, options)
   }
 
   async function deleteUser(userId) {
@@ -75,7 +81,7 @@ export const useUserStore = defineStore('users', () => {
   return {
     users,
     roles,
-    areas,
+    supportLevels,
     loading,
     loadingSelects,
     error,
@@ -84,6 +90,7 @@ export const useUserStore = defineStore('users', () => {
     createUser,
     updateUser,
     toggleStatus,
+    updateMe,
     deleteUser,
   }
 })

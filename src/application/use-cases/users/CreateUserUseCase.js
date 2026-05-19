@@ -1,6 +1,6 @@
 import { UserRepository } from '@/infrastructure/repositories/UserRepository'
 
-export async function createUserUseCase({ firstName, firstSurname, documentNumber, secondName, secondSurname, email, password, roleIds, areaIds }) {
+export async function createUserUseCase({ firstName, firstSurname, documentNumber, secondName, secondSurname, email, password, roleIds, supportLevelIds }) {
   return UserRepository.create({
     first_name: firstName,
     first_surname: firstSurname,
@@ -10,6 +10,6 @@ export async function createUserUseCase({ firstName, firstSurname, documentNumbe
     email,
     password,
     role_ids: roleIds?.length ? roleIds : undefined,
-    area_ids: areaIds?.length ? areaIds : undefined,
+    support_level_ids: supportLevelIds?.length ? supportLevelIds : undefined,
   })
 }

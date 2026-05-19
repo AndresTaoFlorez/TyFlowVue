@@ -11,13 +11,4 @@ export const RoleRepository = {
     const { data } = await client.get(`/roles/${roleId}`)
     return new Role(data)
   },
-
-  async create(roleData) {
-    const { data } = await client.post('/roles', roleData)
-    return new Role(data)
-  },
-
-  async delete(roleId) {
-    await client.delete(`/roles/${roleId}`)
-  },
 }

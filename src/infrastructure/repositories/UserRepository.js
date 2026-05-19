@@ -18,12 +18,17 @@ export const UserRepository = {
   },
 
   async update(userId, userData) {
-    const { data } = await client.put(`/users/${userId}`, userData)
+    const { data } = await client.patch(`/users/${userId}`, userData)
     return new User(data)
   },
 
-  async toggleStatus(userId) {
-    const { data } = await client.patch(`/users/${userId}/status`)
+  async updateMe(userData) {
+    const { data } = await client.patch('/users/me', userData)
+    return new User(data)
+  },
+
+  async toggleStatus(userId, isActive) {
+    const { data } = await client.patch(`/users/${userId}`, { is_active: !isActive })
     return new User(data)
   },
 

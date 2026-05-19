@@ -48,7 +48,7 @@ const formulario = ref({
   email: '',
   password: '',
   roleIds: [],
-  areaIds: [],
+  supportLevelIds: [],
 })
 
 const abrirCrear = () => {
@@ -61,7 +61,7 @@ const abrirCrear = () => {
     email: '',
     password: '',
     roleIds: [],
-    areaIds: [],
+    supportLevelIds: [],
   }
   mostrarModal.value = true
 }
@@ -91,7 +91,7 @@ const abrirEditar = async (user) => {
       documentNumber: user.documentNumber || '',
       email: user.email || '',
       roleIds: resolverIds(user.roleName, userStore.roles),
-      areaIds: resolverIds(user.areaName, userStore.areas),
+      supportLevelIds: resolverIds(user.supportLevelName, userStore.supportLevels),
     }
     mostrarModal.value = true
   } finally {
@@ -182,7 +182,7 @@ const guardarUsuario = async () => {
     } else if (error.isForbidden) {
       errores.value.general = 'No tienes permisos para editar este usuario.'
     } else if (error.isNotFound) {
-      errores.value.general = 'Un rol o área seleccionado no existe.'
+      errores.value.general = 'Un rol o nivel seleccionado no existe.'
     } else if (error.hasFieldErrors) {
       errores.value = { ...errores.value, ...error.fields }
     } else {
@@ -330,14 +330,14 @@ onUnmounted(() => {
               </template>
             </div>
             <div class="form-group">
-              <label>Areas</label>
+              <label>Niveles</label>
               <div v-if="userStore.loadingSelects" class="checkbox-group checkbox-group--loading">
-                <i class='bx bx-loader-alt bx-spin'></i> Cargando areas...
+                <i class='bx bx-loader-alt bx-spin'></i> Cargando niveles...
               </div>
               <div v-else class="checkbox-group">
-                <label v-for="area in userStore.areas" :key="area.id" class="checkbox-label">
-                  <input type="checkbox" :value="area.id" v-model="formulario.areaIds" :disabled="modoVista">
-                  {{ area.displayName }}
+                <label v-for="level in userStore.supportLevels" :key="level.id" class="checkbox-label">
+                  <input type="checkbox" :value="level.id" v-model="formulario.supportLevelIds" :disabled="modoVista">
+                  {{ level.name }}
                 </label>
               </div>
             </div>

@@ -11,7 +11,7 @@ export class User {
     email = null,
     last_sign_in_at = null,
     role_name = null,
-    area_name = null,
+    support_level_name = null,
   }) {
     this.id = id
     this.firstName = first_name
@@ -24,11 +24,12 @@ export class User {
     this.email = email
     this.lastSignInAt = last_sign_in_at
     this.roleName = role_name
-    this.areaName = area_name
+    this.supportLevelName = support_level_name
   }
 
   get fullName() {
-    return `${this.firstName} ${this.firstSurname}`
+    const names = [this.firstName, this.secondName, this.firstSurname, this.secondSurname]
+    return names.filter(Boolean).join(' ')
   }
 
   get statusLabel() {

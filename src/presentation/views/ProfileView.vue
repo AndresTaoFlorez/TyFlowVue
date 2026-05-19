@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useAuthStore } from '@/presentation/stores/useAuthStore'
 import { useUserStore } from '@/presentation/stores/useUserStore'
@@ -10,6 +10,7 @@ const authStore = useAuthStore()
 const userStore = useUserStore()
 const router = useRouter()
 const { profile } = storeToRefs(authStore)
+const { isAdmin } = storeToRefs(authStore)
 
 const editando = ref(false)
 const cargando = ref(false)
@@ -18,6 +19,7 @@ const emailOriginal = ref('')
 const confirmandoEmail = ref(false)
 const toastVisible = ref(false)
 const toastMessage = ref('')
+const cargandoSelects = ref(false)
 
 const formulario = ref({
   firstName: '', secondName: '',
@@ -25,14 +27,19 @@ const formulario = ref({
   documentNumber: '',
   email: '',
   roleIds: [],
-  areaIds: [],
+  supportLevelIds: [],
+})
+
+const adminRoleId = computed(() => {
+  const role = userStore.roles.find(r => r.name.toLowerCase() === 'admin')
+  return role?.id ?? null
 })
 
 const resolverIds = (nombresCsv, lista) => {
   if (!nombresCsv) return []
   const nombres = nombresCsv.split(',').map(n => n.trim().toLowerCase())
   return lista
-    .filter(item => nombres.includes((item.displayName || item.name || '').toLowerCase()))
+    .filter(item => nombres.includes((item.name || '').toLowerCase()))
     .map(item => item.id)
 }
 
@@ -47,15 +54,21 @@ const abrirEditar = () => {
     documentNumber: p.documentNumber || '',
     email: p.email || '',
     roleIds: [],
-    areaIds: [],
+    supportLevelIds: [],
   }
   errores.value = {}
   confirmandoEmail.value = false
   editando.value = true
-  userStore.loadSelects().then(() => {
-    formulario.value.roleIds = resolverIds(p.roleName, userStore.roles)
-    formulario.value.areaIds = resolverIds(p.areaName, userStore.areas)
-  })
+
+  if (isAdmin.value) {
+    cargandoSelects.value = true
+    userStore.loadSelects().then(() => {
+      formulario.value.roleIds = resolverIds(p.roleName, userStore.roles)
+      formulario.value.supportLevelIds = resolverIds(p.supportLevelName, userStore.supportLevels)
+    }).finally(() => {
+      cargandoSelects.value = false
+    })
+  }
 }
 
 const cerrarEditar = () => {
@@ -74,9 +87,14 @@ const validarFormulario = () => {
     errores.value.documentNumber = 'Documento demasiado corto.'
     valido = false
   }
-  if (formulario.value.roleIds.length === 0) {
-    errores.value.roles = 'Debe seleccionar al menos un rol.'
-    valido = false
+  if (isAdmin.value && !cargandoSelects.value) {
+    if (formulario.value.roleIds.length === 0) {
+      errores.value.roles = 'Debe seleccionar al menos un rol.'
+      valido = false
+    } else if (adminRoleId.value && !formulario.value.roleIds.includes(adminRoleId.value)) {
+      errores.value.roles = 'No puedes quitarte el rol de administrador.'
+      valido = false
+    }
   }
   return valido
 }
@@ -93,9 +111,13 @@ const guardar = async () => {
 
   cargando.value = true
   try {
-    await userStore.updateUser(profile.value.id, formulario.value, {
+    const datos = { ...formulario.value }
+    if (!isAdmin.value) {
+      delete datos.roleIds
+      delete datos.supportLevelIds
+    }
+    await userStore.updateMe(datos, {
       emailChanged: cambioEmail,
-      skipReload: true,
     })
     cerrarEditar()
 
@@ -189,12 +211,12 @@ onUnmounted(() => {
           </div>
         </div>
         <div class="profile-field">
-          <span class="profile-field__label">Areas</span>
+          <span class="profile-field__label">Niveles</span>
           <div class="profile-field__tags">
-            <template v-if="profile.areaName">
-              <span v-for="area in profile.areaName.split(', ')" :key="area" class="area-tag">{{ area }}</span>
+            <template v-if="profile.supportLevelName">
+              <span v-for="level in profile.supportLevelName.split(', ')" :key="level" class="level-tag">{{ level }}</span>
             </template>
-            <span v-else class="profile-field__na">Sin area asignada</span>
+            <span v-else class="profile-field__na">Sin nivel asignado</span>
           </div>
         </div>
       </div>
@@ -239,33 +261,36 @@ onUnmounted(() => {
               <span v-if="errores.email" class="error-text">{{ errores.email }}</span>
               <span v-else class="hint-text">Si se cambia, tu sesion se cerrara.</span>
             </div>
-            <div class="form-group">
-              <label>Roles *</label>
-              <div v-if="userStore.loadingSelects" class="checkbox-group checkbox-group--loading">
-                <i class='bx bx-loader-alt bx-spin'></i> Cargando roles...
+            <template v-if="isAdmin">
+              <div class="form-group">
+                <label>Roles *</label>
+                <div v-if="userStore.loadingSelects" class="checkbox-group checkbox-group--loading">
+                  <i class='bx bx-loader-alt bx-spin'></i> Cargando roles...
+                </div>
+                <template v-else>
+                  <div class="checkbox-group" :class="{ 'input-error': errores.roles }">
+                    <label v-for="role in userStore.roles" :key="role.id" class="checkbox-label">
+                      <input type="checkbox" :value="role.id" v-model="formulario.roleIds"
+                        :disabled="adminRoleId !== null && role.id === adminRoleId">
+                      {{ role.name }}
+                    </label>
+                  </div>
+                  <span v-if="errores.roles" class="error-text">{{ errores.roles }}</span>
+                </template>
               </div>
-              <template v-else>
-                <div class="checkbox-group" :class="{ 'input-error': errores.roles }">
-                  <label v-for="role in userStore.roles" :key="role.id" class="checkbox-label">
-                    <input type="checkbox" :value="role.id" v-model="formulario.roleIds">
-                    {{ role.name }}
+              <div class="form-group">
+                <label>Niveles</label>
+                <div v-if="userStore.loadingSelects" class="checkbox-group checkbox-group--loading">
+                  <i class='bx bx-loader-alt bx-spin'></i> Cargando niveles...
+                </div>
+                <div v-else class="checkbox-group">
+                  <label v-for="level in userStore.supportLevels" :key="level.id" class="checkbox-label">
+                    <input type="checkbox" :value="level.id" v-model="formulario.supportLevelIds">
+                    {{ level.name }}
                   </label>
                 </div>
-                <span v-if="errores.roles" class="error-text">{{ errores.roles }}</span>
-              </template>
-            </div>
-            <div class="form-group">
-              <label>Areas</label>
-              <div v-if="userStore.loadingSelects" class="checkbox-group checkbox-group--loading">
-                <i class='bx bx-loader-alt bx-spin'></i> Cargando areas...
               </div>
-              <div v-else class="checkbox-group">
-                <label v-for="area in userStore.areas" :key="area.id" class="checkbox-label">
-                  <input type="checkbox" :value="area.id" v-model="formulario.areaIds">
-                  {{ area.displayName }}
-                </label>
-              </div>
-            </div>
+            </template>
           </div>
 
           <div v-if="errores.general" class="form-error-banner">
@@ -290,7 +315,7 @@ onUnmounted(() => {
           <div class="modal-actions">
             <template v-if="confirmandoEmail">
               <button type="button" @click="cancelarConfirmacion" class="btn-secondary" :disabled="cargando">Volver</button>
-              <button type="submit" class="btn-primary btn-primary--warning" :class="{ 'btn-primary--loading': cargando }" :disabled="cargando">
+              <button type="submit" class="btn-primary btn-primary--warning" :class="{ 'btn-primary--loading': cargando }" :disabled="cargando || cargandoSelects">
                 <i v-if="cargando" class='bx bx-loader-alt bx-spin'></i>
                 <i v-else class='bx bx-check'></i>
                 {{ cargando ? 'Guardando...' : 'Confirmar cambio' }}
@@ -298,7 +323,7 @@ onUnmounted(() => {
             </template>
             <template v-else>
               <button type="button" @click="cerrarEditar" class="btn-secondary" :disabled="cargando">Cancelar</button>
-              <button type="submit" class="btn-primary" :class="{ 'btn-primary--loading': cargando }" :disabled="cargando">
+              <button type="submit" class="btn-primary" :class="{ 'btn-primary--loading': cargando }" :disabled="cargando || cargandoSelects">
                 <i v-if="cargando" class='bx bx-loader-alt bx-spin'></i>
                 {{ cargando ? 'Guardando...' : 'Actualizar' }}
               </button>
@@ -465,7 +490,7 @@ onUnmounted(() => {
   color: var(--error-text);
 }
 
-.role-tag, .area-tag {
+.role-tag, .level-tag {
   display: inline-block;
   padding: 0.3rem 0.6rem;
   border-radius: var(--radius-sm);
@@ -474,7 +499,7 @@ onUnmounted(() => {
 }
 
 .role-tag { background: #E0E7FF; color: #3730A3; }
-.area-tag { background: #DBEAFE; color: #1E40AF; }
+.level-tag { background: #DBEAFE; color: #1E40AF; }
 
 /* Modal */
 .modal-overlay {

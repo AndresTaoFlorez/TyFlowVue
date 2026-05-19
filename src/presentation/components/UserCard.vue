@@ -37,10 +37,10 @@ defineEmits(['toggle', 'edit'])
         </div>
       </div>
       <div class="user-card__field">
-        <i class='bx bx-buildings'></i>
+        <i class='bx bx-layer'></i>
         <div class="user-card__tags">
-          <template v-if="user.areaName">
-            <span v-for="area in user.areaName.split(', ')" :key="area" class="area-tag">{{ area }}</span>
+          <template v-if="user.supportLevelName">
+            <span v-for="level in user.supportLevelName.split(', ')" :key="level" class="level-tag">{{ level }}</span>
           </template>
           <span v-else class="user-card__na">N/A</span>
         </div>
@@ -187,7 +187,7 @@ defineEmits(['toggle', 'edit'])
   color: var(--error-text);
 }
 
-.role-tag, .area-tag {
+.role-tag, .level-tag {
   display: inline-block;
   padding: 0.3rem 0.6rem;
   border-radius: var(--radius-sm);
@@ -201,7 +201,7 @@ defineEmits(['toggle', 'edit'])
   color: #3730A3;
 }
 
-.area-tag {
+.level-tag {
   background: #DBEAFE;
   color: #1E40AF;
 }
