@@ -36,6 +36,12 @@ defineEmits(['toggle', 'edit'])
           <span v-else class="user-card__na">N/A</span>
         </div>
       </div>
+      <div class="user-card__field" v-if="user.supportLevelName?.length">
+        <i class='bx bx-layer'></i>
+        <div class="user-card__tags">
+          <span v-for="level in user.supportLevelName" :key="level" class="level-tag">{{ level }}</span>
+        </div>
+      </div>
     </div>
 
     <div class="user-card__actions">

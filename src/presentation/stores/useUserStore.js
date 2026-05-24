@@ -7,10 +7,13 @@ import { toggleUserStatusUseCase } from '@/application/use-cases/users/ToggleUse
 import { deleteUserUseCase } from '@/application/use-cases/users/DeleteUserUseCase'
 import { updateMeUseCase } from '@/application/use-cases/users/UpdateMeUseCase'
 import { fetchRolesUseCase } from '@/application/use-cases/roles/FetchRolesUseCase'
+import { fetchSupportLevelsUseCase } from '@/application/use-cases/support-levels/FetchSupportLevelsUseCase'
+import { syncSpecialistUseCase } from '@/application/use-cases/specialists/SyncSpecialistUseCase'
 
 export const useUserStore = defineStore('users', () => {
   const users = ref([])
   const roles = ref([])
+  const supportLevels = ref([])
   const loading = ref(false)
   const loadingSelects = ref(false)
   const error = ref(null)
@@ -30,18 +33,23 @@ export const useUserStore = defineStore('users', () => {
   }
 
   async function loadSelects() {
-    if (roles.value.length > 0) return
+    if (roles.value.length > 0 && supportLevels.value.length > 0) return
     loadingSelects.value = true
     try {
-      roles.value = await fetchRolesUseCase()
+      const [rolesData, supportLevelsData] = await Promise.all([
+        fetchRolesUseCase(),
+        fetchSupportLevelsUseCase(),
+      ])
+      roles.value = rolesData
+      supportLevels.value = supportLevelsData
     } finally {
       loadingSelects.value = false
     }
   }
 
-  async function createUser(userData) {
+  async function createUser(userData, options = {}) {
     const newUser = await createUserUseCase(userData)
-    await loadUsers()
+    if (!options.skipReload) await loadUsers()
     return newUser
   }
 
@@ -65,6 +73,10 @@ export const useUserStore = defineStore('users', () => {
     return updateMeUseCase(userData, options)
   }
 
+  async function syncSpecialist(params) {
+    await syncSpecialistUseCase(params)
+  }
+
   async function deleteUser(userId) {
     await deleteUserUseCase(userId)
     users.value = users.value.filter((u) => u.id !== userId)
@@ -73,6 +85,7 @@ export const useUserStore = defineStore('users', () => {
   return {
     users,
     roles,
+    supportLevels,
     loading,
     loadingSelects,
     error,
@@ -82,6 +95,7 @@ export const useUserStore = defineStore('users', () => {
     updateUser,
     toggleStatus,
     updateMe,
+    syncSpecialist,
     deleteUser,
   }
 })

@@ -11,6 +11,8 @@ export class User {
     email = null,
     last_sign_in_at = null,
     role_name = null,
+    specialist_id = null,
+    support_level_name = [],
   }) {
     this.id = id
     this.firstName = first_name
@@ -23,6 +25,8 @@ export class User {
     this.email = email
     this.lastSignInAt = last_sign_in_at
     this.roleName = role_name
+    this.specialistId = specialist_id
+    this.supportLevelName = support_level_name || []
   }
 
   get fullName() {
