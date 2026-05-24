@@ -20,7 +20,12 @@ export const useAuthStore = defineStore('auth', () => {
     const authUser = await loginUseCase(email, password)
     user.value = authUser
 
-    await fetchProfile()
+    try {
+      await fetchProfile()
+    } catch (e) {
+      logout()
+      throw e
+    }
   }
 
   async function fetchProfile() {

@@ -23,8 +23,8 @@ const handleSubmit = async () => {
     await authStore.login(email.value, password.value)
     router.push({ name: 'dashboard' })
   } catch (error) {
-    // Si es usuario inactivo, mostrar ese mensaje directamente
-    if (error.name === 'UserInactiveError') {
+    // Si es usuario inactivo (UserInactiveError del store o 403 del guard del backend)
+    if (error.name === 'UserInactiveError' || error.isForbidden) {
       errorMessage.value = 'Tu cuenta esta inactiva. Contacta al soporte.'
       return
     }
