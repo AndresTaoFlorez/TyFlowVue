@@ -11,8 +11,8 @@ export async function updateMeUseCase({ firstName, secondName, firstSurname, sec
 
   if (emailChanged) payload.email = email
 
-  if (Array.isArray(roleIds) && roleIds.length > 0) payload.role_ids = roleIds
-  if (Array.isArray(supportLevelIds) && supportLevelIds.length > 0) payload.support_level_ids = supportLevelIds
+  if (Array.isArray(roleIds)) payload.role_ids = roleIds
+  if (Array.isArray(supportLevelIds)) payload.support_level_ids = supportLevelIds
 
   return UserRepository.updateMe(payload)
 }

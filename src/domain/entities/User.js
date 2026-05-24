@@ -11,7 +11,7 @@ export class User {
     email = null,
     last_sign_in_at = null,
     role_name = null,
-    support_level_name = null,
+    support_level_name = [],
   }) {
     this.id = id
     this.firstName = first_name

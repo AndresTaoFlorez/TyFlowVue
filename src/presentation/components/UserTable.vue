@@ -38,8 +38,8 @@ defineEmits(['toggle', 'edit'])
             <span v-else>N/A</span>
           </td>
           <td>
-            <template v-if="user.supportLevelName">
-              <span v-for="level in user.supportLevelName.split(', ')" :key="level" class="level-tag">{{ level }}</span>
+            <template v-if="user.supportLevelName?.length">
+              <span v-for="level in user.supportLevelName" :key="level" class="level-tag">{{ level }}</span>
             </template>
             <span v-else>N/A</span>
           </td>

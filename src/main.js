@@ -3,6 +3,7 @@ import '@/styles/font-overrides.css'
 import '@/styles/tokens.css'
 import '@/styles/reset.css'
 import '@/styles/utilities.css'
+import '@/styles/pending.css'
 
 import { createApp } from 'vue'
 import { createPinia } from 'pinia'
@@ -29,3 +30,5 @@ if (token) {
 
 app.use(router)
 app.mount('#app')
+
+if (window.__splashCleanup) window.__splashCleanup()

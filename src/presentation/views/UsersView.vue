@@ -66,11 +66,12 @@ const abrirCrear = () => {
   mostrarModal.value = true
 }
 
-const resolverIds = (nombresCsv, lista) => {
-  if (!nombresCsv) return []
-  const nombres = nombresCsv.split(',').map(n => n.trim().toLowerCase())
+const resolverIds = (nombres, lista) => {
+  if (!nombres) return []
+  const arr = Array.isArray(nombres) ? nombres : nombres.split(',')
+  const nombresLower = arr.map(n => n.trim().toLowerCase())
   return lista
-    .filter(item => nombres.includes((item.displayName || item.name || '').toLowerCase()))
+    .filter(item => nombresLower.includes((item.displayName || item.name || '').toLowerCase()))
     .map(item => item.id)
 }
 

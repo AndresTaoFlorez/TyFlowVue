@@ -5,6 +5,7 @@ import { useAuthStore } from '@/presentation/stores/useAuthStore'
 import { useUserStore } from '@/presentation/stores/useUserStore'
 import { useRouter } from 'vue-router'
 import ToastNotification from '@/presentation/components/ToastNotification.vue'
+import { usePendingFields } from '@/presentation/composables/usePendingFields'
 
 const authStore = useAuthStore()
 const userStore = useUserStore()
@@ -20,6 +21,8 @@ const confirmandoEmail = ref(false)
 const toastVisible = ref(false)
 const toastMessage = ref('')
 const cargandoSelects = ref(false)
+const formularioOriginal = ref({})
+const { isPending, markPending, clearPending } = usePendingFields()
 
 const formulario = ref({
   firstName: '', secondName: '',
@@ -35,15 +38,16 @@ const adminRoleId = computed(() => {
   return role?.id ?? null
 })
 
-const resolverIds = (nombresCsv, lista) => {
-  if (!nombresCsv) return []
-  const nombres = nombresCsv.split(',').map(n => n.trim().toLowerCase())
+const resolverIds = (nombres, lista) => {
+  if (!nombres) return []
+  const arr = Array.isArray(nombres) ? nombres : nombres.split(',')
+  const nombresLower = arr.map(n => n.trim().toLowerCase())
   return lista
-    .filter(item => nombres.includes((item.name || '').toLowerCase()))
+    .filter(item => nombresLower.includes((item.name || '').toLowerCase()))
     .map(item => item.id)
 }
 
-const abrirEditar = () => {
+const abrirEditar = async () => {
   const p = profile.value
   emailOriginal.value = p.email || ''
   formulario.value = {
@@ -62,13 +66,15 @@ const abrirEditar = () => {
 
   if (isAdmin.value) {
     cargandoSelects.value = true
-    userStore.loadSelects().then(() => {
+    try {
+      await userStore.loadSelects()
       formulario.value.roleIds = resolverIds(p.roleName, userStore.roles)
       formulario.value.supportLevelIds = resolverIds(p.supportLevelName, userStore.supportLevels)
-    }).finally(() => {
+    } finally {
       cargandoSelects.value = false
-    })
+    }
   }
+  formularioOriginal.value = JSON.parse(JSON.stringify(formulario.value))
 }
 
 const cerrarEditar = () => {
@@ -127,7 +133,9 @@ const guardar = async () => {
       return
     }
 
+    markPending(formularioOriginal.value, formulario.value)
     await authStore.fetchProfile()
+    clearPending()
     toastMessage.value = 'Perfil actualizado correctamente.'
     toastVisible.value = true
   } catch (error) {
@@ -147,6 +155,7 @@ const guardar = async () => {
     }
   } finally {
     cargando.value = false
+    clearPending()
   }
 }
 
@@ -190,11 +199,11 @@ onUnmounted(() => {
       <div class="profile-card__body">
         <div class="profile-field">
           <span class="profile-field__label">Documento</span>
-          <span class="profile-field__value">{{ profile.documentNumber }}</span>
+          <span class="profile-field__value" :class="{ 'field--pending': isPending('documentNumber') }">{{ profile.documentNumber }}</span>
         </div>
         <div class="profile-field">
           <span class="profile-field__label">Nombre completo</span>
-          <span class="profile-field__value">
+          <span class="profile-field__value" :class="{ 'field--pending': isPending(['firstName', 'secondName', 'firstSurname', 'secondSurname']) }">
             {{ profile.firstName }}
             {{ profile.secondName ? profile.secondName + ' ' : '' }}
             {{ profile.firstSurname }}
@@ -203,7 +212,7 @@ onUnmounted(() => {
         </div>
         <div class="profile-field">
           <span class="profile-field__label">Roles</span>
-          <div class="profile-field__tags">
+          <div class="profile-field__tags" :class="{ 'field--pending': isPending('roleIds') }">
             <template v-if="profile.roleName">
               <span v-for="rol in profile.roleName.split(', ')" :key="rol" class="role-tag">{{ rol }}</span>
             </template>
@@ -212,9 +221,9 @@ onUnmounted(() => {
         </div>
         <div class="profile-field">
           <span class="profile-field__label">Niveles</span>
-          <div class="profile-field__tags">
-            <template v-if="profile.supportLevelName">
-              <span v-for="level in profile.supportLevelName.split(', ')" :key="level" class="level-tag">{{ level }}</span>
+          <div class="profile-field__tags" :class="{ 'field--pending': isPending('supportLevelIds') }">
+            <template v-if="profile.supportLevelName?.length">
+              <span v-for="level in profile.supportLevelName" :key="level" class="level-tag">{{ level }}</span>
             </template>
             <span v-else class="profile-field__na">Sin nivel asignado</span>
           </div>

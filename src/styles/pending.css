@@ -1,0 +1,35 @@
+/* ──────────────────────────────────────────────────────────
+   Pending field indicator
+   Clase global para marcar campos cuyo valor está pendiente
+   de confirmación del backend (shimmer skeleton).
+
+   Uso:  :class="{ 'field--pending': isPending('campo') }"
+   ────────────────────────────────────────────────────────── */
+
+.field--pending {
+  position: relative;
+  color: transparent !important;
+  background: linear-gradient(
+    90deg,
+    var(--border-light) 25%,
+    #f0f0f0 50%,
+    var(--border-light) 75%
+  );
+  background-size: 200% 100%;
+  animation: field-pending-shimmer 1.5s ease-in-out infinite;
+  border-radius: var(--radius-sm);
+  user-select: none;
+  pointer-events: none;
+  min-width: 4rem;
+  min-height: 1.2em;
+  display: inline-block;
+}
+
+.field--pending * {
+  visibility: hidden;
+}
+
+@keyframes field-pending-shimmer {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
