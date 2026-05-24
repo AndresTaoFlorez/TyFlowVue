@@ -9,7 +9,7 @@ export async function createUserUseCase({ firstName, firstSurname, documentNumbe
     second_surname: secondSurname || undefined,
     email,
     password,
-    role_ids: roleIds?.length ? roleIds : undefined,
-    support_level_ids: supportLevelIds?.length ? supportLevelIds : undefined,
+    role_ids: roleIds,
+    support_level_ids: supportLevelIds,
   })
 }
