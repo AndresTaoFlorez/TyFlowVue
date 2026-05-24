@@ -216,20 +216,18 @@ const guardarUsuario = async () => {
       savedUser = await userStore.createUser(formulario.value, { skipReload: true })
     }
 
-    // Sincronizar specialist y support levels
+    // Sincronizar support levels si el response indica que es specialist
     let specialistError = null
-    const wasSpecialist = !!editandoUser.value?.specialistId
-    const userId = esEdicion ? editandoUserId.value : savedUser.id
-    try {
-      await userStore.syncSpecialist({
-        userId,
-        specialistId: editandoUser.value?.specialistId || null,
-        wasSpecialist,
-        isNowSpecialist,
-        selectedSupportLevelIds: isNowSpecialist ? formulario.value.supportLevelIds : [],
-      })
-    } catch (e) {
-      specialistError = e
+    if (savedUser.specialistId && isNowSpecialist) {
+      try {
+        await userStore.syncSpecialist({
+          specialistId: savedUser.specialistId,
+          selectedSupportLevelIds: formulario.value.supportLevelIds,
+          wasSpecialist: !!editandoUser.value?.specialistId,
+        })
+      } catch (e) {
+        specialistError = e
+      }
     }
 
     if (!cambioEmailPropio) await userStore.loadUsers()
