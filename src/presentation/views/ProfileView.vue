@@ -22,7 +22,7 @@ const toastVisible = ref(false)
 const toastMessage = ref('')
 const cargandoSelects = ref(false)
 const formularioOriginal = ref({})
-const { isPending, markPending, clearPending } = usePendingFields()
+const { isPending, markPending, clearPending, hasChanges } = usePendingFields()
 
 const formulario = ref({
   firstName: '', secondName: '',
@@ -107,6 +107,10 @@ const validarFormulario = () => {
 
 const guardar = async () => {
   if (!validarFormulario()) return
+  if (!hasChanges(formularioOriginal.value, formulario.value)) {
+    cerrarEditar()
+    return
+  }
 
   const cambioEmail = emailCambio()
 

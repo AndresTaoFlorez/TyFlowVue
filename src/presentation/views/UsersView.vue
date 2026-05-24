@@ -7,10 +7,12 @@ import SkeletonCard from '@/presentation/components/SkeletonCard.vue'
 import UserTable from '@/presentation/components/UserTable.vue'
 import UserCardGrid from '@/presentation/components/UserCardGrid.vue'
 import ToastNotification from '@/presentation/components/ToastNotification.vue'
+import { usePendingFields } from '@/presentation/composables/usePendingFields'
 
 const userStore = useUserStore()
 const authStore = useAuthStore()
 const router = useRouter()
+const { hasChanges } = usePendingFields()
 
 const busqueda = ref('')
 
@@ -40,6 +42,7 @@ const vistaCards = ref(true)
 const errores = ref({})
 const toastVisible = ref(false)
 const toastMessage = ref('')
+const formularioOriginal = ref({})
 
 const formulario = ref({
   firstName: '', secondName: '',
@@ -94,6 +97,7 @@ const abrirEditar = async (user) => {
       roleIds: resolverIds(user.roleName, userStore.roles),
       supportLevelIds: resolverIds(user.supportLevelName, userStore.supportLevels),
     }
+    formularioOriginal.value = JSON.parse(JSON.stringify(formulario.value))
     mostrarModal.value = true
   } finally {
     cargandoEditar.value = null
@@ -139,6 +143,10 @@ const esEdicionPropia = computed(() =>
 const guardarUsuario = async () => {
   if (modoVista.value) return
   if (!validarFormulario()) return
+  if (modoEdicion.value && !hasChanges(formularioOriginal.value, formulario.value)) {
+    cerrarModal()
+    return
+  }
 
   // Paso de confirmación si se cambió el correo
   if (emailCambio.value && !confirmandoEmail.value) {

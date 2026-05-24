@@ -44,7 +44,15 @@ export function usePendingFields() {
 
   const hasPending = computed(() => _pending.value.size > 0)
 
-  return { hasPending, isPending, markPending, clearPending }
+  function hasChanges(oldData, newData) {
+    for (const key of Object.keys(newData)) {
+      if (!(key in oldData)) continue
+      if (!isEqual(oldData[key], newData[key])) return true
+    }
+    return false
+  }
+
+  return { hasPending, isPending, markPending, clearPending, hasChanges }
 }
 
 function isEqual(a, b) {
