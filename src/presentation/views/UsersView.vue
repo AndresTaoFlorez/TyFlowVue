@@ -138,6 +138,10 @@ const abrirEditar = async (user) => {
       roleIds: resolverIds(user.roleName, userStore.roles),
       supportLevelIds: resolverIds(user.supportLevelName, userStore.supportLevels),
     }
+    // Si el usuario ya es specialist en la BD, asegurar que el rol esté marcado
+    if (user.specialistId && specialistRoleId.value && !formulario.value.roleIds.includes(specialistRoleId.value)) {
+      formulario.value.roleIds.push(specialistRoleId.value)
+    }
     formularioOriginal.value = JSON.parse(JSON.stringify(formulario.value))
     mostrarModal.value = true
   } finally {
