@@ -30,7 +30,6 @@ const formulario = ref({
   documentNumber: '',
   email: '',
   roleIds: [],
-  supportLevelIds: [],
 })
 
 const adminRoleId = computed(() => {
@@ -58,7 +57,6 @@ const abrirEditar = async () => {
     documentNumber: p.documentNumber || '',
     email: p.email || '',
     roleIds: [],
-    supportLevelIds: [],
   }
   errores.value = {}
   confirmandoEmail.value = false
@@ -69,7 +67,6 @@ const abrirEditar = async () => {
     try {
       await userStore.loadSelects()
       formulario.value.roleIds = resolverIds(p.roleName, userStore.roles)
-      formulario.value.supportLevelIds = resolverIds(p.supportLevelName, userStore.supportLevels)
     } finally {
       cargandoSelects.value = false
     }
@@ -124,7 +121,6 @@ const guardar = async () => {
     const datos = { ...formulario.value }
     if (!isAdmin.value) {
       delete datos.roleIds
-      delete datos.supportLevelIds
     }
     await userStore.updateMe(datos, {
       emailChanged: cambioEmail,
@@ -223,15 +219,6 @@ onUnmounted(() => {
             <span v-else class="profile-field__na">Sin rol asignado</span>
           </div>
         </div>
-        <div class="profile-field">
-          <span class="profile-field__label">Niveles</span>
-          <div class="profile-field__tags" :class="{ 'field--pending': isPending('supportLevelIds') }">
-            <template v-if="profile.supportLevelName?.length">
-              <span v-for="level in profile.supportLevelName" :key="level" class="level-tag">{{ level }}</span>
-            </template>
-            <span v-else class="profile-field__na">Sin nivel asignado</span>
-          </div>
-        </div>
       </div>
     </div>
 
@@ -290,18 +277,6 @@ onUnmounted(() => {
                   </div>
                   <span v-if="errores.roles" class="error-text">{{ errores.roles }}</span>
                 </template>
-              </div>
-              <div class="form-group">
-                <label>Niveles</label>
-                <div v-if="userStore.loadingSelects" class="checkbox-group checkbox-group--loading">
-                  <i class='bx bx-loader-alt bx-spin'></i> Cargando niveles...
-                </div>
-                <div v-else class="checkbox-group">
-                  <label v-for="level in userStore.supportLevels" :key="level.id" class="checkbox-label">
-                    <input type="checkbox" :value="level.id" v-model="formulario.supportLevelIds">
-                    {{ level.name }}
-                  </label>
-                </div>
               </div>
             </template>
           </div>

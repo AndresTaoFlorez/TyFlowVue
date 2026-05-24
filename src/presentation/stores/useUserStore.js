@@ -7,12 +7,10 @@ import { toggleUserStatusUseCase } from '@/application/use-cases/users/ToggleUse
 import { deleteUserUseCase } from '@/application/use-cases/users/DeleteUserUseCase'
 import { updateMeUseCase } from '@/application/use-cases/users/UpdateMeUseCase'
 import { fetchRolesUseCase } from '@/application/use-cases/roles/FetchRolesUseCase'
-import { fetchSupportLevelsUseCase } from '@/application/use-cases/support-levels/FetchSupportLevelsUseCase'
 
 export const useUserStore = defineStore('users', () => {
   const users = ref([])
   const roles = ref([])
-  const supportLevels = ref([])
   const loading = ref(false)
   const loadingSelects = ref(false)
   const error = ref(null)
@@ -32,16 +30,10 @@ export const useUserStore = defineStore('users', () => {
   }
 
   async function loadSelects() {
-    // No recargar si ya se tienen roles y niveles
-    if (roles.value.length > 0 && supportLevels.value.length > 0) return
+    if (roles.value.length > 0) return
     loadingSelects.value = true
     try {
-      const [rolesData, supportLevelsData] = await Promise.all([
-        fetchRolesUseCase(),
-        fetchSupportLevelsUseCase(),
-      ])
-      roles.value = rolesData
-      supportLevels.value = supportLevelsData
+      roles.value = await fetchRolesUseCase()
     } finally {
       loadingSelects.value = false
     }
@@ -81,7 +73,6 @@ export const useUserStore = defineStore('users', () => {
   return {
     users,
     roles,
-    supportLevels,
     loading,
     loadingSelects,
     error,

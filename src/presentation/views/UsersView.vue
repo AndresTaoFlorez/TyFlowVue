@@ -79,7 +79,6 @@ const formulario = ref({
   email: '',
   password: '',
   roleIds: [],
-  supportLevelIds: [],
 })
 
 const abrirCrear = () => {
@@ -92,7 +91,6 @@ const abrirCrear = () => {
     email: '',
     password: '',
     roleIds: [],
-    supportLevelIds: [],
   }
   mostrarModal.value = true
 }
@@ -123,7 +121,6 @@ const abrirEditar = async (user) => {
       documentNumber: user.documentNumber || '',
       email: user.email || '',
       roleIds: resolverIds(user.roleName, userStore.roles),
-      supportLevelIds: resolverIds(user.supportLevelName, userStore.supportLevels),
     }
     formularioOriginal.value = JSON.parse(JSON.stringify(formulario.value))
     mostrarModal.value = true
@@ -219,7 +216,7 @@ const guardarUsuario = async () => {
     } else if (error.isForbidden) {
       errores.value.general = 'No tienes permisos para editar este usuario.'
     } else if (error.isNotFound) {
-      errores.value.general = 'Un rol o nivel seleccionado no existe.'
+      errores.value.general = 'El rol seleccionado no existe.'
     } else if (error.hasFieldErrors) {
       errores.value = { ...errores.value, ...error.fields }
     } else {
@@ -391,18 +388,6 @@ onUnmounted(() => {
                 </div>
                 <span v-if="errores.roles" class="error-text">{{ errores.roles }}</span>
               </template>
-            </div>
-            <div class="form-group">
-              <label>Niveles</label>
-              <div v-if="userStore.loadingSelects" class="checkbox-group checkbox-group--loading">
-                <i class='bx bx-loader-alt bx-spin'></i> Cargando niveles...
-              </div>
-              <div v-else class="checkbox-group">
-                <label v-for="level in userStore.supportLevels" :key="level.id" class="checkbox-label">
-                  <input type="checkbox" :value="level.id" v-model="formulario.supportLevelIds" :disabled="modoVista">
-                  {{ level.name }}
-                </label>
-              </div>
             </div>
           </div>
 

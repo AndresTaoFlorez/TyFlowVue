@@ -1,6 +1,6 @@
 import { UserRepository } from '@/infrastructure/repositories/UserRepository'
 
-export async function updateMeUseCase({ firstName, secondName, firstSurname, secondSurname, documentNumber, email, roleIds, supportLevelIds }, { emailChanged = false } = {}) {
+export async function updateMeUseCase({ firstName, secondName, firstSurname, secondSurname, documentNumber, email, roleIds }, { emailChanged = false } = {}) {
   const payload = {
     first_name: firstName,
     first_surname: firstSurname,
@@ -12,7 +12,6 @@ export async function updateMeUseCase({ firstName, secondName, firstSurname, sec
   if (emailChanged) payload.email = email
 
   if (Array.isArray(roleIds)) payload.role_ids = roleIds
-  if (Array.isArray(supportLevelIds)) payload.support_level_ids = supportLevelIds
 
   return UserRepository.updateMe(payload)
 }

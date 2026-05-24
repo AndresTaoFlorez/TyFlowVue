@@ -18,7 +18,6 @@ defineEmits(['toggle', 'edit'])
           <th>Documento</th>
           <th>Correo</th>
           <th>Rol</th>
-          <th>Nivel</th>
           <th>Acciones</th>
         </tr>
       </thead>
@@ -34,12 +33,6 @@ defineEmits(['toggle', 'edit'])
           <td>
             <template v-if="user.roleName">
               <span v-for="rol in user.roleName.split(', ')" :key="rol" class="role-tag">{{ rol }}</span>
-            </template>
-            <span v-else>N/A</span>
-          </td>
-          <td>
-            <template v-if="user.supportLevelName?.length">
-              <span v-for="level in user.supportLevelName" :key="level" class="level-tag">{{ level }}</span>
             </template>
             <span v-else>N/A</span>
           </td>
