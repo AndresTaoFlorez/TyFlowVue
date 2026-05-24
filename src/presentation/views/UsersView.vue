@@ -15,18 +15,46 @@ const router = useRouter()
 const { hasChanges } = usePendingFields()
 
 const busqueda = ref('')
+const ordenamiento = ref('rol-nombre')
+const mostrarDropdownOrden = ref(false)
+
+const ROLE_PRIORITY = { admin: 0, supervisor: 1, agente: 2 }
+
+function getRolePriority(user) {
+  const name = (user.roleName || '').toLowerCase()
+  const roles = name.split(',').map(r => r.trim())
+  let best = 99
+  for (const r of roles) {
+    if (ROLE_PRIORITY[r] !== undefined && ROLE_PRIORITY[r] < best) best = ROLE_PRIORITY[r]
+  }
+  return best
+}
 
 const currentUserId = computed(() => authStore.profile?.id)
 
 const usuariosFiltrados = computed(() => {
   const sinActual = userStore.users.filter(u => u.id !== currentUserId.value)
   const termino = busqueda.value.toLowerCase().trim()
-  if (!termino) return sinActual
-  return sinActual.filter(u =>
-    u.fullName.toLowerCase().includes(termino) ||
-    (u.email || '').toLowerCase().includes(termino) ||
-    (u.documentNumber || '').toLowerCase().includes(termino)
-  )
+  const filtrados = !termino
+    ? [...sinActual]
+    : sinActual.filter(u =>
+        u.fullName.toLowerCase().includes(termino) ||
+        (u.email || '').toLowerCase().includes(termino) ||
+        (u.documentNumber || '').toLowerCase().includes(termino)
+      )
+
+  const orden = ordenamiento.value
+  if (orden === 'alfabetico') {
+    filtrados.sort((a, b) => a.fullName.localeCompare(b.fullName, 'es'))
+  } else if (orden === 'rol') {
+    filtrados.sort((a, b) => getRolePriority(a) - getRolePriority(b))
+  } else {
+    filtrados.sort((a, b) => {
+      const diff = getRolePriority(a) - getRolePriority(b)
+      return diff !== 0 ? diff : a.fullName.localeCompare(b.fullName, 'es')
+    })
+  }
+  return filtrados
 })
 
 const mostrarModal = ref(false)
@@ -220,14 +248,23 @@ const toggleEstado = async (userId) => {
 
 const onEsc = (e) => { if (e.key === 'Escape' && mostrarModal.value) cerrarModal() }
 
+const sortDropdownRef = ref(null)
+const cerrarDropdownFuera = (e) => {
+  if (sortDropdownRef.value && !sortDropdownRef.value.contains(e.target)) {
+    mostrarDropdownOrden.value = false
+  }
+}
+
 onMounted(() => {
   userStore.loadUsers()
   userStore.loadSelects()
   window.addEventListener('keydown', onEsc)
+  window.addEventListener('click', cerrarDropdownFuera)
 })
 
 onUnmounted(() => {
   window.removeEventListener('keydown', onEsc)
+  window.removeEventListener('click', cerrarDropdownFuera)
 })
 </script>
 
@@ -247,6 +284,23 @@ onUnmounted(() => {
       <div class="filter-bar__group">
         <i class='bx bx-search filter-bar__icon'></i>
         <input v-model="busqueda" type="text" class="filter-bar__input" placeholder="Buscar por nombre, correo o número de identificación...">
+      </div>
+      <!-- Ordenar -->
+      <div class="sort-wrapper" ref="sortDropdownRef">
+        <button class="btn-view-toggle" @click.stop="mostrarDropdownOrden = !mostrarDropdownOrden" title="Ordenar">
+          <i class='bx bx-sort-alt-2'></i>
+        </button>
+        <div v-if="mostrarDropdownOrden" class="sort-dropdown">
+          <button :class="['sort-dropdown__option', { 'sort-dropdown__option--active': ordenamiento === 'alfabetico' }]" @click="ordenamiento = 'alfabetico'; mostrarDropdownOrden = false">
+            <i class='bx bx-sort-a-z'></i> Alfabético
+          </button>
+          <button :class="['sort-dropdown__option', { 'sort-dropdown__option--active': ordenamiento === 'rol' }]" @click="ordenamiento = 'rol'; mostrarDropdownOrden = false">
+            <i class='bx bx-shield'></i> Por rol
+          </button>
+          <button :class="['sort-dropdown__option', { 'sort-dropdown__option--active': ordenamiento === 'rol-nombre' }]" @click="ordenamiento = 'rol-nombre'; mostrarDropdownOrden = false">
+            <i class='bx bx-filter'></i> Rol + Nombre
+          </button>
+        </div>
       </div>
       <!-- change between table and cards view -->
       <button class="btn-view-toggle" @click="vistaCards = !vistaCards" :title="vistaCards ? 'Ver como tabla' : 'Ver como cards'">
@@ -500,6 +554,51 @@ onUnmounted(() => {
 .btn-view-toggle:hover {
   color: var(--primary-500);
   border-color: var(--primary-500);
+}
+
+.sort-wrapper {
+  position: relative;
+}
+
+.sort-dropdown {
+  position: absolute;
+  top: calc(100% + 0.5rem);
+  right: 0;
+  background: white;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  min-width: 10rem;
+  z-index: 50;
+  overflow: hidden;
+}
+
+.sort-dropdown__option {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.6rem 1rem;
+  border: none;
+  background: none;
+  font-size: 0.85rem;
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.sort-dropdown__option:hover {
+  background-color: var(--bg-card);
+}
+
+.sort-dropdown__option--active {
+  color: var(--primary-500);
+  font-weight: 600;
+  background-color: rgba(42, 199, 143, 0.08);
+}
+
+.sort-dropdown__option i {
+  font-size: 1.1rem;
 }
 
 .filter-bar {
