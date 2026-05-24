@@ -217,15 +217,20 @@ const guardarUsuario = async () => {
     }
 
     // Sincronizar specialist y support levels
+    let specialistError = null
     const wasSpecialist = !!editandoUser.value?.specialistId
     const userId = esEdicion ? editandoUserId.value : savedUser.id
-    await userStore.syncSpecialist({
-      userId,
-      specialistId: editandoUser.value?.specialistId || null,
-      wasSpecialist,
-      isNowSpecialist,
-      selectedSupportLevelIds: isNowSpecialist ? formulario.value.supportLevelIds : [],
-    })
+    try {
+      await userStore.syncSpecialist({
+        userId,
+        specialistId: editandoUser.value?.specialistId || null,
+        wasSpecialist,
+        isNowSpecialist,
+        selectedSupportLevelIds: isNowSpecialist ? formulario.value.supportLevelIds : [],
+      })
+    } catch (e) {
+      specialistError = e
+    }
 
     if (!cambioEmailPropio) await userStore.loadUsers()
     cerrarModal()
@@ -236,7 +241,11 @@ const guardarUsuario = async () => {
       return
     }
 
-    toastMessage.value = esEdicion ? 'Usuario actualizado correctamente.' : 'Usuario creado correctamente.'
+    if (specialistError) {
+      toastMessage.value = 'Usuario guardado, pero hubo un error al sincronizar los niveles de soporte.'
+    } else {
+      toastMessage.value = esEdicion ? 'Usuario actualizado correctamente.' : 'Usuario creado correctamente.'
+    }
     toastVisible.value = true
   } catch (error) {
     // Si cambió su propio email y el PUT fue exitoso pero algo posterior falló,
