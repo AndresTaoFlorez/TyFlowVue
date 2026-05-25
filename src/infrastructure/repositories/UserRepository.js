@@ -4,7 +4,8 @@ import { User } from '@/domain/entities/User'
 export const UserRepository = {
   async fetchAll() {
     const { data } = await client.get('/users')
-    return data.map((item) => new User(item))
+    const items = Array.isArray(data) ? data : data.data ?? []
+    return items.map((item) => new User(item))
   },
 
   async fetchMe() {
@@ -18,12 +19,8 @@ export const UserRepository = {
   },
 
   async update(userId, userData) {
-    const { data } = await client.patch(`/users/${userId}`, userData)
-    return new User(data)
-  },
-
-  async updateMe(userData) {
-    const { data } = await client.patch('/users/me', userData)
+    const url = userId ? `/users/${userId}` : '/users/me'
+    const { data } = await client.patch(url, userData)
     return new User(data)
   },
 

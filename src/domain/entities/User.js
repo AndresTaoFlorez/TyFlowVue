@@ -10,9 +10,12 @@ export class User {
     is_active = true,
     email = null,
     last_sign_in_at = null,
-    role_name = null,
+    full_name = null,
+    role_names = [],
     specialist_id = null,
-    support_level_name = [],
+    specialist_is_active = null,
+    support_level_names = [],
+    application_assignments = [],
   }) {
     this.id = id
     this.firstName = first_name
@@ -24,12 +27,16 @@ export class User {
     this.isActive = is_active
     this.email = email
     this.lastSignInAt = last_sign_in_at
-    this.roleName = role_name
+    this.roleNames = Array.isArray(role_names) ? role_names : []
     this.specialistId = specialist_id
-    this.supportLevelName = support_level_name || []
+    this.specialistIsActive = specialist_is_active
+    this.supportLevelNames = Array.isArray(support_level_names) ? support_level_names : []
+    this.applicationAssignments = Array.isArray(application_assignments) ? application_assignments : []
+    this._fullName = full_name
   }
 
   get fullName() {
+    if (this._fullName) return this._fullName
     const names = [this.firstName, this.secondName, this.firstSurname, this.secondSurname]
     return names.filter(Boolean).join(' ')
   }

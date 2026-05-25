@@ -4,7 +4,7 @@ import UserCard from '@/presentation/components/UserCard.vue'
 defineProps({
   users: { type: Array, required: true },
   toggling: { type: Set, required: true },
-  loadingEditId: { type: String, default: null }
+  loadingEditId: { type: String, default: null },
 })
 
 defineEmits(['toggle', 'edit'])

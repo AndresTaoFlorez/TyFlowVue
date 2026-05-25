@@ -2,7 +2,7 @@
 defineProps({
   users: { type: Array, required: true },
   toggling: { type: Set, required: true },
-  loadingEditId: { type: String, default: null }
+  loadingEditId: { type: String, default: null },
 })
 
 defineEmits(['toggle', 'edit'])
@@ -32,14 +32,14 @@ defineEmits(['toggle', 'edit'])
           <td>{{ user.documentNumber }}</td>
           <td>{{ user.email || '—' }}</td>
           <td>
-            <template v-if="user.roleName">
-              <span v-for="rol in user.roleName.split(', ')" :key="rol" class="role-tag">{{ rol }}</span>
+            <template v-if="user.roleNames.length">
+              <span v-for="rol in user.roleNames" :key="rol" class="role-tag">{{ rol }}</span>
             </template>
             <span v-else>N/A</span>
           </td>
           <td>
-            <template v-if="user.supportLevelName?.length">
-              <span v-for="level in user.supportLevelName" :key="level" class="level-tag">{{ level }}</span>
+            <template v-if="user.supportLevelNames.length">
+              <span v-for="level in user.supportLevelNames" :key="level" class="level-tag">{{ level }}</span>
             </template>
             <span v-else>—</span>
           </td>

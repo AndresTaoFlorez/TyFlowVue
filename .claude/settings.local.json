@@ -6,7 +6,12 @@
       "Bash(ssh-keygen:*)",
       "Bash(ssh:*)",
       "Bash(npm install:*)",
-      "Bash(npm run:*)"
+      "Bash(npm run:*)",
+      "Bash(xargs grep:*)",
+      "Bash(curl -s http://64.23.152.231:8181/specialist-support-levels)",
+      "Bash(curl -s -X GET \"http://64.23.152.231:8181/support-levels\")",
+      "Bash(curl -s -X GET \"http://64.23.152.231:8181/users\")",
+      "Bash(python3 -c ':*)"
     ]
   }
 }

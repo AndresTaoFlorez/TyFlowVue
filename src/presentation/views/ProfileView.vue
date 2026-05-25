@@ -5,6 +5,8 @@ import { useAuthStore } from '@/presentation/stores/useAuthStore'
 import { useUserStore } from '@/presentation/stores/useUserStore'
 import { useRouter } from 'vue-router'
 import ToastNotification from '@/presentation/components/ToastNotification.vue'
+import SpecialistFields from '@/presentation/components/SpecialistFields.vue'
+import ChipSelect from '@/presentation/components/ChipSelect.vue'
 import { usePendingFields } from '@/presentation/composables/usePendingFields'
 
 const authStore = useAuthStore()
@@ -30,6 +32,8 @@ const formulario = ref({
   documentNumber: '',
   email: '',
   roleIds: [],
+  supportLevelIds: [],
+  applicationIds: [],
 })
 
 const adminRoleId = computed(() => {
@@ -37,10 +41,22 @@ const adminRoleId = computed(() => {
   return role?.id ?? null
 })
 
+const specialistRoleId = computed(() => {
+  const role = userStore.roles.find(r => r.name.toLowerCase() === 'specialist')
+  return role?.id ?? null
+})
+
+const esSpecialista = computed(() =>
+  specialistRoleId.value !== null && formulario.value.roleIds.includes(specialistRoleId.value)
+)
+
+const profileSupportLevels = computed(() => {
+  return profile.value?.supportLevelNames || []
+})
+
 const resolverIds = (nombres, lista) => {
-  if (!nombres) return []
-  const arr = Array.isArray(nombres) ? nombres : nombres.split(',')
-  const nombresLower = arr.map(n => n.trim().toLowerCase())
+  if (!nombres || !nombres.length) return []
+  const nombresLower = nombres.map(n => n.trim().toLowerCase())
   return lista
     .filter(item => nombresLower.includes((item.name || '').toLowerCase()))
     .map(item => item.id)
@@ -48,30 +64,39 @@ const resolverIds = (nombres, lista) => {
 
 const abrirEditar = async () => {
   const p = profile.value
-  emailOriginal.value = p.email || ''
-  formulario.value = {
-    firstName: p.firstName || '',
-    secondName: p.secondName || '',
-    firstSurname: p.firstSurname || '',
-    secondSurname: p.secondSurname || '',
-    documentNumber: p.documentNumber || '',
-    email: p.email || '',
-    roleIds: [],
-  }
+  cargandoSelects.value = true
   errores.value = {}
   confirmandoEmail.value = false
-  editando.value = true
 
-  if (isAdmin.value) {
-    cargandoSelects.value = true
-    try {
+  try {
+    let roleIds = []
+    let supportLevelIds = []
+    let applicationIds = []
+
+    if (isAdmin.value) {
       await userStore.loadSelects()
-      formulario.value.roleIds = resolverIds(p.roleName, userStore.roles)
-    } finally {
-      cargandoSelects.value = false
+      roleIds = resolverIds(p.roleNames, userStore.roles)
+      supportLevelIds = resolverIds(p.supportLevelNames, userStore.supportLevels)
+      applicationIds = p.applicationAssignments.map(a => a.application_id)
     }
+
+    emailOriginal.value = p.email || ''
+    formulario.value = {
+      firstName: p.firstName || '',
+      secondName: p.secondName || '',
+      firstSurname: p.firstSurname || '',
+      secondSurname: p.secondSurname || '',
+      documentNumber: p.documentNumber || '',
+      email: p.email || '',
+      roleIds,
+      supportLevelIds,
+      applicationIds,
+    }
+    formularioOriginal.value = JSON.parse(JSON.stringify(formulario.value))
+    editando.value = true
+  } finally {
+    cargandoSelects.value = false
   }
-  formularioOriginal.value = JSON.parse(JSON.stringify(formulario.value))
 }
 
 const cerrarEditar = () => {
@@ -99,6 +124,10 @@ const validarFormulario = () => {
       valido = false
     }
   }
+  if (esSpecialista.value && formulario.value.supportLevelIds.length === 0) {
+    errores.value.supportLevels = 'Debe seleccionar al menos un nivel de soporte.'
+    valido = false
+  }
   return valido
 }
 
@@ -118,13 +147,11 @@ const guardar = async () => {
 
   cargando.value = true
   try {
-    const datos = { ...formulario.value }
-    if (!isAdmin.value) {
-      delete datos.roleIds
-    }
-    await userStore.updateMe(datos, {
+    await userStore.updateUser(null, formulario.value, {
       emailChanged: cambioEmail,
+      skipReload: true,
     })
+
     cerrarEditar()
 
     if (cambioEmail) {
@@ -134,7 +161,7 @@ const guardar = async () => {
     }
 
     markPending(formularioOriginal.value, formulario.value)
-    await authStore.fetchProfile()
+    await Promise.all([authStore.fetchProfile(), userStore.loadUsers()])
     clearPending()
     toastMessage.value = 'Perfil actualizado correctamente.'
     toastVisible.value = true
@@ -166,6 +193,7 @@ const cancelarConfirmacion = () => {
 const onEsc = (e) => { if (e.key === 'Escape' && editando.value) cerrarEditar() }
 
 onMounted(() => {
+  userStore.loadSelects()
   window.addEventListener('keydown', onEsc)
 })
 
@@ -178,45 +206,92 @@ onUnmounted(() => {
   <section class="content">
     <div class="page-header">
       <h1 class="page-header__title">Mi Perfil</h1>
-      <button v-if="profile && !editando" @click="abrirEditar" class="btn-edit">
-        <i class='bx bx-edit-alt'></i> <span>Editar</span>
+      <button v-if="profile && !editando" @click="abrirEditar" class="btn-edit" :disabled="cargandoSelects">
+        <i :class="cargandoSelects ? 'bx bx-loader-alt bx-spin' : 'bx bx-edit-alt'"></i>
+        <span>{{ cargandoSelects ? 'Cargando...' : 'Editar' }}</span>
       </button>
     </div>
 
-    <div class="profile-card" v-if="profile">
-      <div class="profile-card__header">
-        <div class="profile-card__avatar">
-          <i class='bx bx-user'></i>
+    <div class="profile-layout" v-if="profile">
+      <!-- Columna izquierda: identidad -->
+      <div class="profile-identity">
+        <div class="profile-identity__avatar">
+          <span>{{ (profile.firstName?.[0] || '').toUpperCase() }}{{ (profile.firstSurname?.[0] || '').toUpperCase() }}</span>
         </div>
-        <div class="profile-card__identity">
-          <h2>{{ profile.fullName }}</h2>
-          <span class="profile-card__email">{{ profile.email || '—' }}</span>
+        <h2 class="profile-identity__name">{{ profile.fullName }}</h2>
+        <span class="profile-identity__email">{{ profile.email || '—' }}</span>
+        <span class="status-pill" :class="profile.isActive ? 'status-pill--active' : 'status-pill--inactive'">
+          <i class='bx' :class="profile.isActive ? 'bx-check-circle' : 'bx-x-circle'"></i>
+          {{ profile.isActive ? 'Activo' : 'Inactivo' }}
+        </span>
+        <div class="profile-identity__roles" :class="{ 'field--pending': isPending('roleIds') }">
+          <template v-if="profile.roleNames.length">
+            <span v-for="rol in profile.roleNames" :key="rol" class="role-tag">{{ rol }}</span>
+          </template>
+          <span v-else class="profile-identity__na">Sin roles</span>
         </div>
-        <span v-if="profile.isActive" class="status-badge status-badge--active">Activo</span>
-        <span v-else class="status-badge status-badge--inactive">Inactivo</span>
       </div>
 
-      <div class="profile-card__body">
-        <div class="profile-field">
-          <span class="profile-field__label">Documento</span>
-          <span class="profile-field__value" :class="{ 'field--pending': isPending('documentNumber') }">{{ profile.documentNumber }}</span>
+      <!-- Columna derecha: detalles -->
+      <div class="profile-details">
+        <!-- Info personal -->
+        <div class="detail-card">
+          <h3 class="detail-card__title">
+            <i class='bx bx-id-card'></i> Informacion Personal
+          </h3>
+          <div class="detail-card__grid">
+            <div class="detail-item" :class="{ 'field--pending': isPending('firstName') }">
+              <span class="detail-item__label">Primer nombre</span>
+              <span class="detail-item__value">{{ profile.firstName }}</span>
+            </div>
+            <div class="detail-item" :class="{ 'field--pending': isPending('secondName') }">
+              <span class="detail-item__label">Segundo nombre</span>
+              <span class="detail-item__value">{{ profile.secondName || '—' }}</span>
+            </div>
+            <div class="detail-item" :class="{ 'field--pending': isPending('firstSurname') }">
+              <span class="detail-item__label">Primer apellido</span>
+              <span class="detail-item__value">{{ profile.firstSurname }}</span>
+            </div>
+            <div class="detail-item" :class="{ 'field--pending': isPending('secondSurname') }">
+              <span class="detail-item__label">Segundo apellido</span>
+              <span class="detail-item__value">{{ profile.secondSurname || '—' }}</span>
+            </div>
+            <div class="detail-item" :class="{ 'field--pending': isPending('documentNumber') }">
+              <span class="detail-item__label">Documento</span>
+              <span class="detail-item__value detail-item__value--mono">{{ profile.documentNumber }}</span>
+            </div>
+            <div class="detail-item">
+              <span class="detail-item__label">Correo</span>
+              <span class="detail-item__value">{{ profile.email || '—' }}</span>
+            </div>
+          </div>
         </div>
-        <div class="profile-field">
-          <span class="profile-field__label">Nombre completo</span>
-          <span class="profile-field__value" :class="{ 'field--pending': isPending(['firstName', 'secondName', 'firstSurname', 'secondSurname']) }">
-            {{ profile.firstName }}
-            {{ profile.secondName ? profile.secondName + ' ' : '' }}
-            {{ profile.firstSurname }}
-            {{ profile.secondSurname || '' }}
-          </span>
+
+        <!-- Specialist info -->
+        <div class="detail-card" v-if="profileSupportLevels.length">
+          <h3 class="detail-card__title">
+            <i class='bx bx-layer'></i> Niveles de Soporte
+          </h3>
+          <div class="detail-card__tags">
+            <span v-for="level in profileSupportLevels" :key="level" class="level-tag">{{ level }}</span>
+          </div>
         </div>
-        <div class="profile-field">
-          <span class="profile-field__label">Roles</span>
-          <div class="profile-field__tags" :class="{ 'field--pending': isPending('roleIds') }">
-            <template v-if="profile.roleName">
-              <span v-for="rol in profile.roleName.split(', ')" :key="rol" class="role-tag">{{ rol }}</span>
-            </template>
-            <span v-else class="profile-field__na">Sin rol asignado</span>
+
+        <!-- Aplicaciones -->
+        <div class="detail-card" v-if="profile.applicationAssignments.length">
+          <h3 class="detail-card__title">
+            <i class='bx bx-grid-alt'></i> Aplicaciones
+          </h3>
+          <div class="app-list">
+            <div v-for="app in profile.applicationAssignments" :key="app.application_id" class="app-item">
+              <div class="app-item__icon">
+                <i class='bx bx-cube'></i>
+              </div>
+              <div class="app-item__info">
+                <span class="app-item__name">{{ app.application_name }}</span>
+                <span v-if="app.assigned_at" class="app-item__date">Desde {{ new Date(app.assigned_at).toLocaleDateString('es-CO') }}</span>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -234,49 +309,60 @@ onUnmounted(() => {
           <div class="form-grid">
             <div class="form-group">
               <label>Primer Nombre *</label>
-              <input v-model="formulario.firstName" type="text" required class="form-input">
+              <input v-model="formulario.firstName" type="text" required class="form-input" :disabled="cargando">
             </div>
             <div class="form-group">
               <label>Segundo Nombre</label>
-              <input v-model="formulario.secondName" type="text" class="form-input">
+              <input v-model="formulario.secondName" type="text" class="form-input" :disabled="cargando">
             </div>
             <div class="form-group">
               <label>Primer Apellido *</label>
-              <input v-model="formulario.firstSurname" type="text" required class="form-input">
+              <input v-model="formulario.firstSurname" type="text" required class="form-input" :disabled="cargando">
             </div>
             <div class="form-group">
               <label>Segundo Apellido</label>
-              <input v-model="formulario.secondSurname" type="text" class="form-input">
+              <input v-model="formulario.secondSurname" type="text" class="form-input" :disabled="cargando">
             </div>
             <div class="form-group">
               <label>Numero de Documento *</label>
               <input v-model="formulario.documentNumber" type="text" required class="form-input"
-                :class="{ 'input-error': errores.documentNumber }">
+                :class="{ 'input-error': errores.documentNumber }" :disabled="cargando">
               <span v-if="errores.documentNumber" class="error-text">{{ errores.documentNumber }}</span>
             </div>
             <div class="form-group">
               <label>Correo electronico</label>
               <input v-model="formulario.email" type="email" class="form-input" placeholder="correo@ejemplo.com"
-                :class="{ 'input-error': errores.email }" autocomplete="new-email">
+                :class="{ 'input-error': errores.email }" autocomplete="new-email" :disabled="cargando">
               <span v-if="errores.email" class="error-text">{{ errores.email }}</span>
               <span v-else class="hint-text">Si se cambia, tu sesion se cerrara.</span>
             </div>
             <template v-if="isAdmin">
-              <div class="form-group">
-                <label>Roles *</label>
-                <div v-if="userStore.loadingSelects" class="checkbox-group checkbox-group--loading">
-                  <i class='bx bx-loader-alt bx-spin'></i> Cargando roles...
-                </div>
-                <template v-else>
-                  <div class="checkbox-group" :class="{ 'input-error': errores.roles }">
-                    <label v-for="role in userStore.roles" :key="role.id" class="checkbox-label">
-                      <input type="checkbox" :value="role.id" v-model="formulario.roleIds"
-                        :disabled="adminRoleId !== null && role.id === adminRoleId">
-                      {{ role.name }}
-                    </label>
-                  </div>
-                  <span v-if="errores.roles" class="error-text">{{ errores.roles }}</span>
-                </template>
+              <div class="form-group form-group--full">
+                <ChipSelect
+                  :options="userStore.roles"
+                  v-model="formulario.roleIds"
+                  label="Roles *"
+                  icon="bx-shield"
+                  color="amber"
+                  :loading="userStore.loadingSelects"
+                  :disabled="cargando"
+                  :error="errores.roles"
+                  :locked-ids="adminRoleId ? [adminRoleId] : []"
+                  empty-text="Sin roles disponibles"
+                />
+              </div>
+              <div v-if="esSpecialista" class="form-group form-group--full">
+                <SpecialistFields
+                  :support-levels="userStore.supportLevels"
+                  :applications="userStore.applications"
+                  :selected-support-level-ids="formulario.supportLevelIds"
+                  :selected-application-ids="formulario.applicationIds"
+                  :loading="userStore.loadingSelects"
+                  :disabled="cargando"
+                  :support-level-error="errores.supportLevels"
+                  @update:selected-support-level-ids="formulario.supportLevelIds = $event"
+                  @update:selected-application-ids="formulario.applicationIds = $event"
+                />
               </div>
             </template>
           </div>
@@ -369,127 +455,224 @@ onUnmounted(() => {
   box-shadow: 0 3px 8px rgba(42, 199, 143, 0.35);
 }
 
-.btn-edit:active {
-  transform: scale(0.97);
+.btn-edit:active { transform: scale(0.97); }
+.btn-edit i { font-size: 1.1rem; }
+
+/* ---- Profile Layout ---- */
+.profile-layout {
+  display: grid;
+  grid-template-columns: 280px 1fr;
+  gap: 1.5rem;
+  align-items: start;
 }
 
-.btn-edit i {
-  font-size: 1.1rem;
-}
-
-.profile-card {
+/* ---- Identity card (left) ---- */
+.profile-identity {
   background: white;
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-sm);
-  overflow: hidden;
-}
-
-.profile-card__header {
+  padding: 2rem 1.5rem;
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 1rem;
-  padding: 1.5rem;
-  background: var(--bg-card);
-  border-bottom: 1px solid var(--border-light);
+  text-align: center;
+  gap: 0.75rem;
 }
 
-.profile-card__avatar {
-  width: 3.5rem;
-  height: 3.5rem;
-  border-radius: var(--radius-full);
-  background: var(--primary-500);
+.profile-identity__avatar {
+  width: 5rem;
+  height: 5rem;
+  border-radius: var(--radius-full, 50%);
+  background: linear-gradient(135deg, var(--primary-500), #1a9e6f);
   color: white;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 1.75rem;
+  font-size: 1.6rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
   flex-shrink: 0;
 }
 
-.profile-card__identity {
-  flex: 1;
-  min-width: 0;
-}
-
-.profile-card__identity h2 {
-  font-size: 1.25rem;
+.profile-identity__name {
+  font-size: 1.1rem;
   font-weight: 700;
   color: var(--text-primary);
   margin: 0;
+  line-height: 1.3;
 }
 
-.profile-card__email {
-  font-size: 0.85rem;
+.profile-identity__email {
+  font-size: 0.82rem;
   color: var(--text-secondary);
+  word-break: break-all;
 }
 
-.profile-card__body {
-  padding: 1.5rem;
-  display: flex;
-  flex-direction: column;
-  gap: 1.25rem;
-}
-
-.profile-field {
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
-}
-
-.profile-field__label {
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.25rem 0.75rem;
+  border-radius: var(--radius-full, 9999px);
   font-size: 0.75rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  color: var(--text-secondary);
-  letter-spacing: 0.05em;
+  font-weight: 600;
 }
 
-.profile-field__value {
-  font-size: 1rem;
-  color: var(--text-primary);
-}
-
-.profile-field__tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.35rem;
-}
-
-.profile-field__na {
-  color: var(--text-secondary);
-  font-size: 0.85rem;
-}
-
-.status-badge {
-  padding: 0.3rem 0.8rem;
-  border-radius: var(--radius-full);
-  font-size: 0.75rem;
-  font-weight: 700;
-  text-transform: uppercase;
-}
-
-.status-badge--active {
-  background-color: var(--success-bg);
+.status-pill--active {
+  background: var(--success-bg);
   color: var(--success-text);
 }
 
-.status-badge--inactive {
-  background-color: var(--error-bg);
+.status-pill--inactive {
+  background: var(--error-bg);
   color: var(--error-text);
 }
 
+.profile-identity__roles {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.3rem;
+  margin-top: 0.25rem;
+}
+
+.profile-identity__na {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+/* ---- Detail cards (right) ---- */
+.profile-details {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.detail-card {
+  background: white;
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  padding: 1.25rem 1.5rem;
+}
+
+.detail-card__title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin: 0 0 1rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid var(--border-light);
+}
+
+.detail-card__title i {
+  font-size: 1.1rem;
+}
+
+.detail-card__grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem 2rem;
+}
+
+.detail-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.detail-item__label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  letter-spacing: 0.04em;
+}
+
+.detail-item__value {
+  font-size: 0.95rem;
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+.detail-item__value--mono {
+  font-family: 'SF Mono', 'Cascadia Code', 'Consolas', monospace;
+  letter-spacing: 0.03em;
+}
+
+.detail-card__tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+/* App list */
+.app-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.app-item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.6rem 0.75rem;
+  border-radius: var(--radius-md);
+  background: var(--bg-card, #f9fafb);
+  transition: background 0.15s;
+}
+
+.app-item:hover {
+  background: #f0f1f3;
+}
+
+.app-item__icon {
+  width: 2rem;
+  height: 2rem;
+  border-radius: var(--radius-sm);
+  background: #EEF2FF;
+  color: #4F46E5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1rem;
+  flex-shrink: 0;
+}
+
+.app-item__info {
+  display: flex;
+  flex-direction: column;
+}
+
+.app-item__name {
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.app-item__date {
+  font-size: 0.72rem;
+  color: var(--text-secondary);
+}
+
+/* Tags */
 .role-tag, .level-tag {
   display: inline-block;
-  padding: 0.3rem 0.6rem;
-  border-radius: var(--radius-sm);
-  font-size: 0.85rem;
+  padding: 0.25rem 0.6rem;
+  border-radius: var(--radius-full, 9999px);
+  font-size: 0.78rem;
   font-weight: 600;
 }
 
 .role-tag { background: #E0E7FF; color: #3730A3; }
 .level-tag { background: #DBEAFE; color: #1E40AF; }
 
-/* Modal */
+/* ---- Modal ---- */
 .modal-overlay {
   position: fixed; top: 0; left: 0; width: 100%; height: 100%;
   background: rgba(0, 0, 0, 0.5); backdrop-filter: blur(4px);
@@ -522,6 +705,10 @@ onUnmounted(() => {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 1rem;
+}
+
+.form-group--full {
+  grid-column: 1 / -1;
 }
 
 .form-group label {
@@ -583,56 +770,13 @@ onUnmounted(() => {
   line-height: 1.4;
 }
 
-.btn-primary--warning {
-  background-color: #F59E0B;
-}
-
-.btn-primary--warning:hover:not(:disabled) {
-  background-color: #D97706;
-}
+.btn-primary--warning { background-color: #F59E0B; }
+.btn-primary--warning:hover:not(:disabled) { background-color: #D97706; }
 
 .modal-actions {
   display: flex; justify-content: flex-end; gap: 1rem; margin-top: 1.5rem;
 }
 
-.checkbox-group {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-  padding: 0.6rem;
-  border: 1px solid var(--border-light);
-  border-radius: var(--radius-md);
-  background: white;
-}
-
-.checkbox-group--loading {
-  align-items: center;
-  color: var(--text-secondary);
-  font-size: 0.85rem;
-}
-
-.checkbox-label {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-  font-size: 0.85rem;
-  color: var(--text-primary);
-  cursor: pointer;
-  padding: 0.3rem 0.6rem;
-  border-radius: var(--radius-sm);
-  transition: background 0.15s;
-}
-
-.checkbox-label:hover {
-  background-color: var(--bg-card);
-}
-
-.checkbox-label input[type="checkbox"] {
-  accent-color: var(--primary-500);
-  width: 1rem;
-  height: 1rem;
-  cursor: pointer;
-}
 
 .input-error {
   border-color: var(--error-500) !important;
@@ -654,13 +798,47 @@ onUnmounted(() => {
   display: block;
 }
 
+/* Pending animation */
+.field--pending {
+  animation: pendingPulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pendingPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+/* Responsive */
 @media (max-width: 768px) {
-  .profile-card__header {
-    flex-wrap: wrap;
+  .profile-layout {
+    grid-template-columns: 1fr;
   }
-  .page-header__title {
+  .profile-identity {
+    flex-direction: row;
+    flex-wrap: wrap;
+    text-align: left;
+    padding: 1.25rem;
+    gap: 0.5rem 1rem;
+  }
+  .profile-identity__avatar {
+    width: 3.5rem;
+    height: 3.5rem;
     font-size: 1.2rem;
   }
+  .profile-identity__name {
+    flex: 1;
+    min-width: 120px;
+  }
+  .profile-identity__email {
+    width: 100%;
+  }
+  .profile-identity__roles {
+    justify-content: flex-start;
+  }
+  .detail-card__grid {
+    grid-template-columns: 1fr;
+  }
+  .page-header__title { font-size: 1.2rem; }
   .modal-overlay {
     padding: 1rem 0.5rem;
     align-items: flex-start;

@@ -2,7 +2,7 @@
 defineProps({
   user: { type: Object, required: true },
   toggling: { type: Boolean, default: false },
-  loadingEdit: { type: Boolean, default: false }
+  loadingEdit: { type: Boolean, default: false },
 })
 
 defineEmits(['toggle', 'edit'])
@@ -30,16 +30,16 @@ defineEmits(['toggle', 'edit'])
       <div class="user-card__field">
         <i class='bx bx-shield'></i>
         <div class="user-card__tags">
-          <template v-if="user.roleName">
-            <span v-for="rol in user.roleName.split(', ')" :key="rol" class="role-tag">{{ rol }}</span>
+          <template v-if="user.roleNames.length">
+            <span v-for="rol in user.roleNames" :key="rol" class="role-tag">{{ rol }}</span>
           </template>
           <span v-else class="user-card__na">N/A</span>
         </div>
       </div>
-      <div class="user-card__field" v-if="user.supportLevelName?.length">
+      <div class="user-card__field" v-if="user.supportLevelNames.length">
         <i class='bx bx-layer'></i>
         <div class="user-card__tags">
-          <span v-for="level in user.supportLevelName" :key="level" class="level-tag">{{ level }}</span>
+          <span v-for="level in user.supportLevelNames" :key="level" class="level-tag">{{ level }}</span>
         </div>
       </div>
     </div>
@@ -69,8 +69,7 @@ defineEmits(['toggle', 'edit'])
   padding: 1rem 1.25rem 0.5rem 1.25rem;
   display: flex;
   flex-direction: column;
-  gap: 1rem;
-  border-left: 3px solid var(--success-text, #16a34a);
+  gap: 0.75rem;
   transition: box-shadow 0.2s;
 }
 
@@ -79,8 +78,7 @@ defineEmits(['toggle', 'edit'])
 }
 
 .user-card--inactive {
-  border-left-color: var(--error-text, #dc2626);
-  opacity: 0.75;
+  opacity: 0.65;
 }
 
 .user-card__header {
@@ -90,14 +88,14 @@ defineEmits(['toggle', 'edit'])
 }
 
 .user-card__avatar {
-  width: 2.5rem;
-  height: 2.5rem;
+  width: 2.25rem;
+  height: 2.25rem;
   border-radius: var(--radius-full, 50%);
   background: var(--bg-card, #f3f4f6);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 1.25rem;
+  font-size: 1.15rem;
   color: var(--text-secondary);
   flex-shrink: 0;
 }
@@ -108,7 +106,7 @@ defineEmits(['toggle', 'edit'])
 }
 
 .user-card__name {
-  font-size: 0.95rem;
+  font-size: 0.9rem;
   font-weight: 700;
   color: var(--text-primary);
   margin: 0;
@@ -118,7 +116,7 @@ defineEmits(['toggle', 'edit'])
 }
 
 .user-card__email {
-  font-size: 0.8rem;
+  font-size: 0.78rem;
   color: var(--text-secondary);
   display: block;
   white-space: nowrap;
@@ -129,33 +127,37 @@ defineEmits(['toggle', 'edit'])
 .user-card__body {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: 0.4rem;
+  flex: 1;
 }
 
 .user-card__field {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 0.5rem;
-  font-size: 0.85rem;
+  font-size: 0.82rem;
   color: var(--text-primary);
+  min-height: 1.5rem;
 }
 
 .user-card__field > i {
   color: var(--text-secondary);
-  font-size: 1.1rem;
-  margin-top: 0.1rem;
+  font-size: 1rem;
   flex-shrink: 0;
+  width: 1rem;
+  text-align: center;
 }
 
 .user-card__tags {
   display: flex;
   flex-wrap: wrap;
   gap: 0.25rem;
+  align-items: center;
 }
 
 .user-card__na {
   color: var(--text-secondary);
-  font-size: 0.85rem;
+  font-size: 0.82rem;
 }
 
 .user-card__actions {
@@ -163,15 +165,17 @@ defineEmits(['toggle', 'edit'])
   justify-content: flex-end;
   gap: 0.5rem;
   border-top: 1px solid var(--border-light);
-  padding-top: 0.25rem;
+  padding-top: 0.4rem;
+  margin-top: auto;
 }
 
 .status-badge {
-  padding: 0.3rem 0.8rem;
+  padding: 0.2rem 0.6rem;
   border-radius: var(--radius-full);
-  font-size: 0.75rem;
+  font-size: 0.7rem;
   font-weight: 700;
   text-transform: uppercase;
+  flex-shrink: 0;
 }
 
 .status-badge--active {
@@ -186,11 +190,11 @@ defineEmits(['toggle', 'edit'])
 
 .role-tag, .level-tag {
   display: inline-block;
-  padding: 0.3rem 0.6rem;
+  padding: 0.15rem 0.5rem;
   border-radius: var(--radius-sm);
-  font-size: 0.85rem;
+  font-size: 0.75rem;
   font-weight: 600;
-  margin: 0.15rem;
+  line-height: 1.4;
 }
 
 .role-tag {

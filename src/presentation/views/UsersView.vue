@@ -7,6 +7,8 @@ import SkeletonCard from '@/presentation/components/SkeletonCard.vue'
 import UserTable from '@/presentation/components/UserTable.vue'
 import UserCardGrid from '@/presentation/components/UserCardGrid.vue'
 import ToastNotification from '@/presentation/components/ToastNotification.vue'
+import SpecialistFields from '@/presentation/components/SpecialistFields.vue'
+import ChipSelect from '@/presentation/components/ChipSelect.vue'
 import { usePendingFields } from '@/presentation/composables/usePendingFields'
 
 const userStore = useUserStore()
@@ -21,8 +23,7 @@ const mostrarDropdownOrden = ref(false)
 const ROLE_PRIORITY = { admin: 0, supervisor: 1, agente: 2 }
 
 function getRolePriority(user) {
-  const name = (user.roleName || '').toLowerCase()
-  const roles = name.split(',').map(r => r.trim())
+  const roles = (user.roleNames || []).map(r => r.toLowerCase())
   let best = 99
   for (const r of roles) {
     if (ROLE_PRIORITY[r] !== undefined && ROLE_PRIORITY[r] < best) best = ROLE_PRIORITY[r]
@@ -80,6 +81,7 @@ const formulario = ref({
   password: '',
   roleIds: [],
   supportLevelIds: [],
+  applicationIds: [],
 })
 
 const editandoUser = ref(null)
@@ -93,7 +95,7 @@ const esSpecialista = computed(() =>
   specialistRoleId.value !== null && formulario.value.roleIds.includes(specialistRoleId.value)
 )
 
-const abrirCrear = () => {
+const abrirCrear = async () => {
   modoEdicion.value = false
   editandoUserId.value = null
   editandoUser.value = null
@@ -105,14 +107,15 @@ const abrirCrear = () => {
     password: '',
     roleIds: [],
     supportLevelIds: [],
+    applicationIds: [],
   }
   mostrarModal.value = true
+  await userStore.loadSelects(true)
 }
 
 const resolverIds = (nombres, lista) => {
-  if (!nombres) return []
-  const arr = Array.isArray(nombres) ? nombres : nombres.split(',')
-  const nombresLower = arr.map(n => n.trim().toLowerCase())
+  if (!nombres || !nombres.length) return []
+  const nombresLower = nombres.map(n => n.trim().toLowerCase())
   return lista
     .filter(item => nombresLower.includes((item.displayName || item.name || '').toLowerCase()))
     .map(item => item.id)
@@ -126,8 +129,12 @@ const abrirEditar = async (user) => {
     modoEdicion.value = user.isActive
     editandoUserId.value = user.id
     editandoUser.value = user
-    await userStore.loadSelects()
+    await userStore.loadSelects(true)
     emailOriginal.value = user.email || ''
+
+    const supportLevelIds = resolverIds(user.supportLevelNames, userStore.supportLevels)
+    const applicationIds = user.applicationAssignments.map(a => a.application_id)
+
     formulario.value = {
       firstName: user.firstName || '',
       secondName: user.secondName || '',
@@ -135,8 +142,9 @@ const abrirEditar = async (user) => {
       secondSurname: user.secondSurname || '',
       documentNumber: user.documentNumber || '',
       email: user.email || '',
-      roleIds: resolverIds(user.roleName, userStore.roles),
-      supportLevelIds: resolverIds(user.supportLevelName, userStore.supportLevels),
+      roleIds: resolverIds(user.roleNames, userStore.roles),
+      supportLevelIds,
+      applicationIds,
     }
     // Si el usuario ya es specialist en la BD, asegurar que el rol esté marcado
     if (user.specialistId && specialistRoleId.value && !formulario.value.roleIds.includes(specialistRoleId.value)) {
@@ -174,6 +182,10 @@ const validarFormulario = () => {
     errores.value.roles = 'Debe seleccionar al menos un rol.'
     esValido = false
   }
+  if (esSpecialista.value && formulario.value.supportLevelIds.length === 0) {
+    errores.value.supportLevels = 'Debe seleccionar al menos un nivel de soporte.'
+    esValido = false
+  }
   return esValido
 }
 
@@ -204,30 +216,14 @@ const guardarUsuario = async () => {
   cargando.value = true
   try {
     const esEdicion = modoEdicion.value
-    const isNowSpecialist = esSpecialista.value
-    let savedUser
 
     if (esEdicion) {
-      savedUser = await userStore.updateUser(editandoUserId.value, formulario.value, {
+      await userStore.updateUser(editandoUserId.value, formulario.value, {
         emailChanged: emailCambio.value,
         skipReload: true,
       })
     } else {
-      savedUser = await userStore.createUser(formulario.value, { skipReload: true })
-    }
-
-    // Sincronizar support levels si el response indica que es specialist
-    let specialistError = null
-    if (savedUser.specialistId && isNowSpecialist) {
-      try {
-        await userStore.syncSpecialist({
-          specialistId: savedUser.specialistId,
-          selectedSupportLevelIds: formulario.value.supportLevelIds,
-          wasSpecialist: !!editandoUser.value?.specialistId,
-        })
-      } catch (e) {
-        specialistError = e
-      }
+      await userStore.createUser(formulario.value, { skipReload: true })
     }
 
     if (!cambioEmailPropio) await userStore.loadUsers()
@@ -239,11 +235,7 @@ const guardarUsuario = async () => {
       return
     }
 
-    if (specialistError) {
-      toastMessage.value = 'Usuario guardado, pero hubo un error al sincronizar los niveles de soporte.'
-    } else {
-      toastMessage.value = esEdicion ? 'Usuario actualizado correctamente.' : 'Usuario creado correctamente.'
-    }
+    toastMessage.value = esEdicion ? 'Usuario actualizado correctamente.' : 'Usuario creado correctamente.'
     toastVisible.value = true
   } catch (error) {
     // Si cambió su propio email y el PUT fue exitoso pero algo posterior falló,
@@ -385,65 +377,64 @@ onUnmounted(() => {
           <div class="form-grid">
             <div class="form-group">
               <label>Primer Nombre {{ modoVista ? '' : '*' }}</label>
-              <input v-model="formulario.firstName" type="text" :required="!modoVista" class="form-input" :disabled="modoVista">
+              <input v-model="formulario.firstName" type="text" :required="!modoVista" class="form-input" :disabled="modoVista || cargando">
             </div>
             <div class="form-group">
               <label>Segundo Nombre</label>
-              <input v-model="formulario.secondName" type="text" class="form-input" :disabled="modoVista">
+              <input v-model="formulario.secondName" type="text" class="form-input" :disabled="modoVista || cargando">
             </div>
             <div class="form-group">
               <label>Primer Apellido {{ modoVista ? '' : '*' }}</label>
-              <input v-model="formulario.firstSurname" type="text" :required="!modoVista" class="form-input" :disabled="modoVista">
+              <input v-model="formulario.firstSurname" type="text" :required="!modoVista" class="form-input" :disabled="modoVista || cargando">
             </div>
             <div class="form-group">
               <label>Segundo Apellido</label>
-              <input v-model="formulario.secondSurname" type="text" class="form-input" :disabled="modoVista">
+              <input v-model="formulario.secondSurname" type="text" class="form-input" :disabled="modoVista || cargando">
             </div>
             <div class="form-group">
               <label>Numero de Documento {{ modoVista ? '' : '*' }}</label>
               <input v-model="formulario.documentNumber" type="text" :required="!modoVista" class="form-input"
-                :disabled="modoVista" :class="{ 'input-error': errores.documentNumber }">
+                :disabled="modoVista || cargando" :class="{ 'input-error': errores.documentNumber }">
               <span v-if="errores.documentNumber" class="error-text">{{ errores.documentNumber }}</span>
             </div>
             <div class="form-group">
               <label>Correo electrónico {{ (!modoEdicion && !modoVista) ? '*' : '' }}</label>
               <input v-model="formulario.email" type="email" class="form-input" placeholder="correo@ejemplo.com"
-                :required="!modoEdicion && !modoVista" :disabled="modoVista" :class="{ 'input-error': errores.email }" autocomplete="new-email">
+                :required="!modoEdicion && !modoVista" :disabled="modoVista || cargando" :class="{ 'input-error': errores.email }" autocomplete="new-email">
               <span v-if="errores.email" class="error-text">{{ errores.email }}</span>
               <span v-else-if="modoEdicion" class="hint-text">Si se cambia, el usuario recibirá un correo de confirmación.</span>
             </div>
             <div v-if="!modoEdicion && !modoVista" class="form-group">
               <label>Contraseña *</label>
               <input v-model="formulario.password" type="password" class="form-input" placeholder="Mínimo 6 caracteres"
-                required :class="{ 'input-error': errores.password }" autocomplete="new-password">
+                required :disabled="cargando" :class="{ 'input-error': errores.password }" autocomplete="new-password">
               <span v-if="errores.password" class="error-text">{{ errores.password }}</span>
             </div>
-            <div class="form-group">
-              <label>Roles *</label>
-              <div v-if="userStore.loadingSelects" class="checkbox-group checkbox-group--loading">
-                <i class='bx bx-loader-alt bx-spin'></i> Cargando roles...
-              </div>
-              <template v-else>
-                <div class="checkbox-group" :class="{ 'input-error': errores.roles }">
-                  <label v-for="role in userStore.roles" :key="role.id" class="checkbox-label">
-                    <input type="checkbox" :value="role.id" v-model="formulario.roleIds" :disabled="modoVista">
-                    {{ role.name }}
-                  </label>
-                </div>
-                <span v-if="errores.roles" class="error-text">{{ errores.roles }}</span>
-              </template>
+            <div class="form-group form-group--full">
+              <ChipSelect
+                :options="userStore.roles"
+                v-model="formulario.roleIds"
+                label="Roles *"
+                icon="bx-shield"
+                color="amber"
+                :loading="userStore.loadingSelects"
+                :disabled="modoVista || cargando"
+                :error="errores.roles"
+                empty-text="Sin roles disponibles"
+              />
             </div>
-            <div v-if="esSpecialista" class="form-group">
-              <label>Niveles de Soporte</label>
-              <div v-if="userStore.loadingSelects" class="checkbox-group checkbox-group--loading">
-                <i class='bx bx-loader-alt bx-spin'></i> Cargando niveles...
-              </div>
-              <div v-else class="checkbox-group">
-                <label v-for="level in userStore.supportLevels" :key="level.id" class="checkbox-label">
-                  <input type="checkbox" :value="level.id" v-model="formulario.supportLevelIds" :disabled="modoVista">
-                  {{ level.name }}
-                </label>
-              </div>
+            <div v-if="esSpecialista" class="form-group form-group--full">
+              <SpecialistFields
+                :support-levels="userStore.supportLevels"
+                :applications="userStore.applications"
+                :selected-support-level-ids="formulario.supportLevelIds"
+                :selected-application-ids="formulario.applicationIds"
+                :loading="userStore.loadingSelects"
+                :disabled="modoVista || cargando"
+                :support-level-error="errores.supportLevels"
+                @update:selected-support-level-ids="formulario.supportLevelIds = $event"
+                @update:selected-application-ids="formulario.applicationIds = $event"
+              />
             </div>
           </div>
 
@@ -709,6 +700,10 @@ onUnmounted(() => {
   gap: 1rem;
 }
 
+.form-group--full {
+  grid-column: 1 / -1;
+}
+
 .form-group label {
   font-size: 0.85rem; font-weight: 600; color: var(--text-secondary); margin-bottom: 0.3rem; display: block;
 }
@@ -780,44 +775,6 @@ onUnmounted(() => {
   display: flex; justify-content: flex-end; gap: 1rem; margin-top: 1.5rem;
 }
 
-.checkbox-group {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-  padding: 0.6rem;
-  border: 1px solid var(--border-light);
-  border-radius: var(--radius-md);
-  background: white;
-}
-
-.checkbox-group--loading {
-  align-items: center;
-  color: var(--text-secondary);
-  font-size: 0.85rem;
-}
-
-.checkbox-label {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-  font-size: 0.85rem;
-  color: var(--text-primary);
-  cursor: pointer;
-  padding: 0.3rem 0.6rem;
-  border-radius: var(--radius-sm);
-  transition: background 0.15s;
-}
-
-.checkbox-label:hover {
-  background-color: var(--bg-card);
-}
-
-.checkbox-label input[type="checkbox"] {
-  accent-color: var(--primary-500);
-  width: 1rem;
-  height: 1rem;
-  cursor: pointer;
-}
 
 .input-error {
   border-color: var(--error-500) !important;
@@ -839,8 +796,7 @@ onUnmounted(() => {
   display: block;
 }
 
-.form-input:disabled,
-.checkbox-label input:disabled {
+.form-input:disabled {
   background-color: var(--bg-card, #f3f4f6);
   color: var(--text-secondary);
   cursor: not-allowed;

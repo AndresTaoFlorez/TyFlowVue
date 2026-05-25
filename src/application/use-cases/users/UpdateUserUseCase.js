@@ -1,17 +1,18 @@
 import { UserRepository } from '@/infrastructure/repositories/UserRepository'
 
-export async function updateUserUseCase(userId, { firstName, secondName, firstSurname, secondSurname, documentNumber, email, roleIds }, { emailChanged = false } = {}) {
-  // El backend: campo omitido = preservar, [] = borrar todos.
-  const payload = {}
+export async function updateUserUseCase(userId, { firstName, secondName, firstSurname, secondSurname, documentNumber, email, roleIds, supportLevelIds, applicationIds }, { emailChanged = false } = {}) {
+  const payload = {
+    first_name: firstName || null,
+    second_name: secondName || null,
+    first_surname: firstSurname || null,
+    second_surname: secondSurname || null,
+    id_document: documentNumber || null,
+  }
 
-  if (firstName) payload.first_name = firstName
-  if (secondName != null) payload.second_name = secondName || null
-  if (firstSurname) payload.first_surname = firstSurname
-  if (secondSurname != null) payload.second_surname = secondSurname || null
-  if (documentNumber) payload.id_document = documentNumber
   if (emailChanged) payload.email = email
-
   if (Array.isArray(roleIds)) payload.role_ids = roleIds
+  if (Array.isArray(supportLevelIds)) payload.support_level_ids = supportLevelIds
+  if (Array.isArray(applicationIds)) payload.application_ids = applicationIds
 
   return UserRepository.update(userId, payload)
 }

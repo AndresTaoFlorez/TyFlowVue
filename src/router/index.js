@@ -4,6 +4,8 @@ import MainLayout from '@/presentation/layouts/MainLayout.vue'
 import DashboardView from '@/presentation/views/DashboardView.vue'
 import UsersView from '@/presentation/views/UsersView.vue'
 import ProfileView from '@/presentation/views/ProfileView.vue'
+import ApplicationsView from '@/presentation/views/ApplicationsView.vue'
+import CalendarioView from '@/presentation/views/CalendarioView.vue'
 
 const LoginView = () => import('@/presentation/views/LoginView.vue')
 const ForgotPasswordView = () => import('@/presentation/views/ForgotPasswordView.vue')
@@ -42,6 +44,17 @@ const router = createRouter({
           name: 'users',
           component: UsersView,
           meta: { requiresAdmin: true },
+        },
+        {
+          path: 'applications',
+          name: 'applications',
+          component: ApplicationsView,
+          meta: { requiresAdmin: true },
+        },
+        {
+          path: 'calendario',
+          name: 'calendario',
+          component: CalendarioView,
         },
         {
           path: 'profile',

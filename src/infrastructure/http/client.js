@@ -1,5 +1,6 @@
 import axios from 'axios'
 import { ApiError } from './ApiError'
+import logger from '@/infrastructure/logger'
 
 const TOKEN_KEY = 'tyflow_token'
 const REFRESH_KEY = 'tyflow_refresh_token'
@@ -9,18 +10,22 @@ const client = axios.create({
   headers: { 'Content-Type': 'application/json' },
 })
 
-// Request interceptor: attach Bearer token
+// Request interceptor: attach Bearer token + dev logging
 client.interceptors.request.use((config) => {
   const token = localStorage.getItem(TOKEN_KEY)
   if (token) {
     config.headers.Authorization = `Bearer ${token}`
   }
+  logger.log(`[HTTP] ${config.method.toUpperCase()} ${config.url}`, config.data ?? '')
   return config
 })
 
 // Response interceptor: handle errors
 client.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    logger.log(`[HTTP] ${response.status} ${response.config.url}`, response.data)
+    return response
+  },
   async (error) => {
     // Error de red (sin respuesta del servidor)
     if (!error.response) {
