@@ -7,7 +7,7 @@ const props = defineProps({
   applicationName: { type: String, default: '—' },
 })
 
-const emit = defineEmits(['close', 'open', 'closeSession'])
+const emit = defineEmits(['close', 'open', 'closeSession', 'delete'])
 
 const accionando = ref(false)
 
@@ -24,6 +24,15 @@ const handleClose = async () => {
   accionando.value = true
   try {
     await emit('closeSession', props.window)
+  } finally {
+    accionando.value = false
+  }
+}
+
+const handleDelete = async () => {
+  accionando.value = true
+  try {
+    await emit('delete', props.window)
   } finally {
     accionando.value = false
   }
@@ -89,26 +98,37 @@ const handleClose = async () => {
 
       <div class="ww-modal__actions">
         <button
-          v-if="!window.isSessionOpen && window.isActive"
-          class="btn-primary"
+          class="btn-delete"
           :disabled="accionando"
-          @click="handleOpen"
+          @click="handleDelete"
+          title="Eliminar ventana"
         >
           <i v-if="accionando" class='bx bx-loader-alt bx-spin'></i>
-          <i v-else class='bx bx-play'></i>
-          Abrir sesión
+          <i v-else class='bx bx-trash'></i>
         </button>
-        <button
-          v-if="window.isSessionOpen"
-          class="btn-danger"
-          :disabled="accionando"
-          @click="handleClose"
-        >
-          <i v-if="accionando" class='bx bx-loader-alt bx-spin'></i>
-          <i v-else class='bx bx-stop'></i>
-          Cerrar sesión
-        </button>
-        <button class="btn-secondary" @click="$emit('close')">Listo</button>
+        <div class="ww-modal__actions-right">
+          <button
+            v-if="!window.isSessionOpen && window.isActive"
+            class="btn-primary"
+            :disabled="accionando"
+            @click="handleOpen"
+          >
+            <i v-if="accionando" class='bx bx-loader-alt bx-spin'></i>
+            <i v-else class='bx bx-play'></i>
+            Abrir sesión
+          </button>
+          <button
+            v-if="window.isSessionOpen"
+            class="btn-danger"
+            :disabled="accionando"
+            @click="handleClose"
+          >
+            <i v-if="accionando" class='bx bx-loader-alt bx-spin'></i>
+            <i v-else class='bx bx-stop'></i>
+            Cerrar sesión
+          </button>
+          <button class="btn-secondary" @click="$emit('close')">Listo</button>
+        </div>
       </div>
     </div>
   </div>
@@ -264,11 +284,43 @@ const handleClose = async () => {
 /* Actions */
 .ww-modal__actions {
   display: flex;
-  justify-content: flex-end;
+  align-items: center;
+  justify-content: space-between;
   gap: 0.6rem;
   padding: 1rem 1.5rem;
   border-top: 1px solid var(--border-light);
   background: #fafafa;
+}
+
+.ww-modal__actions-right {
+  display: flex;
+  gap: 0.6rem;
+}
+
+.btn-delete {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.2rem;
+  height: 2.2rem;
+  background: none;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  color: var(--text-secondary);
+  font-size: 1.1rem;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.btn-delete:hover:not(:disabled) {
+  color: var(--error-500);
+  border-color: var(--error-500);
+  background: var(--error-bg);
+}
+
+.btn-delete:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .btn-danger {

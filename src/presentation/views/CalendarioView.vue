@@ -1,11 +1,13 @@
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useAuthStore } from '@/presentation/stores/useAuthStore'
 import { useUserStore } from '@/presentation/stores/useUserStore'
 import { fetchWorkWindowsUseCase } from '@/application/use-cases/work-windows/FetchWorkWindowsUseCase'
 import { createWorkWindowUseCase } from '@/application/use-cases/work-windows/CreateWorkWindowUseCase'
 import { openWorkWindowUseCase } from '@/application/use-cases/work-windows/OpenWorkWindowUseCase'
 import { closeWorkWindowUseCase } from '@/application/use-cases/work-windows/CloseWorkWindowUseCase'
+import { deleteWorkWindowUseCase } from '@/application/use-cases/work-windows/DeleteWorkWindowUseCase'
+import { WorkWindow } from '@/domain/entities/WorkWindow'
 import WeekCalendar from '@/presentation/components/WeekCalendar.vue'
 import WorkWindowModal from '@/presentation/components/WorkWindowModal.vue'
 import CreateWorkWindowModal from '@/presentation/components/CreateWorkWindowModal.vue'
@@ -87,11 +89,15 @@ const appOptions = computed(() => {
   return userStore.applications.filter(a => ids.has(a.id))
 })
 
-// ---- Cargar ventanas ----
+// ---- Cargar ventanas (solo loader en carga inicial) ----
 const loadWindows = async () => {
-  loading.value = true
+  const isFirstLoad = windows.value.length === 0
+  if (isFirstLoad) loading.value = true
   try {
-    windows.value = await fetchWorkWindowsUseCase()
+    windows.value = await fetchWorkWindowsUseCase({
+      date_from: weekDates.value[0],
+      date_to: weekDates.value[6],
+    })
   } catch (e) {
     logger.error('[Calendario] Error cargando ventanas:', e)
     showToast('Error al cargar ventanas de trabajo.', 'error')
@@ -111,15 +117,15 @@ const openCreatePanel = () => {
   mostrarCrear.value = true
 }
 
-// ---- Crear ventana ----
+// ---- Crear ventana (optimista) ----
 const handleCreate = async (data) => {
   creando.value = true
   errorCrear.value = ''
   try {
-    await createWorkWindowUseCase(data)
+    const created = await createWorkWindowUseCase(data)
+    windows.value = [...windows.value, ...created]
     mostrarCrear.value = false
     prefillData.value = null
-    await loadWindows()
     showToast('Ventana de trabajo creada.')
   } catch (e) {
     logger.error('[Calendario] Error creando ventana:', e)
@@ -129,11 +135,24 @@ const handleCreate = async (data) => {
   }
 }
 
-// ---- Abrir sesion ----
+// ---- Abrir sesion (optimista) ----
 const handleOpen = async (w) => {
   try {
     await openWorkWindowUseCase(w.id)
-    await loadWindows()
+    const idx = windows.value.findIndex(x => x.id === w.id)
+    if (idx !== -1) {
+      const old = windows.value[idx]
+      const updated = new WorkWindow({
+        id: old.id, specialist_id: old.specialistId, application_id: old.applicationId,
+        start_time: old.startTime, end_time: old.endTime, scheduled_date: old.scheduledDate,
+        opening_count: old.openingCount, current_count: old.currentCount,
+        inherits_on_reopen: old.inheritsOnReopen, is_active: true,
+        created_at: old.createdAt, closed_at: null,
+        closing_count: null, inherited_from_window_id: old.inheritedFromWindowId,
+        deleted_at: old.deletedAt,
+      })
+      windows.value = [...windows.value.slice(0, idx), updated, ...windows.value.slice(idx + 1)]
+    }
     selectedWindow.value = null
     showToast('Sesión abierta.')
   } catch (e) {
@@ -142,16 +161,42 @@ const handleOpen = async (w) => {
   }
 }
 
-// ---- Cerrar sesion ----
+// ---- Cerrar sesion (optimista) ----
 const handleCloseSession = async (w) => {
   try {
     await closeWorkWindowUseCase(w.id)
-    await loadWindows()
+    const idx = windows.value.findIndex(x => x.id === w.id)
+    if (idx !== -1) {
+      const old = windows.value[idx]
+      const updated = new WorkWindow({
+        id: old.id, specialist_id: old.specialistId, application_id: old.applicationId,
+        start_time: old.startTime, end_time: old.endTime, scheduled_date: old.scheduledDate,
+        opening_count: old.openingCount, current_count: old.currentCount,
+        inherits_on_reopen: old.inheritsOnReopen, is_active: false,
+        created_at: old.createdAt, closed_at: new Date().toISOString(),
+        closing_count: old.currentCount, inherited_from_window_id: old.inheritedFromWindowId,
+        deleted_at: old.deletedAt,
+      })
+      windows.value = [...windows.value.slice(0, idx), updated, ...windows.value.slice(idx + 1)]
+    }
     selectedWindow.value = null
     showToast('Sesión cerrada.')
   } catch (e) {
     logger.error('[Calendario] Error cerrando sesión:', e)
     showToast(e.userMessage || 'Error al cerrar sesión.', 'error')
+  }
+}
+
+// ---- Eliminar ventana (optimista) ----
+const handleDelete = async (w) => {
+  try {
+    await deleteWorkWindowUseCase(w.id)
+    windows.value = windows.value.filter(x => x.id !== w.id)
+    selectedWindow.value = null
+    showToast('Ventana eliminada.')
+  } catch (e) {
+    logger.error('[Calendario] Error eliminando ventana:', e)
+    showToast(e.userMessage || 'Error al eliminar ventana.', 'error')
   }
 }
 
@@ -164,7 +209,9 @@ const appName = (w) => findApp(w.applicationId)?.name || w.applicationId
 // ---- Navegacion semana ----
 const prevWeek = () => weekOffset.value--
 const nextWeek = () => weekOffset.value++
-const goToday = () => weekOffset.value = 0
+const goToday = () => { weekOffset.value = 0 }
+
+watch(weekOffset, () => loadWindows())
 
 // ---- ESC ----
 const onEsc = (e) => {
@@ -201,32 +248,47 @@ onUnmounted(() => {
       </button>
     </div>
 
-    <!-- Toolbar: navegacion + filtros -->
+    <!-- Toolbar -->
     <div class="toolbar">
-      <div class="toolbar__nav">
-        <button class="toolbar__btn" @click="prevWeek" title="Semana anterior">
-          <i class='bx bx-chevron-left'></i>
-        </button>
-        <button class="toolbar__today" @click="goToday">Hoy</button>
-        <button class="toolbar__btn" @click="nextWeek" title="Semana siguiente">
-          <i class='bx bx-chevron-right'></i>
-        </button>
+      <div class="toolbar__left">
+        <div class="toolbar__nav">
+          <button class="toolbar__arrow" @click="prevWeek" title="Semana anterior">
+            <i class='bx bx-chevron-left'></i>
+          </button>
+          <button class="toolbar__today" @click="goToday">Hoy</button>
+          <button class="toolbar__arrow" @click="nextWeek" title="Semana siguiente">
+            <i class='bx bx-chevron-right'></i>
+          </button>
+        </div>
         <span class="toolbar__label">{{ weekLabel }}</span>
       </div>
 
-      <div class="toolbar__filters">
-        <select v-if="authStore.isAdmin" v-model="filtroSpecialist" class="toolbar__select">
-          <option value="all">Todos los especialistas</option>
-          <option v-for="s in specOptions" :key="s.specialistId" :value="s.specialistId">
-            {{ s.fullName }}
-          </option>
-        </select>
-        <select v-model="filtroApp" class="toolbar__select">
-          <option value="all">Todas las aplicaciones</option>
-          <option v-for="a in appOptions" :key="a.id" :value="a.id">
-            {{ a.name }}
-          </option>
-        </select>
+      <div class="toolbar__right">
+        <div class="toolbar__legend">
+          <span class="toolbar__legend-item">
+            <span class="toolbar__dot toolbar__dot--open"></span>Abierta
+          </span>
+          <span class="toolbar__legend-item">
+            <span class="toolbar__dot toolbar__dot--closed"></span>Cerrada
+          </span>
+          <span class="toolbar__legend-item">
+            <span class="toolbar__dot toolbar__dot--inactive"></span>Inactiva
+          </span>
+        </div>
+        <div class="toolbar__filters">
+          <select v-if="authStore.isAdmin" v-model="filtroSpecialist" class="toolbar__select">
+            <option value="all">Todos los especialistas</option>
+            <option v-for="s in specOptions" :key="s.specialistId" :value="s.specialistId">
+              {{ s.fullName }}
+            </option>
+          </select>
+          <select v-model="filtroApp" class="toolbar__select">
+            <option value="all">Todas las apps</option>
+            <option v-for="a in appOptions" :key="a.id" :value="a.id">
+              {{ a.name }}
+            </option>
+          </select>
+        </div>
       </div>
     </div>
 
@@ -245,19 +307,6 @@ onUnmounted(() => {
       @range-selected="onRangeSelected"
     />
 
-    <!-- Leyenda -->
-    <div class="legend">
-      <div class="legend__item">
-        <span class="legend__dot legend__dot--open"></span> Sesión abierta
-      </div>
-      <div class="legend__item">
-        <span class="legend__dot legend__dot--closed"></span> Sesión cerrada
-      </div>
-      <div class="legend__item">
-        <span class="legend__dot legend__dot--inactive"></span> Inactiva
-      </div>
-    </div>
-
     <!-- Modal detalle -->
     <WorkWindowModal
       v-if="selectedWindow"
@@ -267,6 +316,7 @@ onUnmounted(() => {
       @close="selectedWindow = null"
       @open="handleOpen"
       @close-session="handleCloseSession"
+      @delete="handleDelete"
     />
 
     <!-- Modal crear -->
@@ -294,13 +344,13 @@ onUnmounted(() => {
 .content {
   display: flex;
   flex-direction: column;
-  gap: 1.25rem;
+  gap: 0.75rem;
 }
 
 /* ---- Header ---- */
 .page-header {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
 }
 
@@ -319,22 +369,22 @@ onUnmounted(() => {
 .btn-create {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  padding: 0.6rem 0.8rem 0.8rem;
+  gap: 0.45rem;
+  padding: 0.55rem 1rem;
   background-color: var(--primary-500);
   color: white;
   font-weight: 600;
-  font-size: 0.9rem;
+  font-size: 0.85rem;
   border-radius: var(--radius-md);
   border: none;
   cursor: pointer;
-  transition: background-color 0.2s ease, box-shadow 0.2s ease;
-  box-shadow: 0 1px 3px rgba(42, 199, 143, 0.3);
+  transition: background-color 0.15s, box-shadow 0.15s, transform 0.1s;
+  box-shadow: 0 1px 3px rgba(42, 199, 143, 0.25);
 }
 
 .btn-create:hover {
   background-color: var(--primary-600);
-  box-shadow: 0 3px 8px rgba(42, 199, 143, 0.35);
+  box-shadow: 0 3px 10px rgba(42, 199, 143, 0.3);
 }
 
 .btn-create:active {
@@ -342,7 +392,7 @@ onUnmounted(() => {
 }
 
 .btn-create i {
-  font-size: 1.2rem;
+  font-size: 1.1rem;
 }
 
 .btn-create__short {
@@ -354,44 +404,51 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 1rem;
-  background: white;
-  padding: 0.75rem 1rem;
+  gap: 0.75rem;
+  background: var(--bg-main);
+  padding: 0.5rem 0.75rem;
   border-radius: var(--radius-md);
-  box-shadow: var(--shadow-sm);
+  border: 1px solid var(--border-light);
   flex-wrap: wrap;
+}
+
+.toolbar__left {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
 }
 
 .toolbar__nav {
   display: flex;
   align-items: center;
-  gap: 0.4rem;
+  gap: 0.25rem;
 }
 
-.toolbar__btn {
+.toolbar__arrow {
   background: none;
   border: 1px solid var(--border-light);
   color: var(--text-secondary);
-  font-size: 1.2rem;
-  padding: 0.3rem 0.4rem;
+  font-size: 1.15rem;
+  padding: 0.25rem 0.35rem;
   border-radius: var(--radius-sm);
   cursor: pointer;
   display: flex;
   align-items: center;
-  transition: color 0.15s, border-color 0.15s;
+  transition: all 0.15s;
 }
 
-.toolbar__btn:hover {
+.toolbar__arrow:hover {
   color: var(--primary-500);
   border-color: var(--primary-500);
+  background: rgba(42, 199, 143, 0.04);
 }
 
 .toolbar__today {
   background: none;
   border: 1px solid var(--border-light);
-  padding: 0.3rem 0.7rem;
+  padding: 0.25rem 0.65rem;
   border-radius: var(--radius-sm);
-  font-size: 0.8rem;
+  font-size: 0.78rem;
   font-weight: 600;
   color: var(--text-primary);
   cursor: pointer;
@@ -408,66 +465,73 @@ onUnmounted(() => {
   font-size: 0.88rem;
   font-weight: 600;
   color: var(--text-primary);
-  margin-left: 0.5rem;
   white-space: nowrap;
 }
 
+.toolbar__right {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+/* Legend inline */
+.toolbar__legend {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.toolbar__legend-item {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.68rem;
+  font-weight: 500;
+  color: #8993a4;
+}
+
+.toolbar__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  border-left: 2.5px solid;
+}
+
+.toolbar__dot--open {
+  background: rgba(42, 199, 143, 0.15);
+  border-left-color: var(--primary-500);
+}
+
+.toolbar__dot--closed {
+  background: rgba(96, 125, 234, 0.12);
+  border-left-color: #607dea;
+}
+
+.toolbar__dot--inactive {
+  background: #f0f1f3;
+  border-left-color: #c1c7d0;
+}
+
+/* Filters */
 .toolbar__filters {
   display: flex;
-  gap: 0.5rem;
+  gap: 0.4rem;
 }
 
 .toolbar__select {
-  padding: 0.35rem 0.6rem;
+  padding: 0.3rem 0.5rem;
   border: 1px solid var(--border-light);
   border-radius: var(--radius-sm);
-  font-size: 0.8rem;
+  font-size: 0.75rem;
   color: var(--text-primary);
-  background: white;
+  background: var(--bg-main);
   cursor: pointer;
+  transition: border-color 0.15s;
 }
 
 .toolbar__select:focus {
   outline: none;
   border-color: var(--primary-500);
-}
-
-/* ---- Legend ---- */
-.legend {
-  display: flex;
-  gap: 1.25rem;
-  padding: 0.5rem 0;
-  justify-content: center;
-}
-
-.legend__item {
-  display: flex;
-  align-items: center;
-  gap: 0.35rem;
-  font-size: 0.75rem;
-  color: var(--text-secondary);
-}
-
-.legend__dot {
-  width: 0.65rem;
-  height: 0.65rem;
-  border-radius: 2px;
-  border-left: 2.5px solid;
-}
-
-.legend__dot--open {
-  background: #dcfce7;
-  border-left-color: #15803d;
-}
-
-.legend__dot--closed {
-  background: #dbeafe;
-  border-left-color: #1d4ed8;
-}
-
-.legend__dot--inactive {
-  background: #f1f5f9;
-  border-left-color: #94a3b8;
 }
 
 /* ---- Responsive ---- */
@@ -478,11 +542,24 @@ onUnmounted(() => {
     flex-direction: column;
     align-items: stretch;
   }
-  .toolbar__nav {
+  .toolbar__left {
+    justify-content: center;
+  }
+  .toolbar__right {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .toolbar__legend {
     justify-content: center;
   }
   .toolbar__filters {
     flex-direction: column;
+  }
+}
+
+@media (max-width: 480px) {
+  .toolbar__legend {
+    display: none;
   }
 }
 </style>

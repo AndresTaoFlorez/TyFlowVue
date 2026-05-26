@@ -12,6 +12,11 @@ export const ApplicationRepository = {
     return data
   },
 
+  async update(applicationId, payload) {
+    const { data } = await client.patch(`/applications/${applicationId}`, payload)
+    return data
+  },
+
   async delete(applicationId) {
     await client.delete(`/applications/${applicationId}`)
   },

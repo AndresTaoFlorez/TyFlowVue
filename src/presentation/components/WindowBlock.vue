@@ -3,29 +3,29 @@ const props = defineProps({
   window: { type: Object, required: true },
   specialistName: { type: String, default: '—' },
   applicationName: { type: String, default: '—' },
-  hourHeight: { type: Number, default: 52 },
-  baseHour: { type: Number, default: 8 },
+  hourHeight: { type: Number, default: 60 },
+  baseHour: { type: Number, default: 0 },
   col: { type: Number, default: 0 },
   totalCols: { type: Number, default: 1 },
 })
 
 defineEmits(['click'])
 
-const top = () => (props.window.startHour - props.baseHour) * props.hourHeight + 2
-const height = () => (props.window.endHour - props.window.startHour) * props.hourHeight - 4
-const left = () => props.totalCols === 1 ? '4%' : `${(props.col / props.totalCols) * 93 + 2}%`
-const width = () => props.totalCols === 1 ? '90%' : `${95 / props.totalCols}%`
+const top = () => Math.max(0, (props.window.startHour - props.baseHour) * props.hourHeight + 2)
+const height = () => Math.max(props.hourHeight / 2, (props.window.endHour - props.window.startHour) * props.hourHeight - 4)
+const left = () => props.totalCols === 1 ? '3%' : `${(props.col / props.totalCols) * 92 + 2}%`
+const width = () => props.totalCols === 1 ? '92%' : `${92 / props.totalCols}%`
 
 const statusClass = () => {
-  if (props.window.isSessionOpen) return 'block--open'
-  if (!props.window.isActive) return 'block--inactive'
-  return 'block--closed'
+  if (props.window.isSessionOpen) return 'wb--open'
+  if (!props.window.isActive) return 'wb--inactive'
+  return 'wb--closed'
 }
 </script>
 
 <template>
   <div
-    class="window-block"
+    class="wb"
     :class="statusClass()"
     :style="{
       top: top() + 'px',
@@ -35,69 +35,82 @@ const statusClass = () => {
     }"
     @click="$emit('click', window)"
   >
-    <span class="window-block__name">{{ specialistName }}</span>
-    <span v-if="height() > 38" class="window-block__time">{{ window.timeRange }}</span>
-    <span v-if="height() > 54" class="window-block__app">{{ applicationName }}</span>
+    <span class="wb__name">{{ specialistName }}</span>
+    <span v-if="height() > 42" class="wb__time">{{ window.timeRange }}</span>
+    <span v-if="height() > 60" class="wb__app">{{ applicationName }}</span>
   </div>
 </template>
 
 <style scoped>
-.window-block {
+.wb {
   position: absolute;
-  border-radius: 6px;
-  padding: 0.3rem 0.5rem;
+  border-radius: 4px;
+  padding: 0.3rem 0.45rem;
   cursor: pointer;
   overflow: hidden;
   border-left: 3px solid;
-  transition: box-shadow 0.12s ease;
   z-index: 2;
   display: flex;
   flex-direction: column;
   gap: 0.1rem;
+  transition: transform 0.1s ease, box-shadow 0.15s ease, filter 0.15s ease;
 }
 
-.window-block:hover {
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+.wb:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+  filter: brightness(1.15);
   z-index: 10;
 }
 
-/* Sesion abierta — verde */
-.block--open {
-  background: #dcfce7;
-  border-left-color: #15803d;
+.wb:active {
+  transform: scale(0.99);
 }
 
-/* Sesion cerrada — azul */
-.block--closed {
-  background: #dbeafe;
-  border-left-color: #1d4ed8;
+/* Open — green/teal */
+.wb--open {
+  background: rgba(42, 199, 143, 0.22);
+  border-left-color: #2AC78F;
 }
+.wb--open .wb__name { color: #6ee7b7; }
+.wb--open .wb__time { color: #5dd9a8; }
+.wb--open .wb__app { color: #4ecf9a; }
 
-/* Ventana inactiva — gris */
-.block--inactive {
-  background: #f1f5f9;
-  border-left-color: #94a3b8;
-  opacity: 0.6;
+/* Closed — blue/purple */
+.wb--closed {
+  background: rgba(120, 130, 230, 0.2);
+  border-left-color: #8b8fea;
 }
+.wb--closed .wb__name { color: #b4b8f8; }
+.wb--closed .wb__time { color: #9ea2e8; }
+.wb--closed .wb__app { color: #8b90d8; }
 
-.window-block__name {
-  font-size: 0.72rem;
+/* Inactive — muted */
+.wb--inactive {
+  background: rgba(100, 110, 130, 0.15);
+  border-left-color: #5a6075;
+  opacity: 0.5;
+}
+.wb--inactive .wb__name { color: #8890a4; }
+
+.wb__name {
+  font-size: 0.68rem;
   font-weight: 700;
-  color: #0f172a;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  line-height: 1.3;
 }
 
-.window-block__time {
-  font-size: 0.65rem;
-  color: #475569;
+.wb__time {
+  font-size: 0.6rem;
+  font-weight: 500;
   white-space: nowrap;
 }
 
-.window-block__app {
-  font-size: 0.62rem;
-  color: #64748b;
+.wb__app {
+  font-size: 0.56rem;
+  font-weight: 500;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;

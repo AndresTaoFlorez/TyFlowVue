@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted, nextTick } from 'vue'
+import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import WindowBlock from '@/presentation/components/WindowBlock.vue'
 
 const props = defineProps({
@@ -12,110 +12,148 @@ const props = defineProps({
 
 const emit = defineEmits(['select', 'range-selected'])
 
-const HOUR_H = 52
+const SLOT_H = 30               // px per half-hour slot
+const HOUR_H = SLOT_H * 2       // px per hour (used by WindowBlock)
 const BASE_HOUR = 0
-const HOURS = Array.from({ length: 24 }, (_, i) => `${String(i).padStart(2, '0')}:00`)
+const SLOTS = Array.from({ length: 48 }, (_, i) => i)  // 0..47 → 00:00, 00:30, …, 23:30
 const DAY_LABELS = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom']
 
 const scrollContainer = ref(null)
 
+// ---- Today & current time ----
+const now = ref(new Date())
+let timeInterval = null
+
 const todayStr = computed(() => {
-  const d = new Date()
+  const d = now.value
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 })
 const todayIndex = computed(() => props.weekDates.indexOf(todayStr.value))
 
-// Scroll a hora laboral al montar
+const currentTimeTop = computed(() => {
+  const d = now.value
+  return (d.getHours() + d.getMinutes() / 60) * HOUR_H
+})
+
 onMounted(() => {
   nextTick(() => {
     if (scrollContainer.value) {
-      scrollContainer.value.scrollTop = 7 * HOUR_H // 7:00
+      scrollContainer.value.scrollTop = 7 * HOUR_H
     }
   })
+  timeInterval = setInterval(() => { now.value = new Date() }, 30000)
 })
 
-// ---- Drag selection state ----
-const dragging = ref(false)
-const dragDay = ref(-1)
-const dragStartHour = ref(0)
-const dragEndHour = ref(0)
+onUnmounted(() => {
+  if (timeInterval) clearInterval(timeInterval)
+})
 
-const selMinHour = computed(() => Math.min(dragStartHour.value, dragEndHour.value))
-const selMaxHour = computed(() => Math.max(dragStartHour.value, dragEndHour.value) + 1)
+// ---- Drag selection (multi-column) ----
+const dragging = ref(false)
+const dragStartDay = ref(-1)
+const dragStartSlot = ref(0)
+const dragEndDay = ref(-1)
+const dragEndSlot = ref(0)
+
+const selDayMin = computed(() => Math.min(dragStartDay.value, dragEndDay.value))
+const selDayMax = computed(() => Math.max(dragStartDay.value, dragEndDay.value))
+const selSlotMin = computed(() => Math.min(dragStartSlot.value, dragEndSlot.value))
+const selSlotMax = computed(() => Math.max(dragStartSlot.value, dragEndSlot.value) + 1)
+
+const isDayInSelection = (dayIdx) => {
+  if (!dragging.value) return false
+  return dayIdx >= selDayMin.value && dayIdx <= selDayMax.value
+}
 
 const selectionStyle = computed(() => {
-  if (!dragging.value || dragDay.value < 0) return null
+  if (!dragging.value) return null
   return {
-    top: (selMinHour.value - BASE_HOUR) * HOUR_H + 'px',
-    height: (selMaxHour.value - selMinHour.value) * HOUR_H + 'px',
+    top: selSlotMin.value * SLOT_H + 'px',
+    height: (selSlotMax.value - selSlotMin.value) * SLOT_H + 'px',
   }
 })
 
 const selectionLabel = computed(() => {
   if (!dragging.value) return ''
-  return `${String(selMinHour.value).padStart(2, '0')}:00 – ${String(selMaxHour.value).padStart(2, '0')}:00`
+  const startH = Math.floor(selSlotMin.value / 2)
+  const startM = (selSlotMin.value % 2) * 30
+  const endH = Math.floor(selSlotMax.value / 2)
+  const endM = (selSlotMax.value % 2) * 30
+  const fmt = (h, m) => `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
+  return `${fmt(startH, startM)} – ${fmt(endH, endM)}`
 })
 
-const onCellMousedown = (dayIdx, hourIdx) => {
+const onCellMousedown = (dayIdx, slot) => {
   if (!props.selectable) return
   dragging.value = true
-  dragDay.value = dayIdx
-  dragStartHour.value = BASE_HOUR + hourIdx
-  dragEndHour.value = BASE_HOUR + hourIdx
+  dragStartDay.value = dayIdx
+  dragStartSlot.value = slot
+  dragEndDay.value = dayIdx
+  dragEndSlot.value = slot
 }
 
-const onCellMouseenter = (dayIdx, hourIdx) => {
-  if (!dragging.value || dayIdx !== dragDay.value) return
-  dragEndHour.value = BASE_HOUR + hourIdx
+const onCellMouseenter = (dayIdx, slot) => {
+  if (!dragging.value) return
+  dragEndDay.value = dayIdx
+  dragEndSlot.value = slot
 }
 
 const onMouseup = () => {
   if (!dragging.value) return
+  const startH = Math.floor(selSlotMin.value / 2)
+  const startM = (selSlotMin.value % 2) * 30
+  const endH = Math.floor(selSlotMax.value / 2)
+  const endM = (selSlotMax.value % 2) * 30
+  const days = []
+  for (let d = selDayMin.value; d <= selDayMax.value; d++) {
+    days.push({ dayIndex: d, date: props.weekDates[d] })
+  }
   emit('range-selected', {
-    dayIndex: dragDay.value,
-    date: props.weekDates[dragDay.value],
-    startHour: selMinHour.value,
-    endHour: selMaxHour.value,
+    days,
+    dayIndex: days[0].dayIndex,
+    date: days[0].date,
+    startHour: startH + startM / 60,
+    endHour: endH + endM / 60,
   })
   dragging.value = false
-  dragDay.value = -1
+  dragStartDay.value = -1
+  dragEndDay.value = -1
 }
 
 const cancelDrag = () => {
   dragging.value = false
-  dragDay.value = -1
+  dragStartDay.value = -1
+  dragEndDay.value = -1
 }
 
 // ---- Touch support ----
-const onCellTouchstart = (dayIdx, hourIdx, e) => {
+const onCellTouchstart = (dayIdx, slot, e) => {
   if (!props.selectable) return
   e.preventDefault()
-  dragging.value = true
-  dragDay.value = dayIdx
-  dragStartHour.value = BASE_HOUR + hourIdx
-  dragEndHour.value = BASE_HOUR + hourIdx
+  onCellMousedown(dayIdx, slot)
 }
 
 const onTouchmove = (e) => {
   if (!dragging.value) return
   const touch = e.touches[0]
   const el = document.elementFromPoint(touch.clientX, touch.clientY)
-  if (el && el.dataset.hour !== undefined && parseInt(el.dataset.day) === dragDay.value) {
-    dragEndHour.value = BASE_HOUR + parseInt(el.dataset.hour)
+  if (el && el.dataset.slot !== undefined) {
+    dragEndDay.value = parseInt(el.dataset.day)
+    dragEndSlot.value = parseInt(el.dataset.slot)
   }
 }
 
-const onTouchend = () => {
-  onMouseup()
-}
+const onTouchend = () => { onMouseup() }
 
-// ---- Agrupar ventanas por dia ----
+// ---- Windows by day ----
 const windowsByDay = computed(() => {
   const byDay = Array.from({ length: 7 }, () => [])
   for (const w of props.windows) {
-    for (let d = 0; d < 7; d++) {
-      byDay[d].push({ ...w, _dayIndex: d })
-    }
+    if (!w.scheduledDate) continue
+    const dayIdx = props.weekDates.indexOf(w.scheduledDate)
+    if (dayIdx === -1) continue
+    const copy = { ...w, startHour: w.startHour, endHour: w.endHour, isSessionOpen: w.isSessionOpen, timeRange: w.timeRange, _dayIndex: dayIdx }
+    byDay[dayIdx].push(copy)
   }
   for (let d = 0; d < 7; d++) {
     const sorted = byDay[d].sort((a, b) => a.startHour - b.startHour)
@@ -139,78 +177,101 @@ const findApp = (id) => props.applications.find(a => a.id === id)
 const specName = (w) => findSpecialist(w.specialistId)?.fullName || w.specialistId
 const appName = (w) => findApp(w.applicationId)?.name || w.applicationId
 
-const formatDate = (dateStr) => {
-  const [, , d] = dateStr.split('-')
-  return `${parseInt(d)}`
+const formatHour = (h) => {
+  const suffix = h < 12 ? 'AM' : 'PM'
+  const display = h === 0 ? 12 : h > 12 ? h - 12 : h
+  return `${display} ${suffix}`
 }
+
+const isWeekend = (dayIdx) => dayIdx >= 5
+const isHourTop = (slot) => slot % 2 === 0
 </script>
 
 <template>
   <div
-    class="week-calendar"
-    :class="{ 'week-calendar--selectable': selectable }"
+    class="cal"
+    :class="{ 'cal--selectable': selectable }"
     @mouseleave="cancelDrag"
     @mouseup="onMouseup"
     @touchmove.passive="onTouchmove"
     @touchend="onTouchend"
   >
-    <!-- Header fijo -->
-    <div class="week-header">
-      <div class="week-header__hours"></div>
-      <div
-        v-for="(date, i) in weekDates"
-        :key="date"
-        class="week-header__day"
-        :class="{ 'week-header__day--today': i === todayIndex }"
-      >
-        <span class="week-header__label">{{ DAY_LABELS[i] }}</span>
-        <span class="week-header__date">{{ formatDate(date) }}</span>
-      </div>
-    </div>
+    <div ref="scrollContainer" class="cal-scroll">
 
-    <!-- Body scrollable -->
-    <div ref="scrollContainer" class="week-scroll">
-      <div class="week-body">
-        <!-- Horas -->
-        <div class="week-hours">
-          <div v-for="h in HOURS" :key="h" class="week-hours__cell" :style="{ height: HOUR_H + 'px' }">
-            {{ h }}
+      <!-- Sticky header -->
+      <div class="cal-header">
+        <div class="cal-header__gutter"></div>
+        <div
+          v-for="(date, i) in weekDates"
+          :key="date"
+          class="cal-header__day"
+          :class="{
+            'cal-header__day--today': i === todayIndex,
+            'cal-header__day--weekend': isWeekend(i),
+          }"
+        >
+          <span class="cal-header__num">{{ parseInt(date.split('-')[2]) }}</span>
+          <span class="cal-header__label">{{ DAY_LABELS[i] }}</span>
+        </div>
+      </div>
+
+      <!-- Body -->
+      <div class="cal-body">
+        <!-- Gutter -->
+        <div class="cal-gutter">
+          <div v-for="slot in SLOTS" :key="slot" class="cal-gutter__cell" :class="{ 'cal-gutter__cell--top': isHourTop(slot) }" :style="{ height: SLOT_H + 'px' }">
+            <span v-if="isHourTop(slot)" class="cal-gutter__label">{{ formatHour(slot / 2) }}</span>
           </div>
         </div>
 
-        <!-- Columnas por dia -->
+        <!-- Day columns -->
         <div
           v-for="(date, dayIdx) in weekDates"
           :key="date"
-          class="week-column"
+          class="cal-col"
           :class="{
-            'week-column--today': dayIdx === todayIndex,
-            'week-column--drag-active': dragging && dragDay === dayIdx,
+            'cal-col--today': dayIdx === todayIndex,
+            'cal-col--weekend': isWeekend(dayIdx),
+            'cal-col--dragging': dragging && isDayInSelection(dayIdx),
           }"
         >
-          <!-- Celdas interactivas por hora -->
+          <!-- Half-hour cells -->
           <div
-            v-for="(h, hourIdx) in HOURS"
-            :key="h"
-            class="week-column__cell"
-            :style="{ height: HOUR_H + 'px' }"
+            v-for="slot in SLOTS"
+            :key="slot"
+            class="cal-col__cell"
+            :class="{
+              'cal-col__cell--top': isHourTop(slot),
+              'cal-col__cell--bottom': !isHourTop(slot),
+            }"
+            :style="{ height: SLOT_H + 'px' }"
             :data-day="dayIdx"
-            :data-hour="hourIdx"
-            @mousedown.prevent="onCellMousedown(dayIdx, hourIdx)"
-            @mouseenter="onCellMouseenter(dayIdx, hourIdx)"
-            @touchstart="onCellTouchstart(dayIdx, hourIdx, $event)"
+            :data-slot="slot"
+            @mousedown.prevent="onCellMousedown(dayIdx, slot)"
+            @mouseenter="onCellMouseenter(dayIdx, slot)"
+            @touchstart="onCellTouchstart(dayIdx, slot, $event)"
           ></div>
 
-          <!-- Preview de seleccion -->
+          <!-- Current time -->
           <div
-            v-if="dragging && dragDay === dayIdx"
-            class="drag-preview"
-            :style="selectionStyle"
+            v-if="dayIdx === todayIndex"
+            class="cal-now"
+            :style="{ top: currentTimeTop + 'px' }"
           >
-            <span class="drag-preview__label">{{ selectionLabel }}</span>
+            <span class="cal-now__dot"></span>
+            <span class="cal-now__line"></span>
           </div>
 
-          <!-- Bloques de ventanas -->
+          <!-- Drag preview -->
+          <div
+            v-if="dragging && isDayInSelection(dayIdx)"
+            class="cal-drag"
+            :style="selectionStyle"
+          >
+            <span v-if="dayIdx === selDayMin" class="cal-drag__label">{{ selectionLabel }}</span>
+          </div>
+
+          <!-- Window blocks -->
           <WindowBlock
             v-for="w in windowsByDay[dayIdx]"
             :key="`${w.id}-${dayIdx}`"
@@ -230,9 +291,10 @@ const formatDate = (dateStr) => {
 </template>
 
 <style scoped>
-.week-calendar {
-  background: white;
-  border: 1px solid var(--border-light);
+/* ========== Shell ========== */
+.cal {
+  background: #292d3e;
+  border: 1px solid #3b3f54;
   border-radius: var(--radius-lg);
   overflow: hidden;
   user-select: none;
@@ -240,206 +302,246 @@ const formatDate = (dateStr) => {
   flex-direction: column;
 }
 
-/* ---- Header fijo ---- */
-.week-header {
+/* ========== Scroll ========== */
+.cal-scroll {
+  overflow-y: auto;
+  max-height: 36rem;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  scrollbar-color: #3b3f54 transparent;
+}
+
+.cal-scroll::-webkit-scrollbar { width: 6px; }
+.cal-scroll::-webkit-scrollbar-track { background: transparent; }
+.cal-scroll::-webkit-scrollbar-thumb { background: #3b3f54; border-radius: 3px; }
+.cal-scroll::-webkit-scrollbar-thumb:hover { background: #4f5470; }
+
+/* ========== Sticky header ========== */
+.cal-header {
   display: grid;
-  grid-template-columns: 2.8rem repeat(7, 1fr);
-  border-bottom: 1px solid var(--border-light);
-  flex-shrink: 0;
+  grid-template-columns: 3.5rem repeat(7, 1fr);
+  border-bottom: 1px solid #3b3f54;
+  background: #252839;
+  position: sticky;
+  top: 0;
+  z-index: 20;
 }
 
-.week-header__hours {
-  border-right: 1px solid var(--border-light);
+.cal-header__gutter {
+  border-right: 1px solid #3b3f54;
 }
 
-.week-header__day {
+.cal-header__day {
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 0.5rem 0;
-  border-right: 1px solid var(--border-light);
-  gap: 0.1rem;
+  padding: 0.55rem 0 0.45rem;
+  border-right: 1px solid #3b3f54;
+  gap: 0.05rem;
   min-width: 0;
 }
 
-.week-header__day:last-child {
-  border-right: none;
-}
+.cal-header__day:last-child { border-right: none; }
 
-.week-header__day--today {
-  background: #eff6ff;
-}
+.cal-header__day--today { background: rgba(42, 199, 143, 0.06); }
+.cal-header__day--weekend:not(.cal-header__day--today) { background: #242736; }
 
-.week-header__label {
-  font-size: 0.65rem;
-  font-weight: 600;
-  color: var(--text-secondary);
-  text-transform: uppercase;
-}
-
-.week-header__date {
-  font-size: 0.95rem;
+.cal-header__num {
+  font-size: 1.3rem;
   font-weight: 700;
-  color: var(--text-primary);
+  color: #c8cdd8;
+  line-height: 1.2;
 }
 
-.week-header__day--today .week-header__date {
-  background: #2563eb;
-  color: white;
-  width: 1.6rem;
-  height: 1.6rem;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 0.75rem;
+.cal-header__day--today .cal-header__num {
+  color: var(--primary-500);
 }
 
-/* ---- Scroll container ---- */
-.week-scroll {
-  overflow-y: auto;
-  max-height: 34rem;
-  -webkit-overflow-scrolling: touch;
+.cal-header__day--weekend:not(.cal-header__day--today) .cal-header__num {
+  color: #6c7293;
 }
 
-/* ---- Body ---- */
-.week-body {
+.cal-header__label {
+  font-size: 0.62rem;
+  font-weight: 600;
+  color: #6c7293;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.cal-header__day--today .cal-header__label {
+  color: var(--primary-500);
+}
+
+/* ========== Body ========== */
+.cal-body {
   display: grid;
-  grid-template-columns: 2.8rem repeat(7, 1fr);
+  grid-template-columns: 3.5rem repeat(7, 1fr);
 }
 
-.week-hours {
-  border-right: 1px solid var(--border-light);
+/* ========== Gutter ========== */
+.cal-gutter {
+  border-right: 1px solid #3b3f54;
+  background: #252839;
 }
 
-.week-hours__cell {
+.cal-gutter__cell {
+  position: relative;
   display: flex;
   align-items: flex-start;
-  justify-content: center;
-  font-size: 0.6rem;
-  color: var(--text-secondary);
-  padding-top: 0.15rem;
-  border-bottom: 1px solid #f1f5f9;
+  justify-content: flex-end;
+  padding-right: 0.45rem;
 }
 
-.week-column {
+.cal-gutter__label {
+  font-size: 0.58rem;
+  font-weight: 500;
+  color: #6c7293;
+  line-height: 1;
+  margin-top: -0.3em;
+  white-space: nowrap;
+}
+
+/* First label (12 AM) — keep visible below header */
+.cal-gutter__cell:first-child .cal-gutter__label {
+  margin-top: 0.25em;
+}
+
+/* ========== Day columns ========== */
+.cal-col {
   position: relative;
-  border-right: 1px solid var(--border-light);
+  border-right: 1px solid #3b3f54;
+  background: #292d3e;
 }
 
-.week-column:last-child {
-  border-right: none;
-}
+.cal-col:last-child { border-right: none; }
+.cal-col--today { background: rgba(42, 199, 143, 0.03); }
+.cal-col--weekend:not(.cal-col--today) { background: #262938; }
 
-.week-column--today {
-  background: #f8fbff;
-}
-
-.week-column__cell {
-  border-bottom: 1px solid #f1f5f9;
+/* Half-hour cells */
+.cal-col__cell {
   position: relative;
 }
 
-.week-calendar--selectable .week-column__cell {
+/* Top of hour — solid border */
+.cal-col__cell--top {
+  border-top: 1px solid #33374a;
+}
+
+/* Bottom of hour (half mark) — dashed subtle border */
+.cal-col__cell--bottom {
+  border-top: 1px dashed #2e3244;
+}
+
+/* First cell: no double border with header */
+.cal-col__cell:first-child {
+  border-top: none;
+}
+
+.cal--selectable .cal-col__cell {
   cursor: crosshair;
 }
 
-.week-calendar--selectable .week-column__cell:hover {
-  background: rgba(42, 199, 143, 0.04);
+.cal--selectable .cal-col__cell:hover {
+  background: rgba(42, 199, 143, 0.06);
 }
 
-/* ---- Drag preview ---- */
-.drag-preview {
+/* ========== Current time ========== */
+.cal-now {
   position: absolute;
-  left: 4%;
-  width: 90%;
-  background: rgba(42, 199, 143, 0.15);
-  border: 2px dashed var(--primary-500);
-  border-radius: 6px;
+  left: 0;
+  right: 0;
+  z-index: 12;
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+}
+
+.cal-now__dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--primary-500);
+  flex-shrink: 0;
+  margin-left: -5px;
+  box-shadow: 0 0 6px rgba(42, 199, 143, 0.5);
+}
+
+.cal-now__line {
+  flex: 1;
+  height: 2px;
+  background: var(--primary-500);
+  box-shadow: 0 0 4px rgba(42, 199, 143, 0.3);
+}
+
+/* ========== Drag preview ========== */
+.cal-drag {
+  position: absolute;
+  left: 2%;
+  width: 96%;
+  background: rgba(42, 199, 143, 0.12);
+  border: 2px solid rgba(42, 199, 143, 0.4);
+  border-radius: 4px;
   z-index: 15;
   display: flex;
   align-items: center;
   justify-content: center;
   pointer-events: none;
-  animation: preview-in 0.1s ease;
+  animation: drag-in 0.08s ease;
 }
 
-.drag-preview__label {
-  font-size: 0.72rem;
+.cal-drag__label {
+  font-size: 0.7rem;
   font-weight: 700;
-  color: var(--primary-700);
-  background: rgba(255, 255, 255, 0.85);
-  padding: 0.15rem 0.5rem;
-  border-radius: 4px;
+  color: var(--primary-500);
+  background: rgba(37, 40, 57, 0.92);
+  padding: 0.12rem 0.55rem;
+  border-radius: 3px;
   white-space: nowrap;
 }
 
-@keyframes preview-in {
+@keyframes drag-in {
   from { opacity: 0; }
   to { opacity: 1; }
 }
 
-.week-column--drag-active {
-  background: rgba(42, 199, 143, 0.02);
+.cal-col--dragging {
+  background: rgba(42, 199, 143, 0.04);
 }
 
-/* ---- Mobile ---- */
+/* ========== Responsive ========== */
 @media (max-width: 768px) {
-  .week-header,
-  .week-body {
-    grid-template-columns: 2.2rem repeat(7, 1fr);
+  .cal-header,
+  .cal-body {
+    grid-template-columns: 2.5rem repeat(7, 1fr);
   }
 
-  .week-header__label {
-    font-size: 0.55rem;
+  .cal-header__num {
+    font-size: 1rem;
+    width: 1.6rem;
+    height: 1.6rem;
   }
 
-  .week-header__date {
-    font-size: 0.8rem;
-  }
-
-  .week-header__day--today .week-header__date {
-    width: 1.35rem;
-    height: 1.35rem;
-    font-size: 0.65rem;
-  }
-
-  .week-hours__cell {
-    font-size: 0.5rem;
-    padding-top: 0.1rem;
-  }
-
-  .week-scroll {
-    max-height: 28rem;
-  }
-
-  .drag-preview__label {
-    font-size: 0.6rem;
-    padding: 0.1rem 0.3rem;
-  }
+  .cal-header__label { font-size: 0.52rem; }
+  .cal-gutter__label { font-size: 0.5rem; }
+  .cal-scroll { max-height: 28rem; }
+  .cal-drag__label { font-size: 0.6rem; }
 }
 
 @media (max-width: 480px) {
-  .week-header,
-  .week-body {
-    grid-template-columns: 1.8rem repeat(7, 1fr);
+  .cal-header,
+  .cal-body {
+    grid-template-columns: 2rem repeat(7, 1fr);
   }
 
-  .week-header__label {
-    font-size: 0.45rem;
-    letter-spacing: -0.02em;
+  .cal-header__num {
+    font-size: 0.85rem;
+    width: 1.4rem;
+    height: 1.4rem;
   }
 
-  .week-header__date {
-    font-size: 0.7rem;
-  }
-
-  .week-hours__cell {
-    font-size: 0.42rem;
-  }
-
-  .week-scroll {
-    max-height: 24rem;
-  }
+  .cal-header__label { font-size: 0.45rem; letter-spacing: -0.02em; }
+  .cal-gutter__label { font-size: 0.42rem; }
+  .cal-scroll { max-height: 24rem; }
 }
 </style>

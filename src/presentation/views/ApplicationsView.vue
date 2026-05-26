@@ -1,26 +1,22 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { fetchApplicationsUseCase } from '@/application/use-cases/applications/FetchApplicationsUseCase'
 import { createApplicationUseCase } from '@/application/use-cases/applications/CreateApplicationUseCase'
 import { deleteApplicationUseCase } from '@/application/use-cases/applications/DeleteApplicationUseCase'
 import { fetchAppSpecialistsUseCase } from '@/application/use-cases/applications/FetchAppSpecialistsUseCase'
-import { updateUserUseCase } from '@/application/use-cases/users/UpdateUserUseCase'
 import { useUserStore } from '@/presentation/stores/useUserStore'
 import ApplicationCard from '@/presentation/components/ApplicationCard.vue'
-import ApplicationDetail from '@/presentation/components/ApplicationDetail.vue'
 import CreateApplicationModal from '@/presentation/components/CreateApplicationModal.vue'
 import SectionLoader from '@/presentation/components/SectionLoader.vue'
 import ToastNotification from '@/presentation/components/ToastNotification.vue'
 import logger from '@/infrastructure/logger'
 
+const router = useRouter()
 const userStore = useUserStore()
 
 const applications = ref([])
 const loading = ref(false)
-const selectedApp = ref(null)
-const specialists = ref([])
-const loadingSpecialists = ref(false)
-const assigning = ref(false)
 const specialistCounts = ref({})
 const mostrarCrear = ref(false)
 const creando = ref(false)
@@ -43,7 +39,6 @@ const loadApplications = async () => {
   loading.value = true
   try {
     applications.value = await fetchApplicationsUseCase()
-    // Load specialist counts for all apps
     const counts = {}
     await Promise.all(applications.value.map(async (app) => {
       try {
@@ -62,24 +57,9 @@ const loadApplications = async () => {
   }
 }
 
-// ---- Select app ----
-const selectApp = async (app) => {
-  if (selectedApp.value?.id === app.id) return
-  selectedApp.value = app
-  loadingSpecialists.value = true
-  try {
-    specialists.value = await fetchAppSpecialistsUseCase(app.id)
-  } catch (e) {
-    logger.error('[Apps] Error cargando especialistas:', e)
-    specialists.value = []
-  } finally {
-    loadingSpecialists.value = false
-  }
-}
-
-const closeDetail = () => {
-  selectedApp.value = null
-  specialists.value = []
+// ---- Navigate to detail ----
+const goToApp = (app) => {
+  router.push({ name: 'application-detail', params: { id: app.id } })
 }
 
 // ---- Create app ----
@@ -102,13 +82,8 @@ const handleCreate = async (name) => {
 }
 
 // ---- Delete app ----
-const confirmarEliminar = (app) => {
-  confirmandoEliminar.value = app
-}
-
-const cancelarEliminar = () => {
-  confirmandoEliminar.value = null
-}
+const confirmarEliminar = (app) => { confirmandoEliminar.value = app }
+const cancelarEliminar = () => { confirmandoEliminar.value = null }
 
 const ejecutarEliminar = async () => {
   const app = confirmandoEliminar.value
@@ -117,7 +92,6 @@ const ejecutarEliminar = async () => {
     await deleteApplicationUseCase(app.id)
     applications.value = applications.value.filter(a => a.id !== app.id)
     delete specialistCounts.value[app.id]
-    if (selectedApp.value?.id === app.id) closeDetail()
     userStore.invalidateApplications()
     showToast(`Aplicación "${app.name}" eliminada.`)
   } catch (e) {
@@ -128,56 +102,6 @@ const ejecutarEliminar = async () => {
   }
 }
 
-// ---- Assign specialist to app ----
-const handleAssign = async (user) => {
-  assigning.value = true
-  try {
-    const currentAppIds = user.applicationAssignments.map(a => a.application_id)
-    const newAppIds = [...currentAppIds, selectedApp.value.id]
-    await updateUserUseCase(user.id, {
-      firstName: user.firstName,
-      secondName: user.secondName,
-      firstSurname: user.firstSurname,
-      secondSurname: user.secondSurname,
-      documentNumber: user.documentNumber,
-      applicationIds: newAppIds,
-    })
-    specialists.value.push(user)
-    specialistCounts.value[selectedApp.value.id] = (specialistCounts.value[selectedApp.value.id] || 0) + 1
-    // Actualizar applicationAssignments del usuario en el store
-    await userStore.loadUsers()
-    showToast(`${user.fullName} asignado correctamente.`)
-  } catch (e) {
-    logger.error('[Apps] Error asignando especialista:', e)
-    showToast(e.userMessage || 'Error al asignar especialista.', 'error')
-  } finally {
-    assigning.value = false
-  }
-}
-
-// ---- Remove specialist from app ----
-const handleRemove = async (user) => {
-  try {
-    const currentAppIds = user.applicationAssignments.map(a => a.application_id)
-    const newAppIds = currentAppIds.filter(id => id !== selectedApp.value.id)
-    await updateUserUseCase(user.id, {
-      firstName: user.firstName,
-      secondName: user.secondName,
-      firstSurname: user.firstSurname,
-      secondSurname: user.secondSurname,
-      documentNumber: user.documentNumber,
-      applicationIds: newAppIds,
-    })
-    specialists.value = specialists.value.filter(s => s.id !== user.id)
-    specialistCounts.value[selectedApp.value.id] = Math.max(0, (specialistCounts.value[selectedApp.value.id] || 1) - 1)
-    await userStore.loadUsers()
-    showToast('Especialista removido de la aplicación.')
-  } catch (e) {
-    logger.error('[Apps] Error removiendo especialista:', e)
-    showToast(e.userMessage || 'Error al remover especialista.', 'error')
-  }
-}
-
 // ---- Filtered apps ----
 const appsFiltradas = computed(() => {
   const term = busqueda.value.toLowerCase().trim()
@@ -185,18 +109,16 @@ const appsFiltradas = computed(() => {
   return applications.value.filter(a => a.name.toLowerCase().includes(term))
 })
 
-// ---- ESC to close ----
+// ---- ESC ----
 const onEsc = (e) => {
   if (e.key === 'Escape') {
     if (confirmandoEliminar.value) cancelarEliminar()
     else if (mostrarCrear.value) mostrarCrear.value = false
-    else if (selectedApp.value) closeDetail()
   }
 }
 
 onMounted(() => {
   loadApplications()
-  userStore.loadUsers()
   window.addEventListener('keydown', onEsc)
 })
 
@@ -231,47 +153,21 @@ onUnmounted(() => {
     <!-- Loading -->
     <SectionLoader v-if="loading" message="Cargando aplicaciones..." />
 
-    <!-- Main layout: list + detail -->
-    <div v-else class="apps-layout">
-      <!-- App list -->
-      <div class="apps-list">
-        <div v-if="appsFiltradas.length === 0" class="apps-empty">
-          <i class='bx bx-cube'></i>
-          <p>{{ busqueda.trim() ? 'No se encontraron aplicaciones.' : 'No hay aplicaciones registradas.' }}</p>
-        </div>
-
-        <ApplicationCard
-          v-for="app in appsFiltradas"
-          :key="app.id"
-          :application="app"
-          :selected="selectedApp?.id === app.id"
-          :specialist-count="specialistCounts[app.id] ?? null"
-          @select="selectApp"
-          @delete="confirmarEliminar"
-        />
+    <!-- App grid -->
+    <div v-else class="apps-grid">
+      <div v-if="appsFiltradas.length === 0" class="apps-empty">
+        <i class='bx bx-cube'></i>
+        <p>{{ busqueda.trim() ? 'No se encontraron aplicaciones.' : 'No hay aplicaciones registradas.' }}</p>
       </div>
 
-      <!-- Detail panel -->
-      <div v-if="selectedApp" class="apps-detail">
-        <ApplicationDetail
-          :application="selectedApp"
-          :specialists="specialists"
-          :all-users="userStore.users"
-          :loading="loadingSpecialists"
-          :assigning="assigning"
-          @assign="handleAssign"
-          @remove="handleRemove"
-          @close="closeDetail"
-        />
-      </div>
-
-      <!-- Placeholder when nothing selected -->
-      <div v-else class="apps-detail apps-detail--placeholder">
-        <div class="placeholder">
-          <i class='bx bx-pointer'></i>
-          <p>Selecciona una aplicación para ver sus detalles</p>
-        </div>
-      </div>
+      <ApplicationCard
+        v-for="app in appsFiltradas"
+        :key="app.id"
+        :application="app"
+        :specialist-count="specialistCounts[app.id] ?? null"
+        @select="goToApp"
+        @delete="confirmarEliminar"
+      />
     </div>
 
     <!-- Delete confirmation modal -->
@@ -282,9 +178,7 @@ onUnmounted(() => {
           <button @click="cancelarEliminar" class="btn-close"><i class='bx bx-x'></i></button>
         </div>
         <div class="confirm-body">
-          <div class="confirm-icon">
-            <i class='bx bx-error-circle'></i>
-          </div>
+          <div class="confirm-icon"><i class='bx bx-error-circle'></i></div>
           <p>¿Estás seguro de que deseas eliminar <strong>{{ confirmandoEliminar.name }}</strong>?</p>
           <p class="confirm-hint">Esta acción eliminará todas las asignaciones de especialistas.</p>
         </div>
@@ -355,17 +249,9 @@ onUnmounted(() => {
   box-shadow: 0 3px 8px rgba(42, 199, 143, 0.35);
 }
 
-.btn-create:active {
-  transform: scale(0.97);
-}
-
-.btn-create i {
-  font-size: 1.2rem;
-}
-
-.btn-create__short {
-  display: none;
-}
+.btn-create:active { transform: scale(0.97); }
+.btn-create i { font-size: 1.2rem; }
+.btn-create__short { display: none; }
 
 .filter-bar {
   display: flex;
@@ -388,10 +274,7 @@ onUnmounted(() => {
   background-color: var(--bg-main);
 }
 
-.filter-bar__icon {
-  color: var(--text-secondary);
-  font-size: 1.2rem;
-}
+.filter-bar__icon { color: var(--text-secondary); font-size: 1.2rem; }
 
 .filter-bar__input {
   border: none;
@@ -407,67 +290,24 @@ onUnmounted(() => {
   white-space: nowrap;
 }
 
-/* ---- Layout ---- */
-.apps-layout {
+/* ---- Grid ---- */
+.apps-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 1.5rem;
-  align-items: start;
-}
-
-.apps-list {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-
-.apps-detail {
-  position: sticky;
-  top: 1rem;
-}
-
-.apps-detail--placeholder {
-  background: white;
-  border: 1.5px dashed var(--border-light);
-  border-radius: var(--radius-lg);
-  min-height: 20rem;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.placeholder {
-  text-align: center;
-  color: var(--text-secondary);
-  opacity: 0.5;
-}
-
-.placeholder i {
-  font-size: 3rem;
-  margin-bottom: 0.5rem;
-}
-
-.placeholder p {
-  font-size: 0.9rem;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 0.75rem;
 }
 
 .apps-empty {
+  grid-column: 1 / -1;
   text-align: center;
   padding: 3rem 1rem;
   color: var(--text-secondary);
 }
 
-.apps-empty i {
-  font-size: 2.5rem;
-  opacity: 0.3;
-}
+.apps-empty i { font-size: 2.5rem; opacity: 0.3; }
+.apps-empty p { font-size: 0.85rem; margin-top: 0.5rem; }
 
-.apps-empty p {
-  font-size: 0.85rem;
-  margin-top: 0.5rem;
-}
-
-/* ---- Delete modal ---- */
+/* ---- Modal ---- */
 .modal-overlay {
   position: fixed; top: 0; left: 0; width: 100%; height: 100%;
   background: rgba(0, 0, 0, 0.5); backdrop-filter: blur(4px);
@@ -482,10 +322,7 @@ onUnmounted(() => {
   box-shadow: var(--shadow-lg);
 }
 
-.modal-content--sm {
-  max-width: 400px;
-  width: 100%;
-}
+.modal-content--sm { max-width: 400px; width: 100%; }
 
 .modal-header {
   display: flex;
@@ -494,11 +331,7 @@ onUnmounted(() => {
   margin-bottom: 1rem;
 }
 
-.modal-header h2 {
-  font-size: 1.1rem;
-  font-weight: 700;
-  color: var(--text-primary);
-}
+.modal-header h2 { font-size: 1.1rem; font-weight: 700; color: var(--text-primary); }
 
 .btn-close {
   background: transparent;
@@ -508,34 +341,27 @@ onUnmounted(() => {
   cursor: pointer;
 }
 
-.confirm-body {
-  text-align: center;
-  padding: 0.5rem 0;
-}
-
-.confirm-icon {
-  font-size: 2.5rem;
-  color: var(--error-500);
-  margin-bottom: 0.75rem;
-}
-
-.confirm-body p {
-  font-size: 0.9rem;
-  color: var(--text-primary);
-  line-height: 1.4;
-}
-
-.confirm-hint {
-  font-size: 0.8rem !important;
-  color: var(--text-secondary) !important;
-  margin-top: 0.4rem;
-}
+.confirm-body { text-align: center; padding: 0.5rem 0; }
+.confirm-icon { font-size: 2.5rem; color: var(--error-500); margin-bottom: 0.75rem; }
+.confirm-body p { font-size: 0.9rem; color: var(--text-primary); line-height: 1.4; }
+.confirm-hint { font-size: 0.8rem !important; color: var(--text-secondary) !important; margin-top: 0.4rem; }
 
 .modal-actions {
   display: flex;
   justify-content: flex-end;
   gap: 0.75rem;
   margin-top: 1.25rem;
+}
+
+.btn-secondary {
+  padding: 0.55rem 1rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  border: 1px solid var(--border-light);
+  color: var(--text-primary);
+  background: white;
+  border-radius: var(--radius-md);
+  cursor: pointer;
 }
 
 .btn-danger {
@@ -553,18 +379,7 @@ onUnmounted(() => {
   transition: background 0.15s;
 }
 
-.btn-danger:hover {
-  background: #DC2626;
-}
-
-@media (max-width: 900px) {
-  .apps-layout {
-    grid-template-columns: 1fr;
-  }
-  .apps-detail {
-    position: static;
-  }
-}
+.btn-danger:hover { background: #DC2626; }
 
 @media (max-width: 768px) {
   .btn-create__label { display: none; }

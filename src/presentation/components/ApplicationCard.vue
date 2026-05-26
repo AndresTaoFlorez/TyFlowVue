@@ -14,7 +14,7 @@ defineEmits(['select', 'delete'])
     :class="{ 'app-card--selected': selected }"
     @click="$emit('select', application)"
   >
-    <div class="app-card__icon">
+    <div class="app-card__icon" :style="application.theme?.color ? { background: application.theme.color } : {}">
       <i class='bx bx-cube'></i>
     </div>
     <div class="app-card__body">

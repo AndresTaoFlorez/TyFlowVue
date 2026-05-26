@@ -13,17 +13,19 @@ export const WorkWindowRepository = {
     return new WorkWindow(data)
   },
 
-  async create({ specialistId, applicationId, startTime, endTime, inheritsOnReopen = false }) {
+  async create({ specialistId, applicationId, startTime, endTime, scheduledDate, inheritsOnReopen = false }) {
     const { data } = await client.post('/work-windows', {
       windows: [{
         specialist_id: specialistId,
         application_id: applicationId,
         start_time: startTime,
         end_time: endTime,
+        scheduled_date: scheduledDate,
         inherits_on_reopen: inheritsOnReopen,
       }],
     })
-    return data
+    const items = Array.isArray(data) ? data : data.data ?? []
+    return items.map((item) => new WorkWindow(item))
   },
 
   async openSession(id, { inheritedFromWindowId = null, note = null } = {}) {
@@ -35,5 +37,9 @@ export const WorkWindowRepository = {
 
   async closeSession(id) {
     await client.post(`/work-windows/${id}/close`)
+  },
+
+  async deleteWindows(ids) {
+    await client.delete('/work-windows', { data: { ids } })
   },
 }

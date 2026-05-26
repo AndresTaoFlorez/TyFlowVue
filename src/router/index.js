@@ -6,6 +6,7 @@ import UsersView from '@/presentation/views/UsersView.vue'
 import ProfileView from '@/presentation/views/ProfileView.vue'
 import ApplicationsView from '@/presentation/views/ApplicationsView.vue'
 import CalendarioView from '@/presentation/views/CalendarioView.vue'
+import ApplicationDetailView from '@/presentation/views/ApplicationDetailView.vue'
 
 const LoginView = () => import('@/presentation/views/LoginView.vue')
 const ForgotPasswordView = () => import('@/presentation/views/ForgotPasswordView.vue')
@@ -50,6 +51,13 @@ const router = createRouter({
           name: 'applications',
           component: ApplicationsView,
           meta: { requiresAdmin: true },
+        },
+        {
+          path: 'applications/:id',
+          name: 'application-detail',
+          component: ApplicationDetailView,
+          meta: { requiresAdmin: true },
+          props: true,
         },
         {
           path: 'calendario',
