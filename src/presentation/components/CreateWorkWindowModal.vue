@@ -12,120 +12,94 @@ const props = defineProps({
 
 const emit = defineEmits(['close', 'create'])
 
-const form = ref({
-  specialistId: '',
-  applicationId: '',
-  startTime: '08:00',
-  endTime: '17:00',
-  scheduledDate: '',
-  inheritsOnReopen: false,
-})
+// ---- Form state ----
+const startTime = ref('08:00')
+const endTime = ref('17:00')
+const selectedDates = ref([])
+const inheritsOnReopen = ref(false)
 
-// ---- Custom dropdown state ----
-const specOpen = ref(false)
-const specSearch = ref('')
-const specInput = ref(null)
-const appOpen = ref(false)
-const appSearch = ref('')
-const appInput = ref(null)
+// Rows: each row is { specialistId, applicationId }
+const rows = ref([{ specialistId: '', applicationId: '' }])
+
+const addRow = () => {
+  rows.value.push({ specialistId: '', applicationId: '' })
+}
+
+const removeRow = (i) => {
+  if (rows.value.length > 1) rows.value.splice(i, 1)
+}
+
+// ---- Dropdowns ----
+const activeDropdown = ref(null) // 'spec-0', 'app-1', etc.
+const dropdownSearch = ref('')
+const searchInput = ref(null)
+
+const openDropdown = (key) => {
+  if (props.creating) return
+  if (activeDropdown.value === key) { activeDropdown.value = null; return }
+  activeDropdown.value = key
+  dropdownSearch.value = ''
+  nextTick(() => searchInput.value?.focus())
+}
+
+const closeDropdowns = () => { activeDropdown.value = null }
 
 const filteredSpecs = computed(() => {
-  const q = specSearch.value.toLowerCase().trim()
+  const q = dropdownSearch.value.toLowerCase().trim()
   if (!q) return props.specialists
   return props.specialists.filter(s => s.fullName.toLowerCase().includes(q))
 })
 
 const filteredApps = computed(() => {
-  const q = appSearch.value.toLowerCase().trim()
+  const q = dropdownSearch.value.toLowerCase().trim()
   if (!q) return props.applications
   return props.applications.filter(a => a.name.toLowerCase().includes(q))
 })
 
-const selectedSpecName = computed(() => {
-  if (!form.value.specialistId) return ''
-  return props.specialists.find(s => s.specialistId === form.value.specialistId)?.fullName || ''
-})
+const specName = (id) => props.specialists.find(s => s.specialistId === id)?.fullName || ''
+const appName = (id) => props.applications.find(a => a.id === id)?.name || ''
 
-const selectedAppName = computed(() => {
-  if (!form.value.applicationId) return ''
-  return props.applications.find(a => a.id === form.value.applicationId)?.name || ''
-})
-
-const toggleSpecDropdown = () => {
-  if (props.creating) return
-  if (specOpen.value) { specOpen.value = false; return }
-  specOpen.value = true
-  specSearch.value = ''
-  appOpen.value = false
-  nextTick(() => specInput.value?.focus())
+const selectSpec = (rowIdx, s) => {
+  rows.value[rowIdx].specialistId = s.specialistId
+  activeDropdown.value = null
 }
 
-const toggleAppDropdown = () => {
-  if (props.creating) return
-  if (appOpen.value) { appOpen.value = false; return }
-  appOpen.value = true
-  appSearch.value = ''
-  specOpen.value = false
-  nextTick(() => appInput.value?.focus())
+const selectApp = (rowIdx, a) => {
+  rows.value[rowIdx].applicationId = a.id
+  activeDropdown.value = null
 }
 
-const selectSpec = (s) => {
-  form.value.specialistId = s.specialistId
-  specOpen.value = false
-}
-
-const selectApp = (a) => {
-  form.value.applicationId = a.id
-  appOpen.value = false
-}
+// ---- Date helpers ----
+const DAY_NAMES_SHORT = ['dom', 'lun', 'mar', 'mié', 'jue', 'vie', 'sáb']
+const DAY_NAMES = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado']
+const MONTHS = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre']
 
 const todayISO = () => {
   const d = new Date()
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
-watch(() => props.visible, (val) => {
-  if (!val) return
-  specOpen.value = false
-  appOpen.value = false
-  if (props.prefill) {
-    const sh = String(Math.floor(props.prefill.startHour)).padStart(2, '0')
-    const sm = String(Math.round((props.prefill.startHour % 1) * 60)).padStart(2, '0')
-    const eh = String(Math.floor(props.prefill.endHour)).padStart(2, '0')
-    const em = String(Math.round((props.prefill.endHour % 1) * 60)).padStart(2, '0')
-    form.value = {
-      specialistId: '',
-      applicationId: '',
-      startTime: `${sh}:${sm}`,
-      endTime: `${eh}:${em}`,
-      scheduledDate: props.prefill.date || todayISO(),
-      inheritsOnReopen: false,
-    }
-  } else {
-    form.value = {
-      specialistId: '',
-      applicationId: '',
-      startTime: '08:00',
-      endTime: '17:00',
-      scheduledDate: todayISO(),
-      inheritsOnReopen: false,
-    }
-  }
-})
+const isMultiDay = computed(() => selectedDates.value.length > 1)
 
-const DAY_NAMES = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado']
-const MONTHS = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre']
+const formatDateChip = (iso) => {
+  const d = new Date(iso + 'T12:00:00')
+  return `${DAY_NAMES_SHORT[d.getDay()]} ${d.getDate()}`
+}
 
-const dateLabel = computed(() => {
-  const iso = form.value.scheduledDate
-  if (!iso) return ''
+const formatDateFull = (iso) => {
   const d = new Date(iso + 'T12:00:00')
   return `${DAY_NAMES[d.getDay()]}, ${d.getDate()} de ${MONTHS[d.getMonth()]}`
-})
+}
 
+const removeDate = (iso) => {
+  if (selectedDates.value.length <= 1) return
+  selectedDates.value = selectedDates.value.filter(d => d !== iso)
+}
+
+// ---- Time display ----
 const durationLabel = computed(() => {
-  const [sh, sm] = (form.value.startTime || '08:00').split(':').map(Number)
-  const [eh, em] = (form.value.endTime || '17:00').split(':').map(Number)
+  const [sh, sm] = (startTime.value || '08:00').split(':').map(Number)
+  const [eh, em] = (endTime.value || '17:00').split(':').map(Number)
   const mins = (eh * 60 + em) - (sh * 60 + sm)
   if (mins <= 0) return ''
   const h = Math.floor(mins / 60)
@@ -135,20 +109,81 @@ const durationLabel = computed(() => {
   return `${h}h ${m}m`
 })
 
-const canSubmit = computed(() =>
-  form.value.specialistId && form.value.applicationId && form.value.startTime && form.value.endTime
-)
+// ---- Conflict detection ----
+const conflicts = computed(() => {
+  const seen = new Map()
+  const warns = []
+  for (let i = 0; i < rows.value.length; i++) {
+    const r = rows.value[i]
+    if (!r.specialistId) continue
+    const key = r.specialistId
+    if (seen.has(key)) {
+      const prevIdx = seen.get(key)
+      const name = specName(r.specialistId)
+      warns.push(`${name} aparece en la fila ${prevIdx + 1} y ${i + 1} con diferente aplicación en el mismo horario.`)
+    } else {
+      seen.set(key, i)
+    }
+  }
+  return warns
+})
 
+// ---- Total count ----
+const totalWindows = computed(() => {
+  const validRows = rows.value.filter(r => r.specialistId && r.applicationId).length
+  return selectedDates.value.length * validRows
+})
+
+// ---- Validation ----
+const canSubmit = computed(() => {
+  if (selectedDates.value.length === 0) return false
+  if (!startTime.value || !endTime.value) return false
+  return rows.value.some(r => r.specialistId && r.applicationId)
+})
+
+// ---- Init on open ----
+watch(() => props.visible, (val) => {
+  if (!val) return
+  activeDropdown.value = null
+  if (props.prefill) {
+    const sh = String(Math.floor(props.prefill.startHour)).padStart(2, '0')
+    const sm = String(Math.round((props.prefill.startHour % 1) * 60)).padStart(2, '0')
+    const eh = String(Math.floor(props.prefill.endHour)).padStart(2, '0')
+    const em = String(Math.round((props.prefill.endHour % 1) * 60)).padStart(2, '0')
+    startTime.value = `${sh}:${sm}`
+    endTime.value = `${eh}:${em}`
+    if (props.prefill.days && props.prefill.days.length > 0) {
+      selectedDates.value = props.prefill.days.map(d => d.date)
+    } else {
+      selectedDates.value = [props.prefill.date || todayISO()]
+    }
+  } else {
+    startTime.value = '08:00'
+    endTime.value = '17:00'
+    selectedDates.value = [todayISO()]
+  }
+  rows.value = [{ specialistId: '', applicationId: '' }]
+  inheritsOnReopen.value = false
+})
+
+// ---- Submit ----
 const handleSubmit = () => {
   if (!canSubmit.value) return
-  emit('create', {
-    specialistId: form.value.specialistId,
-    applicationId: form.value.applicationId,
-    startTime: form.value.startTime + ':00-05',
-    endTime: form.value.endTime + ':00-05',
-    scheduledDate: form.value.scheduledDate,
-    inheritsOnReopen: form.value.inheritsOnReopen,
-  })
+  const validRows = rows.value.filter(r => r.specialistId && r.applicationId)
+  const windows = []
+  for (const date of selectedDates.value) {
+    for (const row of validRows) {
+      windows.push({
+        specialistId: row.specialistId,
+        applicationId: row.applicationId,
+        startTime: startTime.value,
+        endTime: endTime.value,
+        scheduledDate: date,
+        inheritsOnReopen: inheritsOnReopen.value,
+      })
+    }
+  }
+  emit('create', windows)
 }
 </script>
 
@@ -156,7 +191,7 @@ const handleSubmit = () => {
   <Teleport to="body">
     <Transition name="modal">
       <div v-if="visible" class="overlay" @click.self="$emit('close')">
-        <div class="modal">
+        <div class="modal" @click="closeDropdowns">
           <!-- Header -->
           <div class="modal__header">
             <span class="modal__title">Nueva ventana de trabajo</span>
@@ -167,95 +202,128 @@ const handleSubmit = () => {
 
           <!-- Body -->
           <div class="modal__body">
-            <!-- Date -->
-            <div class="row" @click="specOpen = false; appOpen = false">
+            <!-- Dates -->
+            <div class="row" @click.stop="closeDropdowns">
               <i class='bx bx-calendar'></i>
-              <div class="row__content">
-                <input v-model="form.scheduledDate" type="date" class="row__date" :disabled="creating">
-                <span v-if="dateLabel" class="row__hint">{{ dateLabel }}</span>
+              <div v-if="isMultiDay" class="chips">
+                <span
+                  v-for="date in selectedDates"
+                  :key="date"
+                  class="chip"
+                >
+                  {{ formatDateChip(date) }}
+                  <button class="chip__remove" @click="removeDate(date)" :disabled="creating">
+                    <i class='bx bx-x'></i>
+                  </button>
+                </span>
+              </div>
+              <div v-else class="row__content">
+                <input
+                  :value="selectedDates[0]"
+                  @input="selectedDates = [$event.target.value]"
+                  type="date"
+                  class="row__date"
+                  :disabled="creating"
+                >
+                <span v-if="selectedDates[0]" class="row__hint">{{ formatDateFull(selectedDates[0]) }}</span>
               </div>
             </div>
 
             <!-- Time -->
-            <div class="row" @click="specOpen = false; appOpen = false">
+            <div class="row" @click.stop="closeDropdowns">
               <i class='bx bx-time-five'></i>
               <div class="row__time">
-                <input v-model="form.startTime" type="time" class="time-input" :disabled="creating">
+                <input v-model="startTime" type="time" class="time-input" :disabled="creating">
                 <span class="time-dash">–</span>
-                <input v-model="form.endTime" type="time" class="time-input" :disabled="creating">
+                <input v-model="endTime" type="time" class="time-input" :disabled="creating">
                 <span v-if="durationLabel" class="time-badge">{{ durationLabel }}</span>
               </div>
             </div>
 
-            <!-- Specialist -->
-            <div class="row row--picker" @click="toggleSpecDropdown">
-              <i class='bx bx-user'></i>
-              <span v-if="!specOpen" class="picker__value" :class="{ 'picker__value--placeholder': !selectedSpecName }">
-                {{ selectedSpecName || 'Especialista' }}
-              </span>
-              <input
-                v-if="specOpen"
-                ref="specInput"
-                v-model="specSearch"
-                class="picker__search"
-                placeholder="Buscar especialista..."
-                @click.stop
-                @keydown.escape="specOpen = false"
-              >
-              <i class='bx bx-chevron-down picker__chevron' :class="{ 'picker__chevron--open': specOpen }"></i>
-              <Transition name="dropdown">
-                <div v-if="specOpen" class="picker__dropdown" @mousedown.prevent>
-                  <div
-                    v-for="s in filteredSpecs"
-                    :key="s.specialistId"
-                    class="picker__option"
-                    :class="{ 'picker__option--active': s.specialistId === form.specialistId }"
-                    @click.stop="selectSpec(s)"
-                  >
-                    <span class="picker__option-name">{{ s.fullName }}</span>
+            <!-- Separator -->
+            <div class="section-label">Personas</div>
+
+            <!-- Specialist+App rows -->
+            <div v-for="(row, i) in rows" :key="i" class="person-row">
+              <!-- Specialist picker -->
+              <div class="mini-picker" @click.stop="openDropdown(`spec-${i}`)">
+                <i class='bx bx-user'></i>
+                <span v-if="activeDropdown !== `spec-${i}`" class="mini-picker__value" :class="{ 'mini-picker__value--placeholder': !row.specialistId }">
+                  {{ specName(row.specialistId) || 'Especialista' }}
+                </span>
+                <input
+                  v-if="activeDropdown === `spec-${i}`"
+                  ref="searchInput"
+                  v-model="dropdownSearch"
+                  class="mini-picker__search"
+                  placeholder="Buscar..."
+                  @click.stop
+                  @keydown.escape="closeDropdowns"
+                >
+                <Transition name="dropdown">
+                  <div v-if="activeDropdown === `spec-${i}`" class="mini-picker__dropdown" @mousedown.prevent>
+                    <div
+                      v-for="s in filteredSpecs"
+                      :key="s.specialistId"
+                      class="mini-picker__option"
+                      :class="{ 'mini-picker__option--active': s.specialistId === row.specialistId }"
+                      @click.stop="selectSpec(i, s)"
+                    >{{ s.fullName }}</div>
+                    <div v-if="filteredSpecs.length === 0" class="mini-picker__empty">Sin resultados</div>
                   </div>
-                  <div v-if="filteredSpecs.length === 0" class="picker__empty">Sin resultados</div>
-                </div>
-              </Transition>
+                </Transition>
+              </div>
+
+              <!-- App picker -->
+              <div class="mini-picker" @click.stop="openDropdown(`app-${i}`)">
+                <i class='bx bx-cube'></i>
+                <span v-if="activeDropdown !== `app-${i}`" class="mini-picker__value" :class="{ 'mini-picker__value--placeholder': !row.applicationId }">
+                  {{ appName(row.applicationId) || 'Aplicación' }}
+                </span>
+                <input
+                  v-if="activeDropdown === `app-${i}`"
+                  ref="searchInput"
+                  v-model="dropdownSearch"
+                  class="mini-picker__search"
+                  placeholder="Buscar..."
+                  @click.stop
+                  @keydown.escape="closeDropdowns"
+                >
+                <Transition name="dropdown">
+                  <div v-if="activeDropdown === `app-${i}`" class="mini-picker__dropdown" @mousedown.prevent>
+                    <div
+                      v-for="a in filteredApps"
+                      :key="a.id"
+                      class="mini-picker__option"
+                      :class="{ 'mini-picker__option--active': a.id === row.applicationId }"
+                      @click.stop="selectApp(i, a)"
+                    >{{ a.name }}</div>
+                    <div v-if="filteredApps.length === 0" class="mini-picker__empty">Sin resultados</div>
+                  </div>
+                </Transition>
+              </div>
+
+              <!-- Remove row -->
+              <button v-if="rows.length > 1" class="person-row__remove" @click="removeRow(i)" :disabled="creating">
+                <i class='bx bx-x'></i>
+              </button>
             </div>
 
-            <!-- Application -->
-            <div class="row row--picker" @click="toggleAppDropdown">
-              <i class='bx bx-cube'></i>
-              <span v-if="!appOpen" class="picker__value" :class="{ 'picker__value--placeholder': !selectedAppName }">
-                {{ selectedAppName || 'Aplicación' }}
-              </span>
-              <input
-                v-if="appOpen"
-                ref="appInput"
-                v-model="appSearch"
-                class="picker__search"
-                placeholder="Buscar aplicación..."
-                @click.stop
-                @keydown.escape="appOpen = false"
-              >
-              <i class='bx bx-chevron-down picker__chevron' :class="{ 'picker__chevron--open': appOpen }"></i>
-              <Transition name="dropdown">
-                <div v-if="appOpen" class="picker__dropdown" @mousedown.prevent>
-                  <div
-                    v-for="a in filteredApps"
-                    :key="a.id"
-                    class="picker__option"
-                    :class="{ 'picker__option--active': a.id === form.applicationId }"
-                    @click.stop="selectApp(a)"
-                  >
-                    <span class="picker__option-name">{{ a.name }}</span>
-                  </div>
-                  <div v-if="filteredApps.length === 0" class="picker__empty">Sin resultados</div>
-                </div>
-              </Transition>
+            <!-- Add person -->
+            <button class="btn-add-person" @click="addRow" :disabled="creating">
+              <i class='bx bx-plus'></i> Agregar persona
+            </button>
+
+            <!-- Conflicts -->
+            <div v-for="(warn, i) in conflicts" :key="i" class="modal__warn">
+              <i class='bx bx-error'></i> {{ warn }}
             </div>
 
             <!-- Inherit toggle -->
-            <label class="row row--toggle" @click.prevent="specOpen = false; appOpen = false; form.inheritsOnReopen = !form.inheritsOnReopen">
-              <i class='bx bx-transfer' :class="{ 'icon--active': form.inheritsOnReopen }"></i>
-              <span class="row__label" :class="{ 'row__label--active': form.inheritsOnReopen }">Heredar conteo al reabrir</span>
-              <div class="switch" :class="{ 'switch--on': form.inheritsOnReopen }">
+            <label class="row row--toggle" @click.prevent="closeDropdowns(); inheritsOnReopen = !inheritsOnReopen">
+              <i class='bx bx-transfer' :class="{ 'icon--active': inheritsOnReopen }"></i>
+              <span class="row__label" :class="{ 'row__label--active': inheritsOnReopen }">Heredar conteo al reabrir</span>
+              <div class="switch" :class="{ 'switch--on': inheritsOnReopen }">
                 <div class="switch__knob"></div>
               </div>
             </label>
@@ -268,6 +336,7 @@ const handleSubmit = () => {
 
           <!-- Footer -->
           <div class="modal__footer">
+            <span v-if="totalWindows > 1" class="modal__count">Se crearán {{ totalWindows }} ventanas</span>
             <button class="btn-cancel" @click="$emit('close')" :disabled="creating">Cancelar</button>
             <button class="btn-save" :disabled="creating || !canSubmit" @click="handleSubmit">
               <i v-if="creating" class='bx bx-loader-alt bx-spin'></i>
@@ -295,9 +364,12 @@ const handleSubmit = () => {
 .modal {
   background: white;
   width: 100%;
-  max-width: 420px;
+  max-width: 480px;
   border-radius: var(--radius-lg);
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.15);
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
 }
 
 /* ---- Header ---- */
@@ -307,8 +379,9 @@ const handleSubmit = () => {
   justify-content: space-between;
   padding: 1.1rem 1.4rem;
   border-bottom: 1px solid var(--border-light);
-  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
   background: white;
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  flex-shrink: 0;
 }
 
 .modal__title {
@@ -333,6 +406,8 @@ const handleSubmit = () => {
 /* ---- Body ---- */
 .modal__body {
   padding: 0.5rem 0;
+  overflow-y: auto;
+  flex: 1;
 }
 
 /* ---- Row ---- */
@@ -380,6 +455,42 @@ const handleSubmit = () => {
   text-transform: capitalize;
 }
 
+/* Chips */
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  flex: 1;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  background: rgba(42, 199, 143, 0.08);
+  color: var(--primary-600);
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 0.2rem 0.45rem;
+  border-radius: var(--radius-full);
+  white-space: nowrap;
+}
+
+.chip__remove {
+  background: none;
+  border: none;
+  color: var(--primary-500);
+  font-size: 0.8rem;
+  cursor: pointer;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  opacity: 0.6;
+  transition: opacity 0.12s;
+}
+
+.chip__remove:hover { opacity: 1; }
+
 /* Time row */
 .row__time {
   display: flex;
@@ -420,98 +531,163 @@ const handleSubmit = () => {
   margin-left: auto;
 }
 
-/* Picker (custom dropdown) */
-.row--picker {
-  position: relative;
-  cursor: pointer;
+/* Section label */
+.section-label {
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-secondary);
+  padding: 0.6rem 1.4rem 0.2rem;
 }
 
-.picker__value {
+/* Person row */
+.person-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.35rem 1.4rem;
+}
+
+.person-row__remove {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 1rem;
+  cursor: pointer;
+  padding: 0.15rem;
+  border-radius: var(--radius-sm);
+  transition: color 0.12s;
+  flex-shrink: 0;
+}
+
+.person-row__remove:hover { color: var(--error-500); }
+
+/* Mini picker */
+.mini-picker {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
   flex: 1;
+  min-width: 0;
+  padding: 0.35rem 0.5rem;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: border-color 0.12s;
+}
+
+.mini-picker:hover { border-color: var(--primary-400); }
+
+.mini-picker > i {
   font-size: 0.85rem;
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+
+.mini-picker__value {
+  font-size: 0.78rem;
   font-weight: 600;
   color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
 }
 
-.picker__value--placeholder {
+.mini-picker__value--placeholder {
   color: var(--text-secondary);
   font-weight: 500;
 }
 
-.picker__search {
+.mini-picker__search {
   flex: 1;
   border: none;
   background: none;
-  font-size: 0.85rem;
+  font-size: 0.78rem;
   color: var(--text-primary);
   outline: none;
   padding: 0;
+  min-width: 0;
 }
 
-.picker__chevron {
-  font-size: 1rem;
-  color: var(--text-secondary);
-  transition: transform 0.15s;
-}
-
-.picker__chevron--open {
-  transform: rotate(180deg);
-}
-
-.picker__dropdown {
+.mini-picker__dropdown {
   position: absolute;
   top: calc(100% + 4px);
-  left: 1.4rem;
-  right: 1.4rem;
+  left: 0;
+  right: 0;
   background: white;
   border: 1px solid var(--border-light);
   border-radius: var(--radius-md);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
-  max-height: 180px;
+  max-height: 160px;
   overflow-y: auto;
   z-index: 50;
-  padding: 0.25rem;
+  padding: 0.2rem;
 }
 
-.picker__option {
-  display: flex;
-  align-items: center;
-  padding: 0.5rem 0.6rem;
+.mini-picker__option {
+  padding: 0.4rem 0.5rem;
+  font-size: 0.78rem;
+  color: var(--text-primary);
   border-radius: var(--radius-sm);
   cursor: pointer;
   transition: background 0.1s;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.picker__option:hover {
-  background: var(--bg-card);
-}
+.mini-picker__option:hover { background: var(--bg-card); }
+.mini-picker__option--active { background: rgba(42, 199, 143, 0.08); color: var(--primary-600); font-weight: 600; }
 
-.picker__option--active {
-  background: rgba(42, 199, 143, 0.08);
-}
-
-.picker__option--active .picker__option-name {
-  color: var(--primary-600);
-  font-weight: 600;
-}
-
-.picker__option-name {
-  font-size: 0.82rem;
-  color: var(--text-primary);
-}
-
-.picker__empty {
-  padding: 0.6rem;
-  font-size: 0.78rem;
+.mini-picker__empty {
+  padding: 0.5rem;
+  font-size: 0.75rem;
   color: var(--text-secondary);
   text-align: center;
 }
 
-/* Dropdown transition */
-.dropdown-enter-active { transition: opacity 0.12s ease, transform 0.12s ease; }
-.dropdown-leave-active { transition: opacity 0.08s ease; }
-.dropdown-enter-from { opacity: 0; transform: translateY(-4px); }
-.dropdown-leave-to { opacity: 0; }
+/* Add person btn */
+.btn-add-person {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  margin: 0.25rem 1.4rem;
+  padding: 0.35rem 0.6rem;
+  background: none;
+  border: 1px dashed var(--border-light);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: color 0.12s, border-color 0.12s;
+}
+
+.btn-add-person:hover {
+  color: var(--primary-500);
+  border-color: var(--primary-400);
+}
+
+.btn-add-person:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* Warnings */
+.modal__warn {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin: 0.3rem 1.4rem;
+  padding: 0.4rem 0.6rem;
+  background: #FFF7ED;
+  color: #C2410C;
+  border-radius: var(--radius-sm);
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+.modal__warn i { font-size: 0.9rem; }
 
 /* Toggle row */
 .row--toggle { cursor: pointer; }
@@ -570,12 +746,21 @@ const handleSubmit = () => {
 /* ---- Footer ---- */
 .modal__footer {
   display: flex;
+  align-items: center;
   justify-content: flex-end;
   gap: 0.5rem;
   padding: 0.85rem 1.4rem;
   border-top: 1px solid var(--border-light);
   border-radius: 0 0 var(--radius-lg) var(--radius-lg);
   background: white;
+  flex-shrink: 0;
+}
+
+.modal__count {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--primary-500);
+  margin-right: auto;
 }
 
 .btn-cancel {
@@ -610,6 +795,12 @@ const handleSubmit = () => {
 .btn-save:hover:not(:disabled) { background: var(--primary-600); }
 .btn-save:disabled { opacity: 0.4; cursor: not-allowed; }
 
+/* Dropdown transition */
+.dropdown-enter-active { transition: opacity 0.12s ease, transform 0.12s ease; }
+.dropdown-leave-active { transition: opacity 0.08s ease; }
+.dropdown-enter-from { opacity: 0; transform: translateY(-4px); }
+.dropdown-leave-to { opacity: 0; }
+
 /* ---- Transition ---- */
 .modal-enter-active { transition: opacity 0.15s ease; }
 .modal-enter-active .modal { animation: pop-in 0.2s ease; }
@@ -623,5 +814,7 @@ const handleSubmit = () => {
 
 @media (max-width: 480px) {
   .modal { max-width: calc(100% - 2rem); }
+  .person-row { flex-wrap: wrap; }
+  .mini-picker { min-width: calc(50% - 1rem); }
 }
 </style>

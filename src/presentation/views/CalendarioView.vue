@@ -7,13 +7,14 @@ import { createWorkWindowUseCase } from '@/application/use-cases/work-windows/Cr
 import { openWorkWindowUseCase } from '@/application/use-cases/work-windows/OpenWorkWindowUseCase'
 import { closeWorkWindowUseCase } from '@/application/use-cases/work-windows/CloseWorkWindowUseCase'
 import { deleteWorkWindowUseCase } from '@/application/use-cases/work-windows/DeleteWorkWindowUseCase'
-import { WorkWindow } from '@/domain/entities/WorkWindow'
+import { updateWorkWindowUseCase } from '@/application/use-cases/work-windows/UpdateWorkWindowUseCase'
+import { rescheduleWorkWindowUseCase } from '@/application/use-cases/work-windows/RescheduleWorkWindowUseCase'
 import WeekCalendar from '@/presentation/components/WeekCalendar.vue'
 import WorkWindowModal from '@/presentation/components/WorkWindowModal.vue'
 import CreateWorkWindowModal from '@/presentation/components/CreateWorkWindowModal.vue'
+import WindowGroupPanel from '@/presentation/components/WindowGroupPanel.vue'
 import SectionLoader from '@/presentation/components/SectionLoader.vue'
 import ToastNotification from '@/presentation/components/ToastNotification.vue'
-import logger from '@/infrastructure/logger'
 
 const authStore = useAuthStore()
 const userStore = useUserStore()
@@ -26,6 +27,8 @@ const creando = ref(false)
 const errorCrear = ref('')
 const prefillData = ref(null)
 const weekOffset = ref(0)
+const modalLoading = ref(false)
+const selectedGroup = ref(null)
 
 // Filtros
 const filtroSpecialist = ref('all')
@@ -99,7 +102,7 @@ const loadWindows = async () => {
       date_to: weekDates.value[6],
     })
   } catch (e) {
-    logger.error('[Calendario] Error cargando ventanas:', e)
+    console.error('[Calendario] Error cargando ventanas:', e)
     showToast('Error al cargar ventanas de trabajo.', 'error')
   } finally {
     loading.value = false
@@ -117,7 +120,7 @@ const openCreatePanel = () => {
   mostrarCrear.value = true
 }
 
-// ---- Crear ventana (optimista) ----
+// ---- Crear ventanas ----
 const handleCreate = async (data) => {
   creando.value = true
   errorCrear.value = ''
@@ -126,78 +129,133 @@ const handleCreate = async (data) => {
     windows.value = [...windows.value, ...created]
     mostrarCrear.value = false
     prefillData.value = null
-    showToast('Ventana de trabajo creada.')
+    const n = created.length
+    showToast(n === 1 ? 'Ventana de trabajo creada.' : `${n} ventanas de trabajo creadas.`)
   } catch (e) {
-    logger.error('[Calendario] Error creando ventana:', e)
+    console.error('[Calendario] Error creando ventana:', e)
     errorCrear.value = e.userMessage || 'Error al crear la ventana.'
   } finally {
     creando.value = false
   }
 }
 
-// ---- Abrir sesion (optimista) ----
+// ---- Abrir sesion ----
 const handleOpen = async (w) => {
+  modalLoading.value = true
   try {
-    await openWorkWindowUseCase(w.id)
+    const updated = await openWorkWindowUseCase(w)
     const idx = windows.value.findIndex(x => x.id === w.id)
     if (idx !== -1) {
-      const old = windows.value[idx]
-      const updated = new WorkWindow({
-        id: old.id, specialist_id: old.specialistId, application_id: old.applicationId,
-        start_time: old.startTime, end_time: old.endTime, scheduled_date: old.scheduledDate,
-        opening_count: old.openingCount, current_count: old.currentCount,
-        inherits_on_reopen: old.inheritsOnReopen, is_active: true,
-        created_at: old.createdAt, closed_at: null,
-        closing_count: null, inherited_from_window_id: old.inheritedFromWindowId,
-        deleted_at: old.deletedAt,
-      })
       windows.value = [...windows.value.slice(0, idx), updated, ...windows.value.slice(idx + 1)]
     }
     selectedWindow.value = null
+    syncGroupWindow(updated)
     showToast('Sesión abierta.')
   } catch (e) {
-    logger.error('[Calendario] Error abriendo sesión:', e)
+    console.error('[Calendario] Error abriendo sesión:', e)
     showToast(e.userMessage || 'Error al abrir sesión.', 'error')
+  } finally {
+    modalLoading.value = false
   }
 }
 
-// ---- Cerrar sesion (optimista) ----
+// ---- Cerrar sesion ----
 const handleCloseSession = async (w) => {
+  modalLoading.value = true
   try {
-    await closeWorkWindowUseCase(w.id)
+    const updated = await closeWorkWindowUseCase(w)
     const idx = windows.value.findIndex(x => x.id === w.id)
     if (idx !== -1) {
-      const old = windows.value[idx]
-      const updated = new WorkWindow({
-        id: old.id, specialist_id: old.specialistId, application_id: old.applicationId,
-        start_time: old.startTime, end_time: old.endTime, scheduled_date: old.scheduledDate,
-        opening_count: old.openingCount, current_count: old.currentCount,
-        inherits_on_reopen: old.inheritsOnReopen, is_active: false,
-        created_at: old.createdAt, closed_at: new Date().toISOString(),
-        closing_count: old.currentCount, inherited_from_window_id: old.inheritedFromWindowId,
-        deleted_at: old.deletedAt,
-      })
       windows.value = [...windows.value.slice(0, idx), updated, ...windows.value.slice(idx + 1)]
     }
     selectedWindow.value = null
+    syncGroupWindow(updated)
     showToast('Sesión cerrada.')
   } catch (e) {
-    logger.error('[Calendario] Error cerrando sesión:', e)
+    console.error('[Calendario] Error cerrando sesión:', e)
     showToast(e.userMessage || 'Error al cerrar sesión.', 'error')
+  } finally {
+    modalLoading.value = false
   }
 }
 
-// ---- Eliminar ventana (optimista) ----
+// ---- Sync group panel after mutations ----
+function syncGroupWindow(updated) {
+  if (!selectedGroup.value) return
+  const g = selectedGroup.value
+  const idx = g.windows.findIndex(x => x.id === updated.id)
+  if (idx !== -1) {
+    g.windows = [...g.windows.slice(0, idx), updated, ...g.windows.slice(idx + 1)]
+    selectedGroup.value = { ...g }
+  }
+}
+
+function removeFromGroup(id) {
+  if (!selectedGroup.value) return
+  const g = selectedGroup.value
+  const filtered = g.windows.filter(x => x.id !== id)
+  if (filtered.length === 0) {
+    selectedGroup.value = null
+  } else {
+    selectedGroup.value = { ...g, windows: filtered }
+  }
+}
+
+// ---- Eliminar ventana ----
 const handleDelete = async (w) => {
+  modalLoading.value = true
   try {
     await deleteWorkWindowUseCase(w.id)
     windows.value = windows.value.filter(x => x.id !== w.id)
     selectedWindow.value = null
+    removeFromGroup(w.id)
     showToast('Ventana eliminada.')
   } catch (e) {
-    logger.error('[Calendario] Error eliminando ventana:', e)
+    console.error('[Calendario] Error eliminando ventana:', e)
     showToast(e.userMessage || 'Error al eliminar ventana.', 'error')
+  } finally {
+    modalLoading.value = false
   }
+}
+
+// ---- Actualizar ventana (edición de horario) ----
+const handleUpdate = async (w, payload) => {
+  modalLoading.value = true
+  try {
+    const updated = await updateWorkWindowUseCase(w.id, payload)
+    const idx = windows.value.findIndex(x => x.id === w.id)
+    if (idx !== -1) {
+      windows.value = [...windows.value.slice(0, idx), updated, ...windows.value.slice(idx + 1)]
+    }
+    selectedWindow.value = updated
+    showToast('Horario actualizado.')
+  } catch (e) {
+    console.error('[Calendario] Error actualizando ventana:', e)
+    showToast(e.userMessage || 'Error al actualizar la ventana.', 'error')
+  } finally {
+    modalLoading.value = false
+  }
+}
+
+// ---- Reschedule (drag-to-move) ----
+const handleReschedule = async ({ window: w, targetDate, startTime, endTime }) => {
+  try {
+    const updated = await rescheduleWorkWindowUseCase(w, { startTime, endTime, targetDate })
+    const idx = windows.value.findIndex(x => x.id === w.id)
+    if (idx !== -1) {
+      windows.value = [...windows.value.slice(0, idx), updated, ...windows.value.slice(idx + 1)]
+    }
+    showToast('Ventana movida.')
+  } catch (e) {
+    console.error('[Calendario] Error moviendo ventana:', e)
+    showToast(e.userMessage || 'Error al mover la ventana.', 'error')
+  }
+}
+
+// ---- Group panel: select individual from group ----
+const onGroupSelect = (w) => {
+  selectedGroup.value = null
+  selectedWindow.value = w
 }
 
 // ---- Helpers ----
@@ -304,7 +362,9 @@ onUnmounted(() => {
       :applications="userStore.applications"
       :selectable="authStore.isAdmin"
       @select="selectedWindow = $event"
+      @group-select="selectedGroup = $event"
       @range-selected="onRangeSelected"
+      @reschedule="handleReschedule"
     />
 
     <!-- Modal detalle -->
@@ -313,7 +373,23 @@ onUnmounted(() => {
       :window="selectedWindow"
       :specialist-name="specName(selectedWindow)"
       :application-name="appName(selectedWindow)"
+      :loading="modalLoading"
       @close="selectedWindow = null"
+      @open="handleOpen"
+      @close-session="handleCloseSession"
+      @delete="handleDelete"
+      @update="handleUpdate"
+    />
+
+    <!-- Panel grupo -->
+    <WindowGroupPanel
+      v-if="selectedGroup"
+      :group="selectedGroup"
+      :specialists="userStore.users"
+      :applications="userStore.applications"
+      :loading="modalLoading"
+      @close="selectedGroup = null"
+      @select="onGroupSelect"
       @open="handleOpen"
       @close-session="handleCloseSession"
       @delete="handleDelete"

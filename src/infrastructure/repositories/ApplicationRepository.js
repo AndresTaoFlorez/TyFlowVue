@@ -1,31 +1,24 @@
 import client from '@/infrastructure/http/client'
-import { User } from '@/domain/entities/User'
+import { Application } from '@/domain/entities/Application'
 
 export const ApplicationRepository = {
   async fetchAll() {
     const { data } = await client.get('/applications')
-    return data
+    const items = Array.isArray(data) ? data : data.data ?? []
+    return items.map((item) => new Application(item))
   },
 
   async create(name) {
     const { data } = await client.post('/applications', { name })
-    return data
+    return new Application(data)
   },
 
   async update(applicationId, payload) {
     const { data } = await client.patch(`/applications/${applicationId}`, payload)
-    return data
+    return new Application(data)
   },
 
   async delete(applicationId) {
     await client.delete(`/applications/${applicationId}`)
-  },
-
-  async fetchSpecialists(applicationId) {
-    const { data } = await client.get('/users', {
-      params: { is_specialist: true, application_ids: applicationId },
-    })
-    const items = Array.isArray(data) ? data : data.data ?? []
-    return items.map((item) => new User(item))
   },
 }

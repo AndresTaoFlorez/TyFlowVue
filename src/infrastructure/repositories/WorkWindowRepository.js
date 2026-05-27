@@ -13,16 +13,17 @@ export const WorkWindowRepository = {
     return new WorkWindow(data)
   },
 
-  async create({ specialistId, applicationId, startTime, endTime, scheduledDate, inheritsOnReopen = false }) {
+  async create(windowsArray) {
+    const list = Array.isArray(windowsArray) ? windowsArray : [windowsArray]
     const { data } = await client.post('/work-windows', {
-      windows: [{
-        specialist_id: specialistId,
-        application_id: applicationId,
-        start_time: startTime,
-        end_time: endTime,
-        scheduled_date: scheduledDate,
-        inherits_on_reopen: inheritsOnReopen,
-      }],
+      windows: list.map(w => ({
+        specialist_id: w.specialistId,
+        application_id: w.applicationId,
+        start_time: w.startTime,
+        end_time: w.endTime,
+        scheduled_date: w.scheduledDate,
+        inherits_on_reopen: w.inheritsOnReopen ?? false,
+      })),
     })
     const items = Array.isArray(data) ? data : data.data ?? []
     return items.map((item) => new WorkWindow(item))
@@ -37,6 +38,15 @@ export const WorkWindowRepository = {
 
   async closeSession(id) {
     await client.post(`/work-windows/${id}/close`)
+  },
+
+  async update(id, { startTime = null, endTime = null, note = null } = {}) {
+    const payload = {}
+    if (startTime != null) payload.start_time = startTime
+    if (endTime != null) payload.end_time = endTime
+    if (note != null) payload.note = note
+    const { data } = await client.patch(`/work-windows/${id}`, payload)
+    return new WorkWindow(data)
   },
 
   async deleteWindows(ids) {

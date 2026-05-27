@@ -6,10 +6,11 @@ const props = defineProps({
   folders: { type: Array, default: () => [] },
   specialists: { type: Array, default: () => [] },
   supportLevels: { type: Array, default: () => [] },
-  editable: { type: Boolean, default: false },
+  selectedFolderId: { type: String, default: null },
+  collapsedMainBoxIds: { type: Set, default: () => new Set() },
 })
 
-defineEmits(['add-child', 'edit', 'delete', 'rename'])
+defineEmits(['select', 'context-menu', 'toggle-collapse'])
 
 const tree = computed(() => {
   const map = {}
@@ -39,21 +40,18 @@ const tree = computed(() => {
       :node="node"
       :specialists="specialists"
       :support-levels="supportLevels"
-      :editable="editable"
+      :selected-folder-id="selectedFolderId"
+      :collapsed-main-box-ids="collapsedMainBoxIds"
       :depth="0"
-      @add-child="$emit('add-child', $event)"
-      @edit="$emit('edit', $event)"
-      @delete="$emit('delete', $event)"
-      @rename="(folder, newName) => $emit('rename', folder, newName)"
+      @select="$emit('select', $event)"
+      @context-menu="(ev, n) => $emit('context-menu', ev, n)"
+      @toggle-collapse="$emit('toggle-collapse', $event)"
     />
   </div>
 </template>
 
 <style scoped>
 .folder-tree {
-  background: white;
-  border: 1px solid var(--border-light);
-  border-radius: var(--radius-md);
-  padding: 0.5rem;
+  padding: 0.25rem 0;
 }
 </style>

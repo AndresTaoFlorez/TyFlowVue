@@ -3,7 +3,7 @@ export class WorkWindow {
     id, specialist_id, application_id, start_time, end_time,
     scheduled_date = null,
     opening_count = 0, current_count = 0, inherits_on_reopen = false,
-    is_active = true, created_at = null, closed_at = null,
+    is_active = true, created_at = null, opened_at = null, closed_at = null,
     closing_count = null, inherited_from_window_id = null,
     deleted_at = null,
   }) {
@@ -18,29 +18,79 @@ export class WorkWindow {
     this.inheritsOnReopen = inherits_on_reopen
     this.isActive = is_active
     this.createdAt = created_at
+    this.openedAt = opened_at
     this.closedAt = closed_at
     this.closingCount = closing_count
     this.inheritedFromWindowId = inherited_from_window_id
     this.deletedAt = deleted_at
   }
 
-  /** Sesion abierta = closed_at es null (las ventanas se crean abiertas) */
   get isSessionOpen() {
     return this.closedAt == null && this.deletedAt == null
   }
 
-  /** Hora de inicio como numero (ej: "08:00:00-05" → 8) */
   get startHour() {
-    return parseInt(this.startTime?.split(':')[0], 10) || 8
+    const parts = this.startTime?.split(':')
+    if (!parts) return 8
+    return parseInt(parts[0], 10) + parseInt(parts[1], 10) / 60
   }
 
-  /** Hora de fin como numero (ej: "17:00:00-05" → 17) */
   get endHour() {
-    return parseInt(this.endTime?.split(':')[0], 10) || 17
+    const parts = this.endTime?.split(':')
+    if (!parts) return 17
+    return parseInt(parts[0], 10) + parseInt(parts[1], 10) / 60
   }
 
-  /** Rango horario legible (ej: "8:00 – 17:00") */
   get timeRange() {
-    return `${this.startHour}:00 – ${this.endHour}:00`
+    const fmt = (t) => {
+      const parts = t?.split(':')
+      if (!parts) return '?'
+      return `${parseInt(parts[0], 10)}:${parts[1]}`
+    }
+    return `${fmt(this.startTime)} – ${fmt(this.endTime)}`
+  }
+
+  _toRaw() {
+    return {
+      id: this.id,
+      specialist_id: this.specialistId,
+      application_id: this.applicationId,
+      start_time: this.startTime,
+      end_time: this.endTime,
+      scheduled_date: this.scheduledDate,
+      opening_count: this.openingCount,
+      current_count: this.currentCount,
+      inherits_on_reopen: this.inheritsOnReopen,
+      is_active: this.isActive,
+      created_at: this.createdAt,
+      opened_at: this.openedAt,
+      closed_at: this.closedAt,
+      closing_count: this.closingCount,
+      inherited_from_window_id: this.inheritedFromWindowId,
+      deleted_at: this.deletedAt,
+    }
+  }
+
+  withOpened() {
+    return new WorkWindow({
+      ...this._toRaw(),
+      is_active: true,
+      closed_at: null,
+      closing_count: null,
+    })
+  }
+
+  withClosed() {
+    return new WorkWindow({
+      ...this._toRaw(),
+      is_active: false,
+      closed_at: new Date().toISOString(),
+      closing_count: this.currentCount,
+    })
+  }
+
+  static formatTimeTz(time) {
+    if (!time || time.includes('-') || time.includes('+')) return time
+    return time.length === 5 ? `${time}:00-05` : `${time}-05`
   }
 }

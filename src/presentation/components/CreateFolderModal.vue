@@ -3,82 +3,69 @@ import { ref, computed, watch } from 'vue'
 
 const props = defineProps({
   visible: { type: Boolean, default: false },
-  creating: { type: Boolean, default: false },
-  error: { type: String, default: '' },
-  folders: { type: Array, default: () => [] },
-  specialists: { type: Array, default: () => [] },
+  context: { type: Object, default: null },
   supportLevels: { type: Array, default: () => [] },
-  prefill: { type: Object, default: null },
 })
 
 const emit = defineEmits(['close', 'create'])
 
-const form = ref({
-  type: 'main_box',
-  name: '',
-  parentFolderId: null,
-  specialistId: null,
-  supportLevelId: null,
-})
-
-const resetForm = () => {
-  form.value = {
-    type: 'main_box',
-    name: '',
-    parentFolderId: null,
-    specialistId: null,
-    supportLevelId: null,
-  }
-}
+const name = ref('')
+const specialistId = ref(null)
+const supportLevelId = ref(null)
+const creating = ref(false)
 
 watch(() => props.visible, (val) => {
   if (val) {
-    resetForm()
-    if (props.prefill) {
-      form.value.type = props.prefill.type || 'specialist'
-      form.value.parentFolderId = props.prefill.parentFolderId || null
-    }
+    name.value = ''
+    specialistId.value = null
+    supportLevelId.value = null
+    creating.value = false
   }
 })
 
-// Carpetas que pueden ser padre según el tipo seleccionado
-const parentOptions = computed(() => {
-  if (form.value.type === 'main_box') return []
-  return props.folders.filter(f => {
-    if (form.value.type === 'level') return f.type === 'main_box'
-    if (form.value.type === 'specialist') return f.type === 'level' || f.type === 'specialist'
-    return false
-  })
+const mode = computed(() => props.context?.mode || 'new-app-folder')
+
+const title = computed(() => {
+  const titles = {
+    'new-app-folder': 'Nueva Bandeja',
+    'new-level': 'Nuevo Nivel',
+    'new-specialist': 'Nueva Carpeta de Especialista',
+    'new-subfolder': 'Nueva Subcarpeta',
+  }
+  return titles[mode.value] || 'Nueva Carpeta'
 })
 
 const canSubmit = computed(() => {
-  if (!form.value.name.trim()) return false
-  if (form.value.type === 'level') {
-    return form.value.parentFolderId && form.value.supportLevelId
-  }
-  if (form.value.type === 'specialist') {
-    return form.value.parentFolderId && form.value.specialistId
-  }
+  if (!name.value.trim()) return false
+  if (mode.value === 'new-level' && !supportLevelId.value) return false
+  if (mode.value === 'new-specialist' && !specialistId.value) return false
   return true
 })
 
-const handleSubmit = () => {
-  if (!canSubmit.value) return
-  emit('create', {
-    type: form.value.type,
-    name: form.value.name.trim(),
-    parentFolderId: form.value.type !== 'main_box' ? form.value.parentFolderId : null,
-    specialistId: form.value.type === 'specialist' ? form.value.specialistId : null,
-    supportLevelId: form.value.type === 'level' ? form.value.supportLevelId : null,
-  })
-}
+function handleSubmit() {
+  if (!canSubmit.value || creating.value) return
+  creating.value = true
 
-// Reset dependant fields on type change
-watch(() => form.value.type, () => {
-  form.value.parentFolderId = null
-  form.value.specialistId = null
-  form.value.supportLevelId = null
-})
+  const data = { name: name.value.trim() }
+
+  if (mode.value === 'new-app-folder') {
+    data.type = 'main_box'
+  } else if (mode.value === 'new-level') {
+    data.type = 'level'
+    data.parentFolderId = props.context.parentId
+    data.supportLevelId = supportLevelId.value
+  } else if (mode.value === 'new-specialist') {
+    data.type = 'specialist'
+    data.parentFolderId = props.context.parentId
+    data.specialistId = specialistId.value
+  } else if (mode.value === 'new-subfolder') {
+    data.type = 'specialist'
+    data.parentFolderId = props.context.parentId
+    data.specialistId = props.context.specialistId
+  }
+
+  emit('create', data)
+}
 </script>
 
 <template>
@@ -86,51 +73,27 @@ watch(() => form.value.type, () => {
     <div v-if="visible" class="modal-overlay" @click.self="$emit('close')">
       <div class="modal-panel">
         <div class="modal-panel__header">
-          <h3>Nueva Carpeta</h3>
+          <h3>{{ title }}</h3>
           <button @click="$emit('close')" class="modal-panel__close"><i class='bx bx-x'></i></button>
         </div>
 
         <div class="modal-panel__body">
-          <!-- Type -->
-          <div class="field">
-            <label class="field__label">Tipo</label>
-            <div class="field__radios">
-              <label class="radio-opt" :class="{ 'radio-opt--active': form.type === 'main_box' }">
-                <input type="radio" v-model="form.type" value="main_box" class="radio-opt__input">
-                <i class='bx bx-inbox'></i> Bandeja
-              </label>
-              <label class="radio-opt" :class="{ 'radio-opt--active': form.type === 'level' }">
-                <input type="radio" v-model="form.type" value="level" class="radio-opt__input">
-                <i class='bx bx-layer'></i> Nivel
-              </label>
-              <label class="radio-opt" :class="{ 'radio-opt--active': form.type === 'specialist' }">
-                <input type="radio" v-model="form.type" value="specialist" class="radio-opt__input">
-                <i class='bx bx-user'></i> Especialista
-              </label>
-            </div>
-          </div>
-
-          <!-- Name -->
+          <!-- Name (always shown) -->
           <div class="field">
             <label class="field__label">Nombre</label>
-            <input v-model="form.name" type="text" class="field__input" placeholder="Nombre de la carpeta">
+            <input
+              v-model="name"
+              type="text"
+              class="field__input"
+              placeholder="Nombre de la carpeta"
+              @keyup.enter="handleSubmit"
+            >
           </div>
 
-          <!-- Parent folder (level / specialist) -->
-          <div v-if="form.type !== 'main_box'" class="field">
-            <label class="field__label">Carpeta padre</label>
-            <select v-model="form.parentFolderId" class="field__select">
-              <option :value="null" disabled>Seleccionar carpeta padre...</option>
-              <option v-for="f in parentOptions" :key="f.id" :value="f.id">
-                {{ f.name }} ({{ f.type.replace('_', ' ') }})
-              </option>
-            </select>
-          </div>
-
-          <!-- Support level (level type) -->
-          <div v-if="form.type === 'level'" class="field">
+          <!-- Support level (only for new-level) -->
+          <div v-if="mode === 'new-level'" class="field">
             <label class="field__label">Nivel de soporte</label>
-            <select v-model="form.supportLevelId" class="field__select">
+            <select v-model="supportLevelId" class="field__select">
               <option :value="null" disabled>Seleccionar nivel...</option>
               <option v-for="sl in supportLevels" :key="sl.id" :value="sl.id">
                 {{ sl.name }}
@@ -138,19 +101,25 @@ watch(() => form.value.type, () => {
             </select>
           </div>
 
-          <!-- Specialist (specialist type) -->
-          <div v-if="form.type === 'specialist'" class="field">
+          <!-- Specialist (only for new-specialist) -->
+          <div v-if="mode === 'new-specialist'" class="field">
             <label class="field__label">Especialista</label>
-            <select v-model="form.specialistId" class="field__select">
+            <select v-model="specialistId" class="field__select">
               <option :value="null" disabled>Seleccionar especialista...</option>
-              <option v-for="s in specialists" :key="s.specialistId" :value="s.specialistId">
+              <option
+                v-for="s in context?.availableSpecialists || []"
+                :key="s.specialistId"
+                :value="s.specialistId"
+              >
                 {{ s.fullName }}
               </option>
             </select>
           </div>
 
-          <!-- Error -->
-          <p v-if="error" class="field__error">{{ error }}</p>
+          <!-- Info hint for subfolder mode -->
+          <p v-if="mode === 'new-subfolder'" class="field__hint">
+            El especialista se hereda automáticamente de la carpeta padre.
+          </p>
         </div>
 
         <div class="modal-panel__footer">
@@ -221,7 +190,6 @@ watch(() => form.value.type, () => {
   background: #fafafa;
 }
 
-/* Fields */
 .field {
   display: flex;
   flex-direction: column;
@@ -253,52 +221,12 @@ watch(() => form.value.type, () => {
   border-color: var(--primary-500);
 }
 
-.field__error {
+.field__hint {
   font-size: 0.8rem;
-  color: var(--error-500);
-  margin-top: 0.25rem;
-}
-
-/* Radio type selector */
-.field__radios {
-  display: flex;
-  gap: 0.4rem;
-}
-
-.radio-opt {
-  display: flex;
-  align-items: center;
-  gap: 0.3rem;
-  padding: 0.4rem 0.7rem;
-  border: 1.5px solid var(--border-light);
-  border-radius: var(--radius-full);
-  font-size: 0.78rem;
-  font-weight: 600;
   color: var(--text-secondary);
-  cursor: pointer;
-  transition: all 0.15s;
+  font-style: italic;
 }
 
-.radio-opt__input {
-  display: none;
-}
-
-.radio-opt:hover {
-  border-color: var(--primary-500);
-  color: var(--primary-500);
-}
-
-.radio-opt--active {
-  border-color: var(--primary-500);
-  background: rgba(42, 199, 143, 0.08);
-  color: var(--primary-500);
-}
-
-.radio-opt i {
-  font-size: 1rem;
-}
-
-/* Buttons */
 .btn-secondary {
   padding: 0.5rem 1rem;
   font-size: 0.82rem;
@@ -325,12 +253,6 @@ watch(() => form.value.type, () => {
   transition: background 0.15s;
 }
 
-.btn-primary:hover:not(:disabled) {
-  background: var(--primary-600);
-}
-
-.btn-primary:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
+.btn-primary:hover:not(:disabled) { background: var(--primary-600); }
+.btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
 </style>

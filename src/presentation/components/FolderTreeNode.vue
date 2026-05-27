@@ -1,36 +1,34 @@
 <script setup>
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 
 const props = defineProps({
   node: { type: Object, required: true },
   specialists: { type: Array, default: () => [] },
   supportLevels: { type: Array, default: () => [] },
-  editable: { type: Boolean, default: false },
+  selectedFolderId: { type: String, default: null },
+  collapsedMainBoxIds: { type: Set, default: () => new Set() },
   depth: { type: Number, default: 0 },
+  isLast: { type: Boolean, default: false },
 })
 
-const emit = defineEmits(['add-child', 'edit', 'delete', 'rename'])
+const emit = defineEmits(['select', 'context-menu', 'toggle-collapse'])
 
 const expanded = ref(true)
-const editing = ref(false)
-const editName = ref('')
 
 const toggle = () => { expanded.value = !expanded.value }
 
-const startEdit = () => {
-  editName.value = props.node.name
-  editing.value = true
-}
+const isMainBox = computed(() => props.node.type === 'main_box')
+const isTreeCollapsed = computed(() => isMainBox.value && props.collapsedMainBoxIds.has(props.node.id))
+const showChildren = computed(() => {
+  if (!props.node.children || props.node.children.length === 0) return false
+  if (isTreeCollapsed.value) return false
+  return expanded.value
+})
 
-const submitEdit = () => {
-  const trimmed = editName.value.trim()
-  if (trimmed && trimmed !== props.node.name) {
-    emit('rename', props.node, trimmed)
-  }
-  editing.value = false
+function onToggleCollapse(event) {
+  event.stopPropagation()
+  emit('toggle-collapse', props.node.id)
 }
-
-const cancelEdit = () => { editing.value = false }
 
 const typeIcon = { main_box: 'bx-inbox', level: 'bx-layer', specialist: 'bx-user' }
 const typeColor = { main_box: '#2AC78F', level: '#607dea', specialist: '#f59e0b' }
@@ -45,144 +43,175 @@ const levelName = (id) => {
   return l ? l.name : null
 }
 
-const childType = () => {
-  if (props.node.type === 'main_box') return 'level'
-  return 'specialist'
+const subtitle = () => {
+  if (props.node.specialistId) {
+    const name = specName(props.node.specialistId)
+    if (name) return name
+  }
+  if (props.node.supportLevelId) {
+    const name = levelName(props.node.supportLevelId)
+    if (name) return name
+  }
+  return null
 }
+
+function onRowClick() {
+  emit('select', props.node)
+}
+
+function onContextMenu(event) {
+  event.preventDefault()
+  event.stopPropagation()
+  emit('context-menu', event, props.node)
+}
+
+function onDotsClick(event) {
+  event.stopPropagation()
+  emit('context-menu', event, props.node)
+}
+
 </script>
 
 <template>
-  <div class="tree-node" :style="{ '--depth': depth }">
-    <div class="tree-node__row" :class="{ 'tree-node__row--inactive': !node.isActive }">
-      <!-- Expand/collapse -->
+  <div class="tn">
+    <!-- Row -->
+    <div
+      class="tn__row"
+      :class="{
+        'tn__row--inactive': !node.isActive,
+        'tn__row--selected': selectedFolderId === node.id,
+      }"
+      @click="onRowClick"
+      @contextmenu="onContextMenu"
+    >
+      <!-- Chevron -->
       <button
         v-if="node.children && node.children.length > 0"
-        class="tree-node__toggle"
-        @click="toggle"
+        class="tn__chevron"
+        @click.stop="toggle"
       >
-        <i :class="expanded ? 'bx bx-chevron-down' : 'bx bx-chevron-right'"></i>
+        <i :class="expanded ? 'bx bxs-down-arrow' : 'bx bxs-right-arrow'"></i>
       </button>
-      <span v-else class="tree-node__toggle tree-node__toggle--leaf"></span>
+      <span v-else class="tn__chevron tn__chevron--leaf"></span>
 
       <!-- Icon -->
-      <i :class="'bx ' + (typeIcon[node.type] || 'bx-folder')" class="tree-node__icon" :style="{ color: typeColor[node.type] || '#6c7293' }"></i>
+      <i
+        :class="'bx ' + (typeIcon[node.type] || 'bx-folder')"
+        class="tn__icon"
+        :style="{ color: typeColor[node.type] || '#94a3b8' }"
+      ></i>
 
-      <!-- Name -->
-      <div v-if="editing" class="tree-node__edit">
-        <input
-          v-model="editName"
-          class="tree-node__edit-input"
-          @keydown.enter="submitEdit"
-          @keydown.escape="cancelEdit"
-          @blur="submitEdit"
-          ref="editInput"
-          autofocus
-        >
-      </div>
-      <div v-else class="tree-node__info" @dblclick="editable && startEdit()">
-        <span class="tree-node__name">{{ node.name }}</span>
-        <span class="tree-node__meta">
-          <span class="tree-node__type">{{ node.type.replace('_', ' ') }}</span>
-          <span v-if="node.specialistId && specName(node.specialistId)" class="tree-node__detail">{{ specName(node.specialistId) }}</span>
-          <span v-if="node.supportLevelId && levelName(node.supportLevelId)" class="tree-node__detail">{{ levelName(node.supportLevelId) }}</span>
-        </span>
+      <!-- Label -->
+      <div class="tn__label">
+        <span class="tn__name" :title="node.name">{{ node.name }}</span>
+        <span v-if="subtitle()" class="tn__sub" :title="subtitle()">{{ subtitle() }}</span>
       </div>
 
-      <!-- Actions -->
-      <div v-if="editable && !editing" class="tree-node__actions">
-        <button class="tree-node__action" @click="$emit('add-child', { parentFolderId: node.id, type: childType() })" title="Agregar sub-carpeta">
-          <i class='bx bx-plus'></i>
-        </button>
-        <button class="tree-node__action" @click="startEdit" title="Renombrar">
-          <i class='bx bx-edit-alt'></i>
-        </button>
-        <button class="tree-node__action tree-node__action--danger" @click="$emit('delete', node)" title="Eliminar">
-          <i class='bx bx-trash'></i>
-        </button>
-      </div>
+      <!-- Collapse-all toggle (main_box only) -->
+      <button
+        v-if="isMainBox && node.children && node.children.length > 0"
+        class="tn__collapse-all"
+        :title="isTreeCollapsed ? 'Expandir todo' : 'Contraer todo'"
+        @click="onToggleCollapse($event)"
+      >
+        <i :class="isTreeCollapsed ? 'bx bx-chevrons-down' : 'bx bx-chevrons-up'"></i>
+      </button>
+
+      <!-- Dots -->
+      <button class="tn__dots" @click="onDotsClick($event)" title="Opciones">
+        <i class='bx bx-dots-vertical-rounded'></i>
+      </button>
     </div>
 
     <!-- Children -->
-    <div v-if="expanded && node.children && node.children.length > 0" class="tree-node__children">
+    <div v-if="showChildren" class="tn__children">
       <FolderTreeNode
-        v-for="child in node.children"
+        v-for="(child, idx) in node.children"
         :key="child.id"
         :node="child"
         :specialists="specialists"
         :support-levels="supportLevels"
-        :editable="editable"
+        :selected-folder-id="selectedFolderId"
+        :collapsed-main-box-ids="collapsedMainBoxIds"
         :depth="depth + 1"
-        @add-child="$emit('add-child', $event)"
-        @edit="$emit('edit', $event)"
-        @delete="$emit('delete', $event)"
-        @rename="(folder, newName) => $emit('rename', folder, newName)"
+        :is-last="idx === node.children.length - 1"
+        @select="$emit('select', $event)"
+        @context-menu="(ev, n) => $emit('context-menu', ev, n)"
+        @toggle-collapse="$emit('toggle-collapse', $event)"
       />
     </div>
   </div>
 </template>
 
 <style scoped>
-.tree-node {
-  --indent: calc(var(--depth, 0) * 1.25rem);
+/* ===== Node wrapper ===== */
+.tn {
+  position: relative;
 }
 
-.tree-node__row {
+/* ===== Row ===== */
+.tn__row {
   display: flex;
   align-items: center;
-  gap: 0.35rem;
-  padding: 0.4rem 0.5rem 0.4rem calc(0.5rem + var(--indent));
+  gap: 4px;
+  padding: 3px 6px 3px 2px;
   border-radius: var(--radius-sm);
+  cursor: pointer;
+  user-select: none;
   transition: background 0.1s;
+  min-height: 28px;
 }
 
-.tree-node__row:hover {
-  background: var(--bg-card);
+.tn__row:hover { background: var(--bg-card); }
+
+.tn__row--selected {
+  background: rgba(42, 199, 143, 0.1);
+}
+.tn__row--selected:hover {
+  background: rgba(42, 199, 143, 0.15);
 }
 
-.tree-node__row--inactive {
-  opacity: 0.5;
-}
+.tn__row--inactive { opacity: 0.45; }
 
-.tree-node__toggle {
+/* ===== Chevron ===== */
+.tn__chevron {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 1.25rem;
-  height: 1.25rem;
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
   background: none;
   border: none;
   color: var(--text-secondary);
-  font-size: 1rem;
+  font-size: 7px;
   cursor: pointer;
-  flex-shrink: 0;
   border-radius: 3px;
   transition: background 0.1s;
 }
 
-.tree-node__toggle:hover {
-  background: var(--border-light);
-}
+.tn__chevron:hover { background: var(--border-light); }
+.tn__chevron--leaf { cursor: default; visibility: hidden; }
 
-.tree-node__toggle--leaf {
-  cursor: default;
-}
-
-.tree-node__icon {
-  font-size: 1.1rem;
+/* ===== Icon ===== */
+.tn__icon {
+  font-size: 14px;
   flex-shrink: 0;
+  line-height: 1;
 }
 
-.tree-node__info {
+/* ===== Label ===== */
+.tn__label {
   flex: 1;
   min-width: 0;
   display: flex;
-  align-items: baseline;
-  gap: 0.5rem;
-  cursor: default;
+  flex-direction: column;
+  gap: 0;
+  line-height: 1.2;
 }
 
-.tree-node__name {
-  font-size: 0.85rem;
+.tn__name {
+  font-size: 12px;
   font-weight: 600;
   color: var(--text-primary);
   white-space: nowrap;
@@ -190,86 +219,99 @@ const childType = () => {
   text-overflow: ellipsis;
 }
 
-.tree-node__meta {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-  flex-shrink: 0;
-}
-
-.tree-node__type {
-  font-size: 0.65rem;
-  font-weight: 600;
-  color: var(--text-secondary);
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-  background: var(--bg-card);
-  padding: 0.1rem 0.35rem;
-  border-radius: 3px;
-}
-
-.tree-node__detail {
-  font-size: 0.72rem;
+.tn__sub {
+  font-size: 10px;
   color: var(--text-secondary);
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.1;
 }
 
-/* Edit inline */
-.tree-node__edit {
-  flex: 1;
-}
-
-.tree-node__edit-input {
-  width: 100%;
-  padding: 0.2rem 0.4rem;
-  font-size: 0.85rem;
-  font-weight: 600;
-  border: 1.5px solid var(--primary-500);
-  border-radius: var(--radius-sm);
-  outline: none;
-  color: var(--text-primary);
-  background: white;
-}
-
-/* Actions */
-.tree-node__actions {
-  display: flex;
-  gap: 0.15rem;
-  opacity: 0;
-  transition: opacity 0.12s;
-}
-
-.tree-node__row:hover .tree-node__actions {
-  opacity: 1;
-}
-
-.tree-node__action {
+/* ===== Dots ===== */
+.tn__dots {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 1.5rem;
-  height: 1.5rem;
-  background: none;
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
   border: none;
+  background: transparent;
   color: var(--text-secondary);
-  font-size: 0.9rem;
-  cursor: pointer;
   border-radius: 3px;
-  transition: all 0.1s;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.1s, background 0.1s;
+  font-size: 14px;
 }
 
-.tree-node__action:hover {
+.tn__row:hover .tn__dots { opacity: 1; }
+.tn__dots:hover { background: var(--border-light); color: var(--text-primary); }
+
+/* ===== Collapse-all button (main_box only) ===== */
+.tn__collapse-all {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  border-radius: 3px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.1s, background 0.1s, color 0.1s;
+  font-size: 13px;
+}
+
+.tn__row:hover .tn__collapse-all { opacity: 0.6; }
+.tn__collapse-all:hover { opacity: 1 !important; background: var(--border-light); color: var(--text-primary); }
+
+/* ===== Children — tree guides ===== */
+.tn__children {
+  position: relative;
+  margin-left: 9px;   /* align guide line under the chevron center */
+  padding-left: 12px; /* space for guide line + connector */
+}
+
+/* Vertical guide line */
+.tn__children::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 1px;
   background: var(--border-light);
-  color: var(--text-primary);
 }
 
-.tree-node__action--danger:hover {
-  color: var(--error-500);
-  background: var(--error-bg);
+/* Horizontal connector on each child row */
+.tn__children > .tn {
+  position: relative;
 }
 
-.tree-node__children {
-  border-left: 1px solid var(--border-light);
-  margin-left: calc(0.5rem + var(--indent) + 0.625rem);
+.tn__children > .tn::before {
+  content: '';
+  position: absolute;
+  left: -12px;
+  top: 14px;           /* vertically centered on the row */
+  width: 10px;
+  height: 1px;
+  background: var(--border-light);
 }
+
+/* For the last child, trim the vertical line to the connector */
+.tn__children > .tn:last-of-type::after {
+  content: '';
+  position: absolute;
+  left: -12px;
+  top: 14px;
+  bottom: 0;
+  width: 1px;
+  background: var(--bg-main);  /* covers the vertical line below connector */
+}
+
 </style>

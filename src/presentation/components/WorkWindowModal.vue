@@ -1,134 +1,230 @@
 <script setup>
-import { ref } from 'vue'
+import { ref, computed, watch } from 'vue'
 
 const props = defineProps({
   window: { type: Object, required: true },
   specialistName: { type: String, default: '—' },
   applicationName: { type: String, default: '—' },
+  loading: { type: Boolean, default: false },
 })
 
-const emit = defineEmits(['close', 'open', 'closeSession', 'delete'])
+const emit = defineEmits(['close', 'open', 'close-session', 'delete', 'update'])
 
-const accionando = ref(false)
+// ---- Edit mode ----
+const editing = ref(false)
+const editStart = ref('')
+const editEnd = ref('')
+const editNote = ref('')
 
-const handleOpen = async () => {
-  accionando.value = true
-  try {
-    await emit('open', props.window)
-  } finally {
-    accionando.value = false
-  }
+function enterEdit() {
+  editStart.value = fmtForInput(props.window.startTime)
+  editEnd.value = fmtForInput(props.window.endTime)
+  editNote.value = ''
+  editing.value = true
 }
 
-const handleClose = async () => {
-  accionando.value = true
-  try {
-    await emit('closeSession', props.window)
-  } finally {
-    accionando.value = false
-  }
+function cancelEdit() {
+  editing.value = false
 }
 
-const handleDelete = async () => {
-  accionando.value = true
-  try {
-    await emit('delete', props.window)
-  } finally {
-    accionando.value = false
+function saveEdit() {
+  const payload = {}
+  const origStart = fmtForInput(props.window.startTime)
+  const origEnd = fmtForInput(props.window.endTime)
+  if (editStart.value !== origStart) payload.startTime = editStart.value
+  if (editEnd.value !== origEnd) payload.endTime = editEnd.value
+  if (editNote.value.trim()) payload.note = editNote.value.trim()
+  if (Object.keys(payload).length === 0) {
+    editing.value = false
+    return
   }
+  emit('update', props.window, payload)
 }
+
+// Reset edit mode when window changes or modal closes
+watch(() => props.window?.id, () => { editing.value = false })
+watch(() => props.loading, (val) => { if (!val && editing.value) editing.value = false })
+
+const hasTimeChanged = computed(() => {
+  if (!editing.value) return false
+  return editStart.value !== fmtForInput(props.window.startTime) ||
+         editEnd.value !== fmtForInput(props.window.endTime) ||
+         editNote.value.trim() !== ''
+})
+
+// ---- Formatting helpers ----
+function fmtForInput(time) {
+  if (!time) return '08:00'
+  const parts = time.split(':')
+  return `${parts[0].padStart(2, '0')}:${parts[1].padStart(2, '0')}`
+}
+
+function fmtDisplay(time) {
+  if (!time) return '?'
+  const parts = time.split(':')
+  const h = parseInt(parts[0], 10)
+  const m = parts[1]
+  const ampm = h >= 12 ? 'PM' : 'AM'
+  const h12 = h === 0 ? 12 : h > 12 ? h - 12 : h
+  return `${h12}:${m} ${ampm}`
+}
+
+function fmtDate(date) {
+  if (!date) return '—'
+  const d = new Date(date + 'T12:00:00')
+  return d.toLocaleDateString('es-CO', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })
+}
+
+const statusLabel = computed(() => props.window.isSessionOpen ? 'Abierta' : 'Cerrada')
+const statusClass = computed(() => props.window.isSessionOpen ? 'open' : 'closed')
 </script>
 
 <template>
   <div class="modal-overlay" @click.self="$emit('close')">
-    <div class="ww-modal">
-      <div class="ww-modal__header">
-        <h3>Detalle de Ventana</h3>
-        <button @click="$emit('close')" class="ww-modal__close"><i class='bx bx-x'></i></button>
+    <div class="wm">
+      <!-- Color bar -->
+      <div class="wm__bar" :class="'wm__bar--' + statusClass"></div>
+
+      <!-- Header -->
+      <div class="wm__header">
+        <div class="wm__header-left">
+          <span class="wm__status-dot" :class="'wm__status-dot--' + statusClass"></span>
+          <span class="wm__status-label">{{ statusLabel }}</span>
+        </div>
+        <div class="wm__header-right">
+          <button
+            v-if="!editing"
+            class="wm__icon-btn"
+            title="Editar horario"
+            @click="enterEdit"
+          >
+            <i class='bx bx-pencil'></i>
+          </button>
+          <button class="wm__icon-btn" @click="$emit('close')" title="Cerrar">
+            <i class='bx bx-x'></i>
+          </button>
+        </div>
       </div>
 
-      <div class="ww-modal__body">
-        <!-- Status -->
-        <div class="ww-modal__status" :class="window.isSessionOpen ? 'ww-modal__status--open' : 'ww-modal__status--closed'">
-          <i :class="window.isSessionOpen ? 'bx bx-radio-circle-marked' : 'bx bx-radio-circle'"></i>
-          {{ window.isSessionOpen ? 'Sesión abierta' : 'Sesión cerrada' }}
+      <!-- Body -->
+      <div class="wm__body">
+        <!-- Date -->
+        <div class="wm__row wm__row--date">
+          <i class='bx bx-calendar'></i>
+          <span>{{ fmtDate(window.scheduledDate) }}</span>
         </div>
 
-        <!-- Info grid -->
-        <div class="ww-modal__grid">
-          <div class="ww-modal__field">
-            <span class="ww-modal__label">Especialista</span>
-            <span class="ww-modal__value">{{ specialistName }}</span>
-          </div>
-          <div class="ww-modal__field">
-            <span class="ww-modal__label">Aplicación</span>
-            <span class="ww-modal__value">{{ applicationName }}</span>
-          </div>
-          <div class="ww-modal__field">
-            <span class="ww-modal__label">Horario</span>
-            <span class="ww-modal__value">{{ window.timeRange }}</span>
-          </div>
-          <div class="ww-modal__field">
-            <span class="ww-modal__label">ID</span>
-            <span class="ww-modal__value ww-modal__value--mono">{{ window.id }}</span>
+        <!-- Time (view or edit) -->
+        <div v-if="!editing" class="wm__row wm__row--time">
+          <i class='bx bx-time-five'></i>
+          <span>{{ fmtDisplay(window.startTime) }} — {{ fmtDisplay(window.endTime) }}</span>
+        </div>
+        <div v-else class="wm__edit-times">
+          <i class='bx bx-time-five wm__edit-icon'></i>
+          <div class="wm__time-inputs">
+            <div class="wm__time-field">
+              <label>Inicio</label>
+              <input type="time" v-model="editStart" class="wm__time-input">
+            </div>
+            <span class="wm__time-sep">—</span>
+            <div class="wm__time-field">
+              <label>Fin</label>
+              <input type="time" v-model="editEnd" class="wm__time-input">
+            </div>
           </div>
         </div>
+
+        <!-- Note field (edit mode only) -->
+        <div v-if="editing" class="wm__edit-note">
+          <i class='bx bx-note wm__edit-icon'></i>
+          <input
+            v-model="editNote"
+            type="text"
+            class="wm__note-input"
+            placeholder="Nota (opcional, ej. turno extendido)"
+          >
+        </div>
+
+        <!-- Specialist -->
+        <div class="wm__row">
+          <i class='bx bx-user'></i>
+          <span>{{ specialistName }}</span>
+        </div>
+
+        <!-- Application -->
+        <div class="wm__row">
+          <i class='bx bx-cube'></i>
+          <span>{{ applicationName }}</span>
+        </div>
+
+        <!-- Divider -->
+        <div class="wm__divider"></div>
 
         <!-- Counters -->
-        <div class="ww-modal__counters">
-          <div class="ww-modal__counter">
-            <span class="ww-modal__counter-value">{{ window.openingCount }}</span>
-            <span class="ww-modal__counter-label">Al abrir</span>
+        <div class="wm__counters">
+          <div class="wm__ctr">
+            <span class="wm__ctr-val">{{ window.openingCount }}</span>
+            <span class="wm__ctr-lbl">Apertura</span>
           </div>
-          <div class="ww-modal__counter">
-            <span class="ww-modal__counter-value ww-modal__counter-value--main">{{ window.currentCount }}</span>
-            <span class="ww-modal__counter-label">Actual</span>
+          <div class="wm__ctr wm__ctr--main">
+            <span class="wm__ctr-val">{{ window.currentCount }}</span>
+            <span class="wm__ctr-lbl">Actual</span>
           </div>
-          <div v-if="window.closingCount != null" class="ww-modal__counter">
-            <span class="ww-modal__counter-value">{{ window.closingCount }}</span>
-            <span class="ww-modal__counter-label">Al cerrar</span>
+          <div v-if="window.closingCount != null" class="wm__ctr">
+            <span class="wm__ctr-val">{{ window.closingCount }}</span>
+            <span class="wm__ctr-lbl">Cierre</span>
           </div>
         </div>
 
-        <!-- Inheritance -->
-        <div v-if="window.inheritsOnReopen" class="ww-modal__badge">
+        <!-- Inheritance badge -->
+        <div v-if="window.inheritsOnReopen" class="wm__badge">
           <i class='bx bx-transfer'></i> Hereda conteo al reabrir
         </div>
       </div>
 
-      <div class="ww-modal__actions">
-        <button
-          class="btn-delete"
-          :disabled="accionando"
-          @click="handleDelete"
-          title="Eliminar ventana"
-        >
-          <i v-if="accionando" class='bx bx-loader-alt bx-spin'></i>
-          <i v-else class='bx bx-trash'></i>
-        </button>
-        <div class="ww-modal__actions-right">
-          <button
-            v-if="!window.isSessionOpen && window.isActive"
-            class="btn-primary"
-            :disabled="accionando"
-            @click="handleOpen"
-          >
-            <i v-if="accionando" class='bx bx-loader-alt bx-spin'></i>
-            <i v-else class='bx bx-play'></i>
-            Abrir sesión
+      <!-- Footer -->
+      <div class="wm__footer">
+        <template v-if="editing">
+          <button class="wm__btn wm__btn--ghost" @click="cancelEdit" :disabled="loading">Cancelar</button>
+          <button class="wm__btn wm__btn--primary" @click="saveEdit" :disabled="loading || !hasTimeChanged">
+            <i v-if="loading" class='bx bx-loader-alt bx-spin'></i>
+            <i v-else class='bx bx-check'></i>
+            Guardar
           </button>
+        </template>
+        <template v-else>
           <button
-            v-if="window.isSessionOpen"
-            class="btn-danger"
-            :disabled="accionando"
-            @click="handleClose"
+            class="wm__btn wm__btn--delete"
+            :disabled="loading"
+            @click="$emit('delete', window)"
+            title="Eliminar"
           >
-            <i v-if="accionando" class='bx bx-loader-alt bx-spin'></i>
-            <i v-else class='bx bx-stop'></i>
-            Cerrar sesión
+            <i v-if="loading" class='bx bx-loader-alt bx-spin'></i>
+            <i v-else class='bx bx-trash'></i>
           </button>
-          <button class="btn-secondary" @click="$emit('close')">Listo</button>
-        </div>
+          <div class="wm__footer-right">
+            <button
+              v-if="!window.isSessionOpen && window.isActive"
+              class="wm__btn wm__btn--primary"
+              :disabled="loading"
+              @click="$emit('open', window)"
+            >
+              <i v-if="loading" class='bx bx-loader-alt bx-spin'></i>
+              <i v-else class='bx bx-play'></i>
+              Abrir sesión
+            </button>
+            <button
+              v-if="window.isSessionOpen"
+              class="wm__btn wm__btn--danger"
+              :disabled="loading"
+              @click="$emit('close-session', window)"
+            >
+              <i v-if="loading" class='bx bx-loader-alt bx-spin'></i>
+              <i v-else class='bx bx-stop'></i>
+              Cerrar sesión
+            </button>
+          </div>
+        </template>
       </div>
     </div>
   </div>
@@ -137,213 +233,327 @@ const handleDelete = async () => {
 <style scoped>
 .modal-overlay {
   position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-  background: rgba(0, 0, 0, 0.5); backdrop-filter: blur(4px);
+  background: rgba(0, 0, 0, 0.4); backdrop-filter: blur(3px);
   display: flex; align-items: center; justify-content: center;
   z-index: 100;
 }
 
-.ww-modal {
-  background: white;
+.wm {
+  background: var(--bg-main);
   width: 100%;
-  max-width: 420px;
+  max-width: 400px;
   border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-lg);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.15), 0 0 0 1px rgba(0, 0, 0, 0.04);
   overflow: hidden;
 }
 
-.ww-modal__header {
+/* ===== Color bar ===== */
+.wm__bar {
+  height: 4px;
+}
+
+.wm__bar--open { background: var(--primary-500); }
+.wm__bar--closed { background: var(--border-light); }
+
+/* ===== Header ===== */
+.wm__header {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  padding: 1.25rem 1.5rem;
-  border-bottom: 1px solid var(--border-light);
+  justify-content: space-between;
+  padding: 12px 16px 4px;
 }
 
-.ww-modal__header h3 {
-  font-size: 1rem;
-  font-weight: 700;
-  color: var(--text-primary);
+.wm__header-left {
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
-.ww-modal__close {
-  background: none;
+.wm__header-right {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.wm__status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.wm__status-dot--open { background: var(--primary-500); box-shadow: 0 0 0 3px rgba(42, 199, 143, 0.2); }
+.wm__status-dot--closed { background: #94a3b8; }
+
+.wm__status-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.wm__icon-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
   border: none;
-  font-size: 1.4rem;
+  background: transparent;
   color: var(--text-secondary);
+  font-size: 18px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
+  transition: background 0.15s, color 0.15s;
 }
 
-.ww-modal__body {
-  padding: 1.25rem 1.5rem;
+.wm__icon-btn:hover { background: var(--bg-card); color: var(--text-primary); }
+
+/* ===== Body ===== */
+.wm__body {
+  padding: 8px 16px 16px;
   display: flex;
   flex-direction: column;
-  gap: 1rem;
+  gap: 8px;
 }
 
-/* Status */
-.ww-modal__status {
-  display: inline-flex;
+/* Row items */
+.wm__row {
+  display: flex;
   align-items: center;
-  gap: 0.3rem;
-  font-size: 0.8rem;
+  gap: 10px;
+  font-size: 13px;
+  color: var(--text-primary);
+  padding: 4px 0;
+}
+
+.wm__row i {
+  font-size: 16px;
+  color: var(--text-secondary);
+  width: 18px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.wm__row--date {
   font-weight: 600;
-  padding: 0.3rem 0.7rem;
-  border-radius: var(--radius-full);
-  width: fit-content;
+  font-size: 14px;
 }
 
-.ww-modal__status--open {
-  background: #dcfce7;
-  color: #15803d;
+.wm__row--time {
+  font-size: 14px;
+  font-weight: 500;
 }
 
-.ww-modal__status--closed {
-  background: #f1f5f9;
-  color: #64748b;
+/* ===== Edit time fields ===== */
+.wm__edit-times {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
 }
 
-/* Grid */
-.ww-modal__grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 0.75rem;
+.wm__edit-icon {
+  font-size: 16px;
+  color: var(--text-secondary);
+  width: 18px;
+  text-align: center;
+  flex-shrink: 0;
 }
 
-.ww-modal__field {
+.wm__time-inputs {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+}
+
+.wm__time-field {
   display: flex;
   flex-direction: column;
-  gap: 0.15rem;
+  gap: 2px;
+  flex: 1;
 }
 
-.ww-modal__label {
-  font-size: 0.7rem;
+.wm__time-field label {
+  font-size: 10px;
   font-weight: 600;
   color: var(--text-secondary);
   text-transform: uppercase;
-  letter-spacing: 0.02em;
+  letter-spacing: 0.03em;
 }
 
-.ww-modal__value {
-  font-size: 0.88rem;
-  font-weight: 600;
+.wm__time-input {
+  padding: 6px 8px;
+  border: 1.5px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  font-size: 14px;
+  font-weight: 500;
   color: var(--text-primary);
+  background: var(--bg-main);
+  outline: none;
+  transition: border-color 0.15s;
+  width: 100%;
 }
 
-.ww-modal__value--mono {
-  font-family: monospace;
-  font-size: 0.8rem;
+.wm__time-input:focus { border-color: var(--primary-500); }
+
+.wm__time-sep {
+  font-size: 14px;
   color: var(--text-secondary);
+  margin-top: 14px;
 }
 
-/* Counters */
-.ww-modal__counters {
+/* ===== Note input ===== */
+.wm__edit-note {
   display: flex;
-  gap: 1.5rem;
-  padding: 0.75rem 0;
-  border-top: 1px solid var(--border-light);
-  border-bottom: 1px solid var(--border-light);
+  align-items: center;
+  gap: 10px;
+  padding: 4px 0;
 }
 
-.ww-modal__counter {
+.wm__note-input {
+  flex: 1;
+  padding: 6px 8px;
+  border: 1.5px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  color: var(--text-primary);
+  background: var(--bg-main);
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.wm__note-input:focus { border-color: var(--primary-500); }
+
+.wm__note-input::placeholder { color: #94a3b8; }
+
+/* ===== Divider ===== */
+.wm__divider {
+  height: 1px;
+  background: var(--border-light);
+  margin: 4px 0;
+}
+
+/* ===== Counters ===== */
+.wm__counters {
+  display: flex;
+  gap: 0;
+  padding: 4px 0;
+}
+
+.wm__ctr {
+  flex: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 0.15rem;
+  gap: 2px;
+  padding: 8px 0;
+  border-right: 1px solid var(--border-light);
 }
 
-.ww-modal__counter-value {
-  font-size: 1.2rem;
+.wm__ctr:last-child { border-right: none; }
+
+.wm__ctr-val {
+  font-size: 18px;
   font-weight: 700;
   color: var(--text-secondary);
 }
 
-.ww-modal__counter-value--main {
+.wm__ctr--main .wm__ctr-val {
   color: var(--primary-500);
-  font-size: 1.5rem;
+  font-size: 22px;
 }
 
-.ww-modal__counter-label {
-  font-size: 0.68rem;
+.wm__ctr-lbl {
+  font-size: 10px;
+  font-weight: 600;
   color: var(--text-secondary);
   text-transform: uppercase;
+  letter-spacing: 0.03em;
 }
 
-/* Badge */
-.ww-modal__badge {
+/* ===== Badge ===== */
+.wm__badge {
   display: inline-flex;
   align-items: center;
-  gap: 0.3rem;
-  font-size: 0.75rem;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 600;
   color: #4F46E5;
-  background: #E0E7FF;
-  padding: 0.3rem 0.7rem;
+  background: #EEF2FF;
+  padding: 4px 10px;
   border-radius: var(--radius-full);
   width: fit-content;
 }
 
-/* Actions */
-.ww-modal__actions {
+/* ===== Footer ===== */
+.wm__footer {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 0.6rem;
-  padding: 1rem 1.5rem;
+  gap: 8px;
+  padding: 12px 16px;
   border-top: 1px solid var(--border-light);
   background: #fafafa;
 }
 
-.ww-modal__actions-right {
+.wm__footer-right {
   display: flex;
-  gap: 0.6rem;
+  gap: 8px;
 }
 
-.btn-delete {
-  display: flex;
+/* ===== Buttons ===== */
+.wm__btn {
+  display: inline-flex;
   align-items: center;
-  justify-content: center;
-  width: 2.2rem;
-  height: 2.2rem;
-  background: none;
-  border: 1px solid var(--border-light);
-  border-radius: var(--radius-md);
-  color: var(--text-secondary);
-  font-size: 1.1rem;
-  cursor: pointer;
-  transition: all 0.15s;
-}
-
-.btn-delete:hover:not(:disabled) {
-  color: var(--error-500);
-  border-color: var(--error-500);
-  background: var(--error-bg);
-}
-
-.btn-delete:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.btn-danger {
-  display: flex;
-  align-items: center;
-  gap: 0.3rem;
-  padding: 0.5rem 0.9rem;
-  background: var(--error-500);
-  color: white;
+  gap: 5px;
+  padding: 7px 14px;
+  font-size: 13px;
   font-weight: 600;
-  font-size: 0.82rem;
   border: none;
   border-radius: var(--radius-md);
   cursor: pointer;
-  transition: background 0.15s;
+  transition: background 0.15s, color 0.15s, opacity 0.15s;
 }
 
-.btn-danger:hover:not(:disabled) {
-  background: #DC2626;
-}
+.wm__btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
-.btn-danger:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
+.wm__btn--primary {
+  background: var(--primary-500);
+  color: white;
+}
+.wm__btn--primary:hover:not(:disabled) { background: var(--primary-600); }
+
+.wm__btn--danger {
+  background: var(--error-500);
+  color: white;
+}
+.wm__btn--danger:hover:not(:disabled) { background: #DC2626; }
+
+.wm__btn--ghost {
+  background: transparent;
+  color: var(--text-secondary);
+  border: 1px solid var(--border-light);
+}
+.wm__btn--ghost:hover:not(:disabled) { background: var(--bg-card); color: var(--text-primary); }
+
+.wm__btn--delete {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  background: transparent;
+  border: 1px solid var(--border-light);
+  color: var(--text-secondary);
+  font-size: 16px;
+}
+.wm__btn--delete:hover:not(:disabled) {
+  color: var(--error-500);
+  border-color: var(--error-500);
+  background: var(--error-bg);
 }
 </style>

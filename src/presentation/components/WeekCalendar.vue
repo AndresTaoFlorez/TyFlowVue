@@ -1,6 +1,8 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import WindowBlock from '@/presentation/components/WindowBlock.vue'
+import WindowGroupBlock from '@/presentation/components/WindowGroupBlock.vue'
+import { useWindowGroups } from '@/presentation/composables/useWindowGroups'
 
 const props = defineProps({
   windows: { type: Array, default: () => [] },
@@ -10,7 +12,7 @@ const props = defineProps({
   selectable: { type: Boolean, default: false },
 })
 
-const emit = defineEmits(['select', 'range-selected'])
+const emit = defineEmits(['select', 'range-selected', 'group-select', 'reschedule'])
 
 const SLOT_H = 30               // px per half-hour slot
 const HOUR_H = SLOT_H * 2       // px per hour (used by WindowBlock)
@@ -135,6 +137,7 @@ const onCellTouchstart = (dayIdx, slot, e) => {
 
 const onTouchmove = (e) => {
   if (!dragging.value) return
+  e.preventDefault()
   const touch = e.touches[0]
   const el = document.elementFromPoint(touch.clientX, touch.clientY)
   if (el && el.dataset.slot !== undefined) {
@@ -143,7 +146,75 @@ const onTouchmove = (e) => {
   }
 }
 
-const onTouchend = () => { onMouseup() }
+const onTouchend = () => { onMouseup(); onBlockDragEnd() }
+
+// ---- Block drag (reschedule) ----
+const blockDragging = ref(false)
+const draggedWindow = ref(null)
+const draggedOriginDay = ref(-1)
+const draggedTargetDay = ref(-1)
+const draggedTargetSlot = ref(0)
+
+const onBlockDragStart = (w, dayIdx, e) => {
+  if (!props.selectable) return
+  e.stopPropagation()
+  blockDragging.value = true
+  draggedWindow.value = w
+  draggedOriginDay.value = dayIdx
+  draggedTargetDay.value = dayIdx
+  const duration = w.endHour - w.startHour
+  draggedTargetSlot.value = Math.round(w.startHour * 2)
+}
+
+const onBlockDragMove = (e) => {
+  if (!blockDragging.value) return
+  const el = document.elementFromPoint(
+    e.clientX || e.touches?.[0]?.clientX,
+    e.clientY || e.touches?.[0]?.clientY
+  )
+  if (el && el.dataset.slot !== undefined) {
+    draggedTargetDay.value = parseInt(el.dataset.day)
+    draggedTargetSlot.value = parseInt(el.dataset.slot)
+  }
+}
+
+const blockDragGhostStyle = computed(() => {
+  if (!blockDragging.value || !draggedWindow.value) return null
+  const duration = draggedWindow.value.endHour - draggedWindow.value.startHour
+  return {
+    top: draggedTargetSlot.value * SLOT_H + 'px',
+    height: duration * HOUR_H + 'px',
+  }
+})
+
+const onBlockDragEnd = () => {
+  if (!blockDragging.value) return
+  const w = draggedWindow.value
+  const targetDay = draggedTargetDay.value
+  const targetSlot = draggedTargetSlot.value
+
+  blockDragging.value = false
+  draggedWindow.value = null
+
+  if (!w) return
+
+  const targetDate = props.weekDates[targetDay]
+  const startH = Math.floor(targetSlot / 2)
+  const startM = (targetSlot % 2) * 30
+  const duration = w.endHour - w.startHour
+  const endDecimal = startH + startM / 60 + duration
+  const endH = Math.floor(endDecimal)
+  const endM = Math.round((endDecimal % 1) * 60)
+
+  const fmt = (h, m) => `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
+
+  emit('reschedule', {
+    window: w,
+    targetDate,
+    startTime: fmt(startH, startM),
+    endTime: fmt(endH, endM),
+  })
+}
 
 // ---- Windows by day ----
 const windowsByDay = computed(() => {
@@ -172,6 +243,8 @@ const windowsByDay = computed(() => {
   return byDay
 })
 
+const groupedByDay = useWindowGroups(windowsByDay)
+
 const findSpecialist = (id) => props.specialists.find(u => u.specialistId === id)
 const findApp = (id) => props.applications.find(a => a.id === id)
 const specName = (w) => findSpecialist(w.specialistId)?.fullName || w.specialistId
@@ -192,8 +265,9 @@ const isHourTop = (slot) => slot % 2 === 0
     class="cal"
     :class="{ 'cal--selectable': selectable }"
     @mouseleave="cancelDrag"
-    @mouseup="onMouseup"
-    @touchmove.passive="onTouchmove"
+    @mouseup="onMouseup(); onBlockDragEnd()"
+    @mousemove="onBlockDragMove"
+    @touchmove="onTouchmove"
     @touchend="onTouchend"
   >
     <div ref="scrollContainer" class="cal-scroll">
@@ -271,19 +345,39 @@ const isHourTop = (slot) => slot % 2 === 0
             <span v-if="dayIdx === selDayMin" class="cal-drag__label">{{ selectionLabel }}</span>
           </div>
 
-          <!-- Window blocks -->
-          <WindowBlock
-            v-for="w in windowsByDay[dayIdx]"
-            :key="`${w.id}-${dayIdx}`"
-            :window="w"
-            :specialist-name="specName(w)"
-            :application-name="appName(w)"
-            :hour-height="HOUR_H"
-            :base-hour="BASE_HOUR"
-            :col="w._col"
-            :total-cols="w._totalCols"
-            @click="$emit('select', w)"
-          />
+          <!-- Window blocks (singles and groups) -->
+          <template v-for="item in groupedByDay[dayIdx]" :key="item.type === 'group' ? item.id : `${item.window.id}-${dayIdx}`">
+            <WindowGroupBlock
+              v-if="item.type === 'group'"
+              :group="item"
+              :hour-height="HOUR_H"
+              :base-hour="BASE_HOUR"
+              :col="item._col"
+              :total-cols="item._totalCols"
+              :specialists="specialists"
+              @click="$emit('group-select', item)"
+            />
+            <WindowBlock
+              v-else
+              :window="item.window"
+              :specialist-name="specName(item.window)"
+              :application-name="appName(item.window)"
+              :hour-height="HOUR_H"
+              :base-hour="BASE_HOUR"
+              :col="item._col"
+              :total-cols="item._totalCols"
+              :data-window-id="item.window.id"
+              @click="$emit('select', item.window)"
+              @mousedown.stop="onBlockDragStart(item.window, dayIdx, $event)"
+            />
+          </template>
+
+          <!-- Block drag ghost -->
+          <div
+            v-if="blockDragging && draggedTargetDay === dayIdx && blockDragGhostStyle"
+            class="cal-drag-ghost"
+            :style="blockDragGhostStyle"
+          ></div>
         </div>
       </div>
     </div>
@@ -304,14 +398,14 @@ const isHourTop = (slot) => slot % 2 === 0
 
 /* ========== Scroll ========== */
 .cal-scroll {
-  overflow-y: auto;
+  overflow: auto;
   max-height: 36rem;
   -webkit-overflow-scrolling: touch;
   scrollbar-width: thin;
   scrollbar-color: #3b3f54 transparent;
 }
 
-.cal-scroll::-webkit-scrollbar { width: 6px; }
+.cal-scroll::-webkit-scrollbar { width: 6px; height: 6px; }
 .cal-scroll::-webkit-scrollbar-track { background: transparent; }
 .cal-scroll::-webkit-scrollbar-thumb { background: #3b3f54; border-radius: 3px; }
 .cal-scroll::-webkit-scrollbar-thumb:hover { background: #4f5470; }
@@ -329,6 +423,10 @@ const isHourTop = (slot) => slot % 2 === 0
 
 .cal-header__gutter {
   border-right: 1px solid #3b3f54;
+  position: sticky;
+  left: 0;
+  z-index: 21;
+  background: #252839;
 }
 
 .cal-header__day {
@@ -377,12 +475,17 @@ const isHourTop = (slot) => slot % 2 === 0
 .cal-body {
   display: grid;
   grid-template-columns: 3.5rem repeat(7, 1fr);
+  padding-top: 15px;
+  padding-bottom: 15px;
 }
 
 /* ========== Gutter ========== */
 .cal-gutter {
   border-right: 1px solid #3b3f54;
   background: #252839;
+  position: sticky;
+  left: 0;
+  z-index: 5;
 }
 
 .cal-gutter__cell {
@@ -421,6 +524,7 @@ const isHourTop = (slot) => slot % 2 === 0
 /* Half-hour cells */
 .cal-col__cell {
   position: relative;
+  touch-action: none;
 }
 
 /* Top of hour — solid border */
@@ -507,6 +611,18 @@ const isHourTop = (slot) => slot % 2 === 0
 
 .cal-col--dragging {
   background: rgba(42, 199, 143, 0.04);
+}
+
+/* ========== Block drag ghost ========== */
+.cal-drag-ghost {
+  position: absolute;
+  left: 3%;
+  width: 92%;
+  background: rgba(139, 143, 234, 0.15);
+  border: 2px dashed rgba(139, 143, 234, 0.5);
+  border-radius: 4px;
+  z-index: 14;
+  pointer-events: none;
 }
 
 /* ========== Responsive ========== */
