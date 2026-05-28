@@ -233,10 +233,11 @@ const onTouchmove = (e) => {
   if (!dragging.value && !blockDragging.value) return
   e.preventDefault()
   const touch = e.touches[0]
-  const el = document.elementFromPoint(touch.clientX, touch.clientY)
-  if (el && el.dataset.slot !== undefined) {
-    dragEndDay.value = parseInt(el.dataset.day)
-    dragEndSlot.value = parseInt(el.dataset.slot)
+  const elements = document.elementsFromPoint(touch.clientX, touch.clientY)
+  const cell = elements.find(el => el.dataset.slot !== undefined)
+  if (cell) {
+    dragEndDay.value = parseInt(cell.dataset.day)
+    dragEndSlot.value = parseInt(cell.dataset.slot)
   }
 }
 
@@ -279,13 +280,14 @@ const onGroupDragStart = (group, dayIdx, e) => {
 
 const onBlockDragMove = (e) => {
   if (!blockDragging.value) return
-  const el = document.elementFromPoint(
-    e.clientX || e.touches?.[0]?.clientX,
-    e.clientY || e.touches?.[0]?.clientY
-  )
-  if (el && el.dataset.slot !== undefined) {
-    draggedTargetDay.value = parseInt(el.dataset.day)
-    draggedTargetSlot.value = parseInt(el.dataset.slot)
+  const x = e.clientX || e.touches?.[0]?.clientX
+  const y = e.clientY || e.touches?.[0]?.clientY
+  // Use elementsFromPoint to look through all layers (blocks sit on top of cells)
+  const elements = document.elementsFromPoint(x, y)
+  const cell = elements.find(el => el.dataset.slot !== undefined)
+  if (cell) {
+    draggedTargetDay.value = parseInt(cell.dataset.day)
+    draggedTargetSlot.value = parseInt(cell.dataset.slot)
   }
 }
 
@@ -387,7 +389,7 @@ const isHourTop = (slot) => slot % 2 === 0
 <template>
   <div
     class="cal"
-    :class="{ 'cal--selectable': selectable, 'cal--block-dragging': blockDragging }"
+    :class="{ 'cal--selectable': selectable }"
     @mouseleave="cancelDrag"
     @mouseup="onMouseup(); onBlockDragEnd()"
     @mousemove="onBlockDragMove"
@@ -873,12 +875,6 @@ const isHourTop = (slot) => slot % 2 === 0
 
 .cal-col--dragging {
   background: rgba(42, 199, 143, 0.04);
-}
-
-/* ========== Block dragging — disable pointer-events on blocks so cells receive mousemove ========== */
-.cal--block-dragging :deep(.wb),
-.cal--block-dragging :deep(.wgb) {
-  pointer-events: none;
 }
 
 /* ========== Block drag ghost ========== */
