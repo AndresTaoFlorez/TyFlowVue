@@ -387,7 +387,7 @@ const isHourTop = (slot) => slot % 2 === 0
 <template>
   <div
     class="cal"
-    :class="{ 'cal--selectable': selectable }"
+    :class="{ 'cal--selectable': selectable, 'cal--block-dragging': blockDragging }"
     @mouseleave="cancelDrag"
     @mouseup="onMouseup(); onBlockDragEnd()"
     @mousemove="onBlockDragMove"
@@ -873,6 +873,12 @@ const isHourTop = (slot) => slot % 2 === 0
 
 .cal-col--dragging {
   background: rgba(42, 199, 143, 0.04);
+}
+
+/* ========== Block dragging — disable pointer-events on blocks so cells receive mousemove ========== */
+.cal--block-dragging :deep(.wb),
+.cal--block-dragging :deep(.wgb) {
+  pointer-events: none;
 }
 
 /* ========== Block drag ghost ========== */
