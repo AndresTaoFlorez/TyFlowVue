@@ -153,13 +153,13 @@ function onDotsClick(event) {
 .tn__row {
   display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 3px 6px 3px 2px;
+  gap: 3px;
+  padding: 2px 4px;
   border-radius: var(--radius-sm);
   cursor: pointer;
   user-select: none;
   transition: background 0.1s;
-  min-height: 28px;
+  min-height: 24px;
 }
 
 .tn__row:hover { background: var(--bg-card); }
@@ -178,8 +178,8 @@ function onDotsClick(event) {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 16px;
-  height: 16px;
+  width: 14px;
+  height: 14px;
   flex-shrink: 0;
   background: none;
   border: none;
@@ -195,7 +195,7 @@ function onDotsClick(event) {
 
 /* ===== Icon ===== */
 .tn__icon {
-  font-size: 14px;
+  font-size: 13px;
   flex-shrink: 0;
   line-height: 1;
 }
@@ -233,8 +233,8 @@ function onDotsClick(event) {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 20px;
-  height: 20px;
+  width: 18px;
+  height: 18px;
   flex-shrink: 0;
   border: none;
   background: transparent;
@@ -243,7 +243,7 @@ function onDotsClick(event) {
   cursor: pointer;
   opacity: 0;
   transition: opacity 0.1s, background 0.1s;
-  font-size: 14px;
+  font-size: 13px;
 }
 
 .tn__row:hover .tn__dots { opacity: 1; }
@@ -273,8 +273,8 @@ function onDotsClick(event) {
 /* ===== Children — tree guides ===== */
 .tn__children {
   position: relative;
-  margin-left: 9px;   /* align guide line under the chevron center */
-  padding-left: 12px; /* space for guide line + connector */
+  margin-left: 5px;
+  padding-left: 7px;
 }
 
 /* Vertical guide line */
@@ -296,9 +296,9 @@ function onDotsClick(event) {
 .tn__children > .tn::before {
   content: '';
   position: absolute;
-  left: -12px;
-  top: 14px;           /* vertically centered on the row */
-  width: 10px;
+  left: -7px;
+  top: 12px;
+  width: 5px;
   height: 1px;
   background: var(--border-light);
 }
@@ -307,11 +307,11 @@ function onDotsClick(event) {
 .tn__children > .tn:last-of-type::after {
   content: '';
   position: absolute;
-  left: -12px;
-  top: 14px;
+  left: -7px;
+  top: 12px;
   bottom: 0;
   width: 1px;
-  background: var(--bg-main);  /* covers the vertical line below connector */
+  background: var(--bg-main);
 }
 
 </style>

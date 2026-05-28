@@ -29,6 +29,9 @@
   padding: 2rem;
   overflow-y: auto;
 }
+.layout__main--flush {
+  padding: 0.35rem;
+}
 .layout__overlay {
   display: none;
 }
@@ -153,6 +156,9 @@
   .layout__main {
     padding: 1.5rem;
   }
+  .layout__main--flush {
+    padding: 0.25rem;
+  }
 }
 
 @media (max-width: 768px) {
@@ -194,6 +200,9 @@
   .layout__main {
     padding: 1rem;
   }
+  .layout__main--flush {
+    padding: 0.15rem;
+  }
 
   .topbar {
     padding: 0 1rem;
@@ -209,6 +218,9 @@
 @media (max-width: 480px) {
   .layout__main {
     padding: 0.75rem;
+  }
+  .layout__main--flush {
+    padding: 0;
   }
   .topbar__title {
     font-size: 0.9rem;

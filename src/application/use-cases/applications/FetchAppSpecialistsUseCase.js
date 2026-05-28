@@ -1,5 +1,0 @@
-import { UserRepository } from '@/infrastructure/repositories/UserRepository'
-
-export async function fetchAppSpecialistsUseCase(applicationId) {
-  return UserRepository.fetchByApplication(applicationId)
-}

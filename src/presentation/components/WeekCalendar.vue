@@ -129,14 +129,26 @@ const cancelDrag = () => {
 }
 
 // ---- Touch support ----
+let touchTimer = null
+const touchActive = ref(false)
+
 const onCellTouchstart = (dayIdx, slot, e) => {
   if (!props.selectable) return
-  e.preventDefault()
-  onCellMousedown(dayIdx, slot)
+  // Long-press to start drag — don't block scroll on short taps
+  touchTimer = setTimeout(() => {
+    touchActive.value = true
+    onCellMousedown(dayIdx, slot)
+  }, 300)
 }
 
 const onTouchmove = (e) => {
-  if (!dragging.value) return
+  // Cancel long-press if finger moves (user is scrolling)
+  if (touchTimer && !touchActive.value) {
+    clearTimeout(touchTimer)
+    touchTimer = null
+    return
+  }
+  if (!dragging.value && !blockDragging.value) return
   e.preventDefault()
   const touch = e.touches[0]
   const el = document.elementFromPoint(touch.clientX, touch.clientY)
@@ -146,7 +158,12 @@ const onTouchmove = (e) => {
   }
 }
 
-const onTouchend = () => { onMouseup(); onBlockDragEnd() }
+const onTouchend = () => {
+  if (touchTimer) { clearTimeout(touchTimer); touchTimer = null }
+  touchActive.value = false
+  onMouseup()
+  onBlockDragEnd()
+}
 
 // ---- Block drag (reschedule) ----
 const blockDragging = ref(false)
@@ -394,12 +411,15 @@ const isHourTop = (slot) => slot % 2 === 0
   user-select: none;
   display: flex;
   flex-direction: column;
+  flex: 1;
+  min-height: 0;
 }
 
 /* ========== Scroll ========== */
 .cal-scroll {
   overflow: auto;
-  max-height: 36rem;
+  flex: 1;
+  min-height: 0;
   -webkit-overflow-scrolling: touch;
   scrollbar-width: thin;
   scrollbar-color: #3b3f54 transparent;
@@ -524,7 +544,6 @@ const isHourTop = (slot) => slot % 2 === 0
 /* Half-hour cells */
 .cal-col__cell {
   position: relative;
-  touch-action: none;
 }
 
 /* Top of hour — solid border */
@@ -640,7 +659,6 @@ const isHourTop = (slot) => slot % 2 === 0
 
   .cal-header__label { font-size: 0.52rem; }
   .cal-gutter__label { font-size: 0.5rem; }
-  .cal-scroll { max-height: 28rem; }
   .cal-drag__label { font-size: 0.6rem; }
 }
 
@@ -658,6 +676,5 @@ const isHourTop = (slot) => slot % 2 === 0
 
   .cal-header__label { font-size: 0.45rem; letter-spacing: -0.02em; }
   .cal-gutter__label { font-size: 0.42rem; }
-  .cal-scroll { max-height: 24rem; }
 }
 </style>

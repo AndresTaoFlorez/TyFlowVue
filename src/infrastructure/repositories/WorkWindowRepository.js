@@ -40,10 +40,11 @@ export const WorkWindowRepository = {
     await client.post(`/work-windows/${id}/close`)
   },
 
-  async update(id, { startTime = null, endTime = null, note = null } = {}) {
+  async update(id, { startTime = null, endTime = null, scheduledDate = null, note = null } = {}) {
     const payload = {}
     if (startTime != null) payload.start_time = startTime
     if (endTime != null) payload.end_time = endTime
+    if (scheduledDate != null) payload.scheduled_date = scheduledDate
     if (note != null) payload.note = note
     const { data } = await client.patch(`/work-windows/${id}`, payload)
     return new WorkWindow(data)

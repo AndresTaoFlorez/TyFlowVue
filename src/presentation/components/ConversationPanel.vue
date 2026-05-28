@@ -380,14 +380,14 @@ function senderName(addr) {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.35rem;
   text-align: center;
-  padding: 2rem;
-  max-width: 320px;
+  padding: 1.25rem;
+  max-width: 280px;
 }
-.placeholder__icon { font-size: 3rem; color: var(--text-secondary); opacity: 0.3; }
-.placeholder__title { font-size: 1rem; font-weight: 600; color: var(--text-primary); }
-.placeholder__subtitle { font-size: 0.85rem; color: var(--text-secondary); }
+.placeholder__icon { font-size: 2rem; color: var(--text-secondary); opacity: 0.3; }
+.placeholder__title { font-size: 0.9rem; font-weight: 600; color: var(--text-primary); }
+.placeholder__subtitle { font-size: 0.8rem; color: var(--text-secondary); }
 
 /* ===== Panel shell ===== */
 .conv-panel {
@@ -404,7 +404,7 @@ function senderName(addr) {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0.65rem 1rem;
+  padding: 0.4rem 0.75rem;
   border-bottom: 1px solid var(--border-light);
   flex-shrink: 0;
 }
@@ -412,12 +412,12 @@ function senderName(addr) {
 .toolbar__left {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.4rem;
   min-width: 0;
 }
 
 .toolbar__title {
-  font-size: 0.95rem;
+  font-size: 0.85rem;
   font-weight: 700;
   color: var(--text-primary);
   white-space: nowrap;
@@ -426,11 +426,11 @@ function senderName(addr) {
 }
 
 .toolbar__count {
-  font-size: 0.7rem;
+  font-size: 0.65rem;
   font-weight: 700;
-  min-width: 20px;
-  height: 20px;
-  line-height: 20px;
+  min-width: 18px;
+  height: 18px;
+  line-height: 18px;
   text-align: center;
   background: var(--primary-500);
   color: white;
@@ -448,7 +448,7 @@ function senderName(addr) {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 28px; height: 28px;
+  width: 24px; height: 24px;
   border: 1px solid var(--border-light);
   border-radius: var(--radius-sm);
   background: white;
@@ -463,7 +463,7 @@ function senderName(addr) {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 28px; height: 28px;
+  width: 24px; height: 24px;
   border: none;
   border-radius: var(--radius-sm);
   background: transparent;
@@ -485,18 +485,18 @@ function senderName(addr) {
 .search-bar {
   display: flex;
   align-items: center;
-  gap: 0.4rem;
-  margin: 0.5rem 0.75rem;
-  padding: 0.4rem 0.65rem;
+  gap: 0.3rem;
+  margin: 0.3rem 0.5rem;
+  padding: 0.3rem 0.5rem;
   border: 1px solid var(--border-light);
   border-radius: var(--radius-sm);
   background: var(--bg-card);
   flex-shrink: 0;
 }
-.search-bar i { color: var(--text-secondary); font-size: 0.95rem; }
+.search-bar i { color: var(--text-secondary); font-size: 0.85rem; }
 .search-bar__input {
   border: none; outline: none; width: 100%;
-  font-size: 0.82rem; color: var(--text-primary); background: transparent;
+  font-size: 0.8rem; color: var(--text-primary); background: transparent;
 }
 
 /* ===== States ===== */
@@ -504,8 +504,8 @@ function senderName(addr) {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 0.5rem;
-  padding: 2.5rem 1rem;
+  gap: 0.4rem;
+  padding: 1.5rem 0.75rem;
   color: var(--text-secondary);
   font-size: 0.85rem;
   flex: 1;
@@ -544,7 +544,7 @@ function senderName(addr) {
 .mail-item__body {
   flex: 1;
   min-width: 0;
-  padding: 0.6rem 1rem 0.6rem 0.75rem;
+  padding: 0.35rem 0.5rem;
 }
 
 .mail-item__top {
@@ -556,7 +556,7 @@ function senderName(addr) {
 }
 
 .mail-item__sender {
-  font-size: 0.85rem;
+  font-size: 0.8rem;
   font-weight: 700;
   color: var(--text-primary);
   white-space: nowrap;
@@ -572,7 +572,7 @@ function senderName(addr) {
 }
 
 .mail-item__subject {
-  font-size: 0.82rem;
+  font-size: 0.78rem;
   font-weight: 600;
   color: var(--text-primary);
   white-space: nowrap;
@@ -582,7 +582,7 @@ function senderName(addr) {
 }
 
 .mail-item__preview {
-  font-size: 0.78rem;
+  font-size: 0.72rem;
   color: var(--text-secondary);
   white-space: nowrap;
   overflow: hidden;
@@ -625,7 +625,7 @@ function senderName(addr) {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0.45rem 1rem;
+  padding: 0.3rem 0.75rem;
   border-top: 1px solid var(--border-light);
   flex-shrink: 0;
 }
@@ -666,20 +666,20 @@ function senderName(addr) {
 .reading {
   flex: 1;
   overflow-y: auto;
-  padding: 1.25rem;
+  padding: 0.75rem;
   display: flex;
   flex-direction: column;
-  gap: 1rem;
+  gap: 0.65rem;
 }
 
 .reading__header {
   display: flex;
   align-items: flex-start;
-  gap: 0.75rem;
+  gap: 0.5rem;
 }
 
 .reading__avatar {
-  width: 36px; height: 36px;
+  width: 30px; height: 30px;
   border-radius: var(--radius-full);
   background: var(--bg-card);
   display: flex;
@@ -697,7 +697,7 @@ function senderName(addr) {
 }
 
 .reading__from {
-  font-size: 0.88rem;
+  font-size: 0.82rem;
   font-weight: 700;
   color: var(--text-primary);
   word-break: break-all;
@@ -725,7 +725,7 @@ function senderName(addr) {
 }
 
 .reading__subject {
-  font-size: 1.1rem;
+  font-size: 0.95rem;
   font-weight: 700;
   color: var(--text-primary);
   line-height: 1.35;
@@ -747,12 +747,12 @@ function senderName(addr) {
 .reading__dup-warn code { background: rgba(0,0,0,0.05); padding: 1px 5px; border-radius: 3px; }
 
 .reading__body {
-  font-size: 0.88rem;
+  font-size: 0.82rem;
   color: var(--text-primary);
-  line-height: 1.65;
+  line-height: 1.55;
   white-space: pre-wrap;
   word-break: break-word;
-  padding: 1rem;
+  padding: 0.65rem;
   background: var(--bg-card);
   border-radius: var(--radius-md);
   border: 1px solid var(--border-light);
@@ -762,8 +762,8 @@ function senderName(addr) {
 .reading__meta {
   display: flex;
   flex-direction: column;
-  gap: 0.3rem;
-  padding: 0.75rem;
+  gap: 0.2rem;
+  padding: 0.5rem;
   background: var(--bg-card);
   border-radius: var(--radius-sm);
   font-size: 0.78rem;
@@ -845,25 +845,25 @@ function senderName(addr) {
   position: fixed; inset: 0;
   background: rgba(0, 0, 0, 0.5); backdrop-filter: blur(4px);
   display: flex; align-items: flex-start; justify-content: center;
-  z-index: 300; overflow-y: auto; padding: 2rem 1rem;
+  z-index: 300; overflow-y: auto; padding: 1.25rem 0.75rem;
 }
 .modal-content {
-  background: var(--bg-main); width: 100%; max-width: 560px;
-  border-radius: var(--radius-lg); padding: 1.75rem;
+  background: var(--bg-main); width: 100%; max-width: 520px;
+  border-radius: var(--radius-lg); padding: 1.25rem;
   box-shadow: var(--shadow-lg); margin: auto;
 }
 .modal-header {
-  display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem;
+  display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;
 }
-.modal-header h2 { font-size: 1.05rem; font-weight: 700; }
-.btn-close { background: transparent; border: none; font-size: 1.5rem; color: var(--text-secondary); cursor: pointer; }
+.modal-header h2 { font-size: 0.95rem; font-weight: 700; }
+.btn-close { background: transparent; border: none; font-size: 1.3rem; color: var(--text-secondary); cursor: pointer; }
 
 .modal-form { display: flex; flex-direction: column; gap: 0.75rem; }
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
 .form-group label { font-size: 0.82rem; font-weight: 600; color: var(--text-secondary); margin-bottom: 0.2rem; display: block; }
 .form-group--full { grid-column: 1 / -1; }
 .form-input {
-  width: 100%; padding: 0.6rem; border: 1px solid var(--border-light);
+  width: 100%; padding: 0.45rem; border: 1px solid var(--border-light);
   border-radius: var(--radius-sm); font-size: 0.85rem; color: var(--text-primary);
 }
 .form-input:focus { outline: none; border-color: var(--primary-500); }
@@ -901,8 +901,8 @@ function senderName(addr) {
 
 /* ===== Mobile ===== */
 @media (max-width: 768px) {
-  .modal-content { padding: 1.25rem; }
+  .modal-content { padding: 1rem; }
   .form-grid { grid-template-columns: 1fr; }
-  .reading { padding: 1rem; }
+  .reading { padding: 0.5rem; }
 }
 </style>

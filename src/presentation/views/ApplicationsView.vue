@@ -46,6 +46,30 @@ const showToast = (message, type = 'success') => {
   toastVisible.value = true
 }
 
+// ---- Layout ----
+const layout = computed(() => appStore.viewLayout)
+const showRightPanel = computed(() => layout.value !== 'tree-only')
+
+// ---- Mobile navigation (Outlook-style) ----
+const isMobile = ref(window.innerWidth < 768)
+const mobileShowConversations = ref(false)
+
+function onResize() {
+  isMobile.value = window.innerWidth < 768
+  if (!isMobile.value) mobileShowConversations.value = false
+}
+
+function mobileBack() {
+  mobileShowConversations.value = false
+}
+
+// When folder is selected on mobile, switch to conversations view
+watch(() => appStore.selectedFolderId, (id) => {
+  if (id && isMobile.value) {
+    mobileShowConversations.value = true
+  }
+})
+
 // ---- Filtered apps ----
 const appsFiltradas = computed(() => {
   const term = busqueda.value.toLowerCase().trim()
@@ -71,16 +95,19 @@ onMounted(async () => {
   userStore.loadSelects()
   window.addEventListener('keydown', onEsc)
   window.addEventListener('click', closeContextMenu)
+  window.addEventListener('resize', onResize)
 })
 
 onUnmounted(() => {
   window.removeEventListener('keydown', onEsc)
   window.removeEventListener('click', closeContextMenu)
+  window.removeEventListener('resize', onResize)
 })
 
 const onEsc = (e) => {
   if (e.key === 'Escape') {
-    if (contextMenu.value.visible) closeContextMenu()
+    if (isMobile.value && mobileShowConversations.value) mobileBack()
+    else if (contextMenu.value.visible) closeContextMenu()
     else if (confirmandoEliminar.value) cancelarEliminar()
     else if (mostrarCrearApp.value) mostrarCrearApp.value = false
     else if (mostrarCrearFolder.value) mostrarCrearFolder.value = false
@@ -111,7 +138,6 @@ async function handleCreateApp(name) {
     mostrarCrearApp.value = false
     userStore.invalidateApplications()
     showToast(`Aplicación "${newApp.name}" creada.`)
-    // Expand and select the new app
     appStore.expandedAppIds.add(newApp.id)
     await appStore.selectApp(newApp.id)
   } catch (e) {
@@ -171,7 +197,6 @@ function getContextMenuItems(type, node) {
         { label: 'Eliminar', icon: 'bx-trash', action: 'delete', danger: true },
       ]
     }
-    // subfolder of specialist
     return [
       { label: 'Renombrar', icon: 'bx-edit-alt', action: 'rename' },
       { label: 'Eliminar', icon: 'bx-trash', action: 'delete', danger: true },
@@ -197,7 +222,6 @@ function handleContextAction(action) {
     specialistsAppId.value = node.id
     mostrarSpecialists.value = true
   } else if (action === 'add-folder') {
-    // New main_box folder under app
     folderContext.value = { mode: 'new-app-folder', appId: node.id }
     mostrarCrearFolder.value = true
   } else if (action === 'add-child') {
@@ -311,6 +335,7 @@ async function handleCreateFolder(data) {
 // ---- Folder select ----
 function handleFolderSelect(node) {
   appStore.selectFolder(node.id)
+  if (isMobile.value) mobileShowConversations.value = true
 }
 
 // ---- Folder context menu from tree ----
@@ -320,82 +345,141 @@ function handleFolderContextMenu(event, node) {
 </script>
 
 <template>
-  <section class="app-split">
-    <!-- Left panel -->
-    <aside class="app-split__left">
-      <!-- Header -->
-      <div class="panel-header">
-        <h1 class="panel-header__title">Aplicaciones</h1>
-        <button @click="mostrarCrearApp = true" class="btn-icon" title="Nueva Aplicación">
-          <i class='bx bx-plus'></i>
+  <section class="app-shell">
+    <!-- Toolbar -->
+    <div class="app-toolbar">
+      <div class="app-toolbar__left">
+        <!-- Mobile back button -->
+        <button
+          v-if="isMobile && mobileShowConversations"
+          class="app-toolbar__btn app-toolbar__back"
+          @click="mobileBack"
+          title="Volver"
+        >
+          <i class='bx bx-arrow-back'></i>
         </button>
-      </div>
-
-      <!-- Search -->
-      <div class="panel-search">
-        <i class='bx bx-search panel-search__icon'></i>
-        <input v-model="busqueda" type="text" class="panel-search__input" placeholder="Buscar aplicación...">
-      </div>
-
-      <!-- Loading -->
-      <SectionLoader v-if="appStore.loading" message="Cargando..." />
-
-      <!-- App list / tree -->
-      <div v-else class="app-tree">
-        <div v-if="appsFiltradas.length === 0" class="app-tree__empty">
-          <p>{{ busqueda.trim() ? 'Sin resultados.' : 'No hay aplicaciones.' }}</p>
-        </div>
-
-        <div v-for="app in appsFiltradas" :key="app.id" class="app-node">
-          <!-- App header row -->
-          <div
-            class="app-node__header"
-            :class="{ 'app-node__header--selected': appStore.selectedAppId === app.id }"
-            @click="toggleApp(app.id)"
+        <template v-if="!isMobile">
+          <button
+            class="app-toolbar__btn"
+            :class="{ 'app-toolbar__btn--active': layout === 'split-h' }"
+            @click="appStore.setViewLayout('split-h')"
+            title="Vista horizontal"
           >
-            <i
-              class='bx app-node__chevron'
-              :class="appStore.expandedAppIds.has(app.id) ? 'bx-chevron-down' : 'bx-chevron-right'"
-            ></i>
-            <span
-              class="app-node__color"
-              :style="{ backgroundColor: app.color || 'var(--primary-500)' }"
-            ></span>
-            <span class="app-node__name">{{ app.name }}</span>
-            <button
-              class="btn-dots"
-              @click.stop="openContextMenu($event, 'app', app)"
-              title="Opciones"
-            >
-              <i class='bx bx-dots-vertical-rounded'></i>
-            </button>
+            <i class='bx bx-dock-right'></i>
+          </button>
+          <button
+            class="app-toolbar__btn"
+            :class="{ 'app-toolbar__btn--active': layout === 'split-v' }"
+            @click="appStore.setViewLayout('split-v')"
+            title="Vista vertical"
+          >
+            <i class='bx bx-dock-bottom'></i>
+          </button>
+          <button
+            class="app-toolbar__btn"
+            :class="{ 'app-toolbar__btn--active': layout === 'tree-only' }"
+            @click="appStore.setViewLayout('tree-only')"
+            title="Solo árbol"
+          >
+            <i class='bx bx-list-ul'></i>
+          </button>
+        </template>
+      </div>
+      <div class="app-toolbar__right">
+        <span v-if="selectedFolder" class="app-toolbar__breadcrumb">
+          <i class='bx bx-folder'></i> {{ selectedFolder.name }}
+        </span>
+      </div>
+    </div>
+
+    <!-- Split container -->
+    <div
+      class="app-split"
+      :class="{
+        'app-split--h': layout === 'split-h',
+        'app-split--v': layout === 'split-v',
+        'app-split--tree': layout === 'tree-only',
+      }"
+    >
+      <!-- Left panel -->
+      <aside v-show="!isMobile || !mobileShowConversations" class="app-split__left">
+        <!-- Header -->
+        <div class="panel-header">
+          <h1 class="panel-header__title">Aplicaciones</h1>
+          <button @click="mostrarCrearApp = true" class="btn-icon" title="Nueva Aplicación">
+            <i class='bx bx-plus'></i>
+          </button>
+        </div>
+
+        <!-- Search -->
+        <div class="panel-search">
+          <i class='bx bx-search panel-search__icon'></i>
+          <input v-model="busqueda" type="text" class="panel-search__input" placeholder="Buscar aplicación...">
+        </div>
+
+        <!-- Loading -->
+        <SectionLoader v-if="appStore.loading" message="Cargando..." />
+
+        <!-- App list / tree -->
+        <div v-else class="app-tree">
+          <div v-if="appsFiltradas.length === 0" class="app-tree__empty">
+            <p>{{ busqueda.trim() ? 'Sin resultados.' : 'No hay aplicaciones.' }}</p>
           </div>
 
-          <!-- Folder tree (lazy loaded) -->
-          <div v-if="appStore.expandedAppIds.has(app.id)" class="app-node__tree">
-            <div v-if="appStore.loadingFolders && !appStore.foldersMap[app.id]" class="app-node__loading">
-              <i class='bx bx-loader-alt bx-spin'></i> Cargando...
+          <div v-for="app in appsFiltradas" :key="app.id" class="app-node">
+            <!-- App header row -->
+            <div
+              class="app-node__header"
+              :class="{
+                'app-node__header--selected': appStore.selectedAppId === app.id,
+                'app-node__header--expanded': appStore.expandedAppIds.has(app.id),
+              }"
+              @click="toggleApp(app.id)"
+            >
+              <i
+                class='bx app-node__chevron'
+                :class="appStore.expandedAppIds.has(app.id) ? 'bx-chevron-down' : 'bx-chevron-right'"
+              ></i>
+              <span
+                class="app-node__color"
+                :style="{ backgroundColor: app.color || 'var(--primary-500)' }"
+              ></span>
+              <span class="app-node__name">{{ app.name }}</span>
+              <button
+                class="btn-dots"
+                @click.stop="openContextMenu($event, 'app', app)"
+                title="Opciones"
+              >
+                <i class='bx bx-dots-vertical-rounded'></i>
+              </button>
             </div>
-            <FolderTree
-              v-else-if="appStore.foldersMap[app.id]"
-              :folders="appStore.foldersMap[app.id]"
-              :specialists="appStore.specialistsMap[app.id] || []"
-              :support-levels="userStore.supportLevels"
-              :selected-folder-id="appStore.selectedFolderId"
-              :collapsed-main-box-ids="appStore.collapsedMainBoxIds"
-              @select="handleFolderSelect"
-              @context-menu="handleFolderContextMenu"
-              @toggle-collapse="(id) => appStore.toggleMainBoxCollapse(id)"
-            />
+
+            <!-- Folder tree (lazy loaded) -->
+            <div v-if="appStore.expandedAppIds.has(app.id)" class="app-node__tree">
+              <div v-if="appStore.loadingFolders && !appStore.foldersMap[app.id]" class="app-node__loading">
+                <i class='bx bx-loader-alt bx-spin'></i> Cargando...
+              </div>
+              <FolderTree
+                v-else-if="appStore.foldersMap[app.id]"
+                :folders="appStore.foldersMap[app.id]"
+                :specialists="appStore.specialistsMap[app.id] || []"
+                :support-levels="userStore.supportLevels"
+                :selected-folder-id="appStore.selectedFolderId"
+                :collapsed-main-box-ids="appStore.collapsedMainBoxIds"
+                @select="handleFolderSelect"
+                @context-menu="handleFolderContextMenu"
+                @toggle-collapse="(id) => appStore.toggleMainBoxCollapse(id)"
+              />
+            </div>
           </div>
         </div>
-      </div>
-    </aside>
+      </aside>
 
-    <!-- Right panel -->
-    <main class="app-split__right">
-      <ConversationPanel :selected-folder="selectedFolder" />
-    </main>
+      <!-- Right panel -->
+      <main v-if="showRightPanel || (isMobile && mobileShowConversations)" v-show="!isMobile || mobileShowConversations" class="app-split__right">
+        <ConversationPanel :selected-folder="selectedFolder" />
+      </main>
+    </div>
 
     <!-- Context menu -->
     <ContextMenu
@@ -421,7 +505,6 @@ function handleFolderContextMenu(event, node) {
             class="input-field"
             placeholder="Nuevo nombre"
             @keyup.enter="submitRename"
-            ref="renameInput"
           >
         </div>
         <div class="modal-actions">
@@ -461,7 +544,7 @@ function handleFolderContextMenu(event, node) {
           <h2>Color de la aplicación</h2>
           <button @click="colorPickerAppId = null" class="btn-close"><i class='bx bx-x'></i></button>
         </div>
-        <div class="modal-body" style="display:flex;align-items:center;gap:1rem;">
+        <div class="modal-body" style="display:flex;align-items:center;gap:0.75rem;">
           <input type="color" v-model="colorPickerValue" class="color-input">
           <span class="color-preview" :style="{ color: colorPickerValue }">{{ colorPickerValue }}</span>
         </div>
@@ -512,32 +595,142 @@ function handleFolderContextMenu(event, node) {
 </template>
 
 <style scoped>
-.app-split {
+/* ===== Shell (full height container) ===== */
+.app-shell {
   display: flex;
+  flex-direction: column;
   height: 100%;
-  gap: 0;
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  background: var(--bg-main);
 }
 
+/* ===== Toolbar ===== */
+.app-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 32px;
+  padding: 0 0.5rem;
+  background: var(--bg-main);
+  border-bottom: 1px solid var(--border-light);
+  flex-shrink: 0;
+}
+
+.app-toolbar__left {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.app-toolbar__btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 24px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 0.95rem;
+  cursor: pointer;
+  transition: all 0.1s;
+}
+
+.app-toolbar__btn:hover {
+  background: var(--bg-card);
+  color: var(--text-primary);
+}
+
+.app-toolbar__btn--active {
+  background: rgba(42, 199, 143, 0.12);
+  color: var(--primary-500);
+}
+
+.app-toolbar__right {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.app-toolbar__breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.72rem;
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+.app-toolbar__breadcrumb i {
+  font-size: 0.82rem;
+}
+
+/* ===== Split container ===== */
+.app-split {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+/* Split horizontal (default) */
+.app-split--h {
+  flex-direction: row;
+}
+
+/* Split vertical */
+.app-split--v {
+  flex-direction: column;
+}
+
+/* Tree only */
+.app-split--tree {
+  flex-direction: row;
+}
+
+.app-split--tree .app-split__left {
+  width: 100%;
+  max-width: none;
+  border-right: none;
+}
+
+/* ===== Left panel ===== */
 .app-split__left {
-  width: 320px;
-  min-width: 280px;
+  width: 280px;
+  min-width: 220px;
+  max-width: 340px;
   display: flex;
   flex-direction: column;
   background: var(--bg-main);
   border-right: 1px solid var(--border-light);
-  border-radius: var(--radius-lg) 0 0 var(--radius-lg);
   overflow: hidden;
+  flex-shrink: 0;
 }
 
+.app-split--v .app-split__left {
+  width: 100%;
+  max-width: none;
+  min-width: 0;
+  max-height: 40%;
+  border-right: none;
+  border-bottom: 1px solid var(--border-light);
+}
+
+/* ===== Right panel ===== */
 .app-split__right {
   flex: 1;
   display: flex;
   align-items: center;
   justify-content: center;
   background: var(--bg-card);
-  border-radius: 0 var(--radius-lg) var(--radius-lg) 0;
   overflow: hidden;
   position: relative;
+  min-width: 0;
+}
+
+.app-split--v .app-split__right {
+  align-items: stretch;
 }
 
 /* ---- Panel header ---- */
@@ -545,11 +738,11 @@ function handleFolderContextMenu(event, node) {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 1rem 1rem 0.5rem;
+  padding: 0.4rem 0.5rem 0.3rem;
 }
 
 .panel-header__title {
-  font-size: 1.1rem;
+  font-size: 0.85rem;
   font-weight: 700;
   color: var(--text-primary);
 }
@@ -558,13 +751,13 @@ function handleFolderContextMenu(event, node) {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 32px;
+  width: 26px;
+  height: 26px;
   border: none;
   border-radius: var(--radius-sm);
   background: var(--primary-500);
   color: white;
-  font-size: 1.2rem;
+  font-size: 1rem;
   cursor: pointer;
   transition: background 0.15s;
 }
@@ -575,21 +768,21 @@ function handleFolderContextMenu(event, node) {
 .panel-search {
   display: flex;
   align-items: center;
-  gap: 0.4rem;
-  margin: 0.5rem 1rem;
-  padding: 0.5rem 0.75rem;
+  gap: 0.3rem;
+  margin: 0.2rem 0.5rem;
+  padding: 0.3rem 0.5rem;
   border: 1px solid var(--border-light);
   border-radius: var(--radius-sm);
   background: var(--bg-card);
 }
 
-.panel-search__icon { color: var(--text-secondary); font-size: 1rem; }
+.panel-search__icon { color: var(--text-secondary); font-size: 0.9rem; }
 
 .panel-search__input {
   border: none;
   outline: none;
   width: 100%;
-  font-size: 0.85rem;
+  font-size: 0.8rem;
   color: var(--text-primary);
   background: transparent;
 }
@@ -598,56 +791,59 @@ function handleFolderContextMenu(event, node) {
 .app-tree {
   flex: 1;
   overflow-y: auto;
-  padding: 0.5rem 0;
+  padding: 0.25rem 0;
 }
 
 .app-tree__empty {
   text-align: center;
-  padding: 2rem 1rem;
+  padding: 1.5rem 0.75rem;
   color: var(--text-secondary);
-  font-size: 0.85rem;
+  font-size: 0.8rem;
 }
 
 /* ---- App node ---- */
-.app-node {
-  border-bottom: 1px solid var(--border-light);
+.app-node + .app-node {
+  border-top: 1px solid var(--border-light);
 }
-
-.app-node:last-child { border-bottom: none; }
 
 .app-node__header {
   display: flex;
   align-items: center;
-  gap: 0.4rem;
-  padding: 0.6rem 1rem;
+  gap: 0.3rem;
+  padding: 0.35rem 0.5rem;
   cursor: pointer;
-  transition: background 0.15s;
+  transition: background 0.1s;
   user-select: none;
 }
 
 .app-node__header:hover { background: var(--bg-card); }
 
 .app-node__header--selected {
-  background: rgba(42, 199, 143, 0.08);
+  background: rgba(42, 199, 143, 0.06);
+}
+
+.app-node__header--expanded {
+  border-bottom: 1px solid var(--border-light);
 }
 
 .app-node__chevron {
-  font-size: 1rem;
+  font-size: 0.85rem;
   color: var(--text-secondary);
   flex-shrink: 0;
+  width: 14px;
 }
 
 .app-node__color {
-  width: 10px;
-  height: 10px;
+  width: 8px;
+  height: 8px;
   border-radius: var(--radius-full);
   flex-shrink: 0;
 }
 
 .app-node__name {
   flex: 1;
-  font-size: 0.9rem;
-  font-weight: 600;
+  font-size: 0.8rem;
+  font-weight: 700;
   color: var(--text-primary);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -658,27 +854,29 @@ function handleFolderContextMenu(event, node) {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 24px;
-  height: 24px;
+  width: 22px;
+  height: 22px;
   border: none;
   background: transparent;
   color: var(--text-secondary);
-  border-radius: var(--radius-sm);
+  border-radius: 4px;
   cursor: pointer;
   opacity: 0;
-  transition: opacity 0.15s, background 0.15s;
+  transition: opacity 0.1s, background 0.1s;
+  font-size: 0.9rem;
 }
 
 .app-node__header:hover .btn-dots { opacity: 1; }
 .btn-dots:hover { background: var(--border-light); color: var(--text-primary); }
 
 .app-node__tree {
-  padding-left: 0.5rem;
+  padding-left: 0.75rem;
+  padding-bottom: 0.15rem;
 }
 
 .app-node__loading {
-  padding: 0.5rem 1rem;
-  font-size: 0.8rem;
+  padding: 0.3rem 0.75rem;
+  font-size: 0.75rem;
   color: var(--text-secondary);
 }
 
@@ -698,61 +896,61 @@ function handleFolderContextMenu(event, node) {
 .modal-content {
   background: var(--bg-main);
   border-radius: var(--radius-lg);
-  padding: 1.75rem;
+  padding: 1.25rem;
   box-shadow: var(--shadow-lg);
 }
 
-.modal-content--sm { max-width: 400px; width: 100%; }
+.modal-content--sm { max-width: 380px; width: 100%; }
 
 .modal-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 1rem;
+  margin-bottom: 0.65rem;
 }
 
-.modal-header h2 { font-size: 1.1rem; font-weight: 700; color: var(--text-primary); }
+.modal-header h2 { font-size: 1rem; font-weight: 700; color: var(--text-primary); }
 
 .btn-close {
   background: transparent;
   border: none;
-  font-size: 1.5rem;
+  font-size: 1.3rem;
   color: var(--text-secondary);
   cursor: pointer;
 }
 
-.modal-body { padding: 0.5rem 0; }
+.modal-body { padding: 0.25rem 0; }
 
 .modal-actions {
   display: flex;
   justify-content: flex-end;
-  gap: 0.75rem;
-  margin-top: 1.25rem;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
 }
 
 .input-field {
   width: 100%;
-  padding: 0.6rem 0.75rem;
+  padding: 0.45rem 0.6rem;
   border: 1px solid var(--border-light);
   border-radius: var(--radius-sm);
-  font-size: 0.9rem;
+  font-size: 0.85rem;
   color: var(--text-primary);
   outline: none;
 }
 
 .input-field:focus { border-color: var(--primary-500); }
 
-.confirm-body { text-align: center; padding: 0.5rem 0; }
-.confirm-icon { font-size: 2.5rem; color: var(--error-500); margin-bottom: 0.75rem; }
-.confirm-body p { font-size: 0.9rem; color: var(--text-primary); line-height: 1.4; }
-.confirm-hint { font-size: 0.8rem !important; color: var(--text-secondary) !important; margin-top: 0.4rem; }
+.confirm-body { text-align: center; padding: 0.35rem 0; }
+.confirm-icon { font-size: 2rem; color: var(--error-500); margin-bottom: 0.5rem; }
+.confirm-body p { font-size: 0.85rem; color: var(--text-primary); line-height: 1.4; }
+.confirm-hint { font-size: 0.75rem !important; color: var(--text-secondary) !important; margin-top: 0.3rem; }
 
 .btn-primary {
-  padding: 0.55rem 1rem;
+  padding: 0.4rem 0.85rem;
   background: var(--primary-500);
   color: white;
   font-weight: 600;
-  font-size: 0.85rem;
+  font-size: 0.82rem;
   border: none;
   border-radius: var(--radius-md);
   cursor: pointer;
@@ -762,8 +960,8 @@ function handleFolderContextMenu(event, node) {
 .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .btn-secondary {
-  padding: 0.55rem 1rem;
-  font-size: 0.85rem;
+  padding: 0.4rem 0.85rem;
+  font-size: 0.82rem;
   font-weight: 600;
   border: 1px solid var(--border-light);
   color: var(--text-primary);
@@ -775,12 +973,12 @@ function handleFolderContextMenu(event, node) {
 .btn-danger {
   display: flex;
   align-items: center;
-  gap: 0.3rem;
-  padding: 0.55rem 1rem;
+  gap: 0.25rem;
+  padding: 0.4rem 0.85rem;
   background: var(--error-500);
   color: white;
   font-weight: 600;
-  font-size: 0.85rem;
+  font-size: 0.82rem;
   border: none;
   border-radius: var(--radius-md);
   cursor: pointer;
@@ -789,37 +987,70 @@ function handleFolderContextMenu(event, node) {
 .btn-danger:hover { background: #DC2626; }
 
 .color-input {
-  width: 48px;
-  height: 48px;
+  width: 40px;
+  height: 40px;
   border: none;
   cursor: pointer;
   border-radius: var(--radius-sm);
 }
 
 .color-preview {
-  font-size: 0.9rem;
+  font-size: 0.85rem;
   font-weight: 600;
   font-family: monospace;
 }
 
 /* ---- Responsive ---- */
-@media (max-width: 768px) {
-  .app-split {
-    flex-direction: column;
+
+/* Tablet: reduce left panel */
+@media (max-width: 1199px) {
+  .app-split--h .app-split__left {
+    width: 260px;
+    min-width: 200px;
+  }
+}
+
+/* Narrower: further reduce */
+@media (max-width: 899px) {
+  .app-split--h .app-split__left {
+    width: 240px;
+    min-width: 180px;
+  }
+}
+
+/* Mobile: full-screen panels (Outlook-style navigation) */
+@media (max-width: 767px) {
+  .app-toolbar__left { gap: 4px; }
+
+  .app-toolbar__back {
+    font-size: 1.1rem;
+    width: 30px;
+    height: 28px;
+    color: var(--primary-500);
   }
 
   .app-split__left {
-    width: 100%;
-    min-width: 0;
-    border-right: none;
-    border-radius: var(--radius-lg);
+    width: 100% !important;
+    max-width: none !important;
+    min-width: 0 !important;
+    max-height: none !important;
+    border-right: none !important;
+    flex: 1;
   }
 
-  .app-split__right { display: none; }
+  .app-split__right {
+    flex: 1;
+    align-items: stretch;
+  }
 
-  .panel-header { padding: 0.75rem 0.75rem 0.4rem; }
-  .panel-search { margin: 0.4rem 0.75rem; padding: 0.4rem 0.6rem; }
-  .app-node__header { padding: 0.5rem 0.75rem; }
-  .app-node__tree { padding-left: 0.25rem; }
+  .panel-header { padding: 0.35rem 0.4rem 0.25rem; }
+  .panel-search { margin: 0.15rem 0.4rem; padding: 0.25rem 0.4rem; }
+  .app-node__header { padding: 0.3rem 0.4rem; }
+  .app-node__tree { padding-left: 0.75rem; }
+}
+
+@media (max-width: 480px) {
+  .app-toolbar { padding: 0 0.35rem; }
+  .panel-header__title { font-size: 0.8rem; }
 }
 </style>

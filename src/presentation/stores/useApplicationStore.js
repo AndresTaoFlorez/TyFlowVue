@@ -18,6 +18,7 @@ export const useApplicationStore = defineStore('applications', () => {
   const selectedFolderId = ref(null)
   const expandedAppIds = ref(new Set())
   const collapsedMainBoxIds = ref(new Set())
+  const viewLayout = ref(localStorage.getItem('tyflow_app_layout') || 'split-h')
   const loading = ref(false)
   const loadingFolders = ref(false)
   const error = ref(null)
@@ -153,6 +154,13 @@ export const useApplicationStore = defineStore('applications', () => {
     }
   }
 
+  // ---- View layout ----
+
+  function setViewLayout(layout) {
+    viewLayout.value = layout
+    localStorage.setItem('tyflow_app_layout', layout)
+  }
+
   // ---- Invalidation ----
 
   function invalidateApp(appId) {
@@ -177,6 +185,7 @@ export const useApplicationStore = defineStore('applications', () => {
     selectedFolderId,
     expandedAppIds,
     collapsedMainBoxIds,
+    viewLayout,
     loading,
     loadingFolders,
     error,
@@ -196,6 +205,7 @@ export const useApplicationStore = defineStore('applications', () => {
     selectFolder,
     toggleExpandApp,
     toggleMainBoxCollapse,
+    setViewLayout,
     invalidateApp,
     clearAll,
   }

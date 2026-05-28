@@ -3,17 +3,11 @@ import { WorkWindow } from '@/domain/entities/WorkWindow'
 import { WorkWindowError } from '@/domain/errors/WorkWindowError'
 
 /**
- * Reschedules a work window to a new time range.
- * Note: The backend PATCH endpoint only supports changing start_time and end_time,
- * not scheduled_date. If the user drags to a different day, we reject the operation.
+ * Reschedules a work window to a new time range and/or a different day.
  */
 export async function rescheduleWorkWindowUseCase(window, { startTime, endTime, targetDate }) {
   if (!window || !window.id) {
     throw new WorkWindowError('No se especificó la ventana a mover.')
-  }
-
-  if (targetDate && targetDate !== window.scheduledDate) {
-    throw new WorkWindowError('No es posible mover la ventana a otro día. Solo se puede cambiar el horario.')
   }
 
   if (!startTime || !endTime) {
@@ -23,11 +17,17 @@ export async function rescheduleWorkWindowUseCase(window, { startTime, endTime, 
   const formattedStart = WorkWindow.formatTimeTz(startTime)
   const formattedEnd = WorkWindow.formatTimeTz(endTime)
 
+  const updatePayload = {
+    startTime: formattedStart,
+    endTime: formattedEnd,
+  }
+
+  if (targetDate && targetDate !== window.scheduledDate) {
+    updatePayload.scheduledDate = targetDate
+  }
+
   try {
-    return await WorkWindowRepository.update(window.id, {
-      startTime: formattedStart,
-      endTime: formattedEnd,
-    })
+    return await WorkWindowRepository.update(window.id, updatePayload)
   } catch (e) {
     throw WorkWindowError.fromHttp(e, 'Error al mover la ventana.')
   }
