@@ -70,6 +70,9 @@ watch(() => appStore.selectedFolderId, (id) => {
   }
 })
 
+// ---- Selected folder name for mobile back header ----
+const selectedFolderName = computed(() => selectedFolder.value?.name || 'Conversaciones')
+
 // ---- Filtered apps ----
 const appsFiltradas = computed(() => {
   const term = busqueda.value.toLowerCase().trim()
@@ -349,41 +352,30 @@ function handleFolderContextMenu(event, node) {
     <!-- Toolbar -->
     <div class="app-toolbar">
       <div class="app-toolbar__left">
-        <!-- Mobile back button -->
         <button
-          v-if="isMobile && mobileShowConversations"
-          class="app-toolbar__btn app-toolbar__back"
-          @click="mobileBack"
-          title="Volver"
+          class="app-toolbar__btn"
+          :class="{ 'app-toolbar__btn--active': layout === 'split-h' }"
+          @click="appStore.setViewLayout('split-h')"
+          title="Vista horizontal"
         >
-          <i class='bx bx-arrow-back'></i>
+          <i class='bx bx-dock-right'></i>
         </button>
-        <template v-if="!isMobile">
-          <button
-            class="app-toolbar__btn"
-            :class="{ 'app-toolbar__btn--active': layout === 'split-h' }"
-            @click="appStore.setViewLayout('split-h')"
-            title="Vista horizontal"
-          >
-            <i class='bx bx-dock-right'></i>
-          </button>
-          <button
-            class="app-toolbar__btn"
-            :class="{ 'app-toolbar__btn--active': layout === 'split-v' }"
-            @click="appStore.setViewLayout('split-v')"
-            title="Vista vertical"
-          >
-            <i class='bx bx-dock-bottom'></i>
-          </button>
-          <button
-            class="app-toolbar__btn"
-            :class="{ 'app-toolbar__btn--active': layout === 'tree-only' }"
-            @click="appStore.setViewLayout('tree-only')"
-            title="Solo árbol"
-          >
-            <i class='bx bx-list-ul'></i>
-          </button>
-        </template>
+        <button
+          class="app-toolbar__btn"
+          :class="{ 'app-toolbar__btn--active': layout === 'split-v' }"
+          @click="appStore.setViewLayout('split-v')"
+          title="Vista vertical"
+        >
+          <i class='bx bx-dock-bottom'></i>
+        </button>
+        <button
+          class="app-toolbar__btn"
+          :class="{ 'app-toolbar__btn--active': layout === 'tree-only' }"
+          @click="appStore.setViewLayout('tree-only')"
+          title="Solo árbol"
+        >
+          <i class='bx bx-list-ul'></i>
+        </button>
       </div>
       <div class="app-toolbar__right">
         <span v-if="selectedFolder" class="app-toolbar__breadcrumb">
@@ -477,9 +469,36 @@ function handleFolderContextMenu(event, node) {
 
       <!-- Right panel -->
       <main v-if="showRightPanel || (isMobile && mobileShowConversations)" v-show="!isMobile || mobileShowConversations" class="app-split__right">
-        <ConversationPanel :selected-folder="selectedFolder" />
+        <!-- Mobile back header -->
+        <div v-if="isMobile" class="app-mobile-back">
+          <button class="app-mobile-back__btn" @click="mobileBack">
+            <i class='bx bx-arrow-back'></i>
+          </button>
+          <span class="app-mobile-back__title">{{ selectedFolderName }}</span>
+        </div>
+        <ConversationPanel :selected-folder="selectedFolder" :split-view="!isMobile" />
       </main>
     </div>
+
+    <!-- Mobile bottom tab bar -->
+    <nav v-if="isMobile" class="app-mobile-tabs">
+      <button
+        class="app-mobile-tabs__btn"
+        :class="{ 'app-mobile-tabs__btn--active': !mobileShowConversations }"
+        @click="mobileShowConversations = false"
+      >
+        <i class='bx bx-folder-open'></i>
+        <span>Árbol</span>
+      </button>
+      <button
+        class="app-mobile-tabs__btn"
+        :class="{ 'app-mobile-tabs__btn--active': mobileShowConversations }"
+        @click="mobileShowConversations = true"
+      >
+        <i class='bx bx-envelope'></i>
+        <span>Conversaciones</span>
+      </button>
+    </nav>
 
     <!-- Context menu -->
     <ContextMenu
@@ -1018,16 +1037,92 @@ function handleFolderContextMenu(event, node) {
   }
 }
 
+/* ── Mobile back header ── */
+.app-mobile-back {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--border-light);
+  background: var(--bg-main);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  flex-shrink: 0;
+}
+
+.app-mobile-back__btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 1.2rem;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.app-mobile-back__btn:hover {
+  background: var(--bg-card);
+}
+
+.app-mobile-back__title {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── Bottom tab bar ── */
+.app-mobile-tabs {
+  display: flex;
+  border-top: 1px solid var(--border-light);
+  background: var(--bg-main);
+  flex-shrink: 0;
+}
+
+.app-mobile-tabs__btn {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 0.5rem;
+  gap: 0.2rem;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 0.65rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: color 0.15s;
+  min-height: 52px;
+}
+
+.app-mobile-tabs__btn i {
+  font-size: 1.25rem;
+}
+
+.app-mobile-tabs__btn--active {
+  color: var(--primary-500);
+}
+
 /* Mobile: full-screen panels (Outlook-style navigation) */
 @media (max-width: 767px) {
-  .app-toolbar__left { gap: 4px; }
-
-  .app-toolbar__back {
-    font-size: 1.1rem;
-    width: 30px;
-    height: 28px;
-    color: var(--primary-500);
+  .app-shell {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    overflow: hidden;
   }
+
+  .app-toolbar__left { gap: 4px; }
 
   .app-split__left {
     width: 100% !important;
@@ -1041,6 +1136,7 @@ function handleFolderContextMenu(event, node) {
   .app-split__right {
     flex: 1;
     align-items: stretch;
+    flex-direction: column;
   }
 
   .panel-header { padding: 0.35rem 0.4rem 0.25rem; }

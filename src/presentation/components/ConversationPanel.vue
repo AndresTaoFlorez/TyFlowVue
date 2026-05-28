@@ -5,13 +5,14 @@ import { useAuthStore } from '@/presentation/stores/useAuthStore'
 
 const props = defineProps({
   selectedFolder: { type: Object, default: null },
+  splitView: { type: Boolean, default: false },
 })
 
 const store = useConversationStore()
 const authStore = useAuthStore()
 
 const filterSearch = ref('')
-const view = ref('list') // 'list' | 'reading'
+const view = ref('list') // 'list' | 'reading' — only used in narrow/mobile mode
 
 // ---- Load conversations when folder changes ----
 watch(
@@ -47,7 +48,7 @@ const filteredConversations = computed(() => {
 
 // ---- Detail / reading pane ----
 async function openReading(conv) {
-  view.value = 'reading'
+  if (!props.splitView) view.value = 'reading'
   await store.selectConversation(conv.id)
 }
 
@@ -143,172 +144,301 @@ function senderName(addr) {
   </div>
 
   <!-- Folder selected -->
-  <div v-else class="conv-panel">
+  <div v-else class="conv-panel" :class="{ 'conv-panel--wide': splitView }">
 
-    <!-- ============ LIST VIEW ============ -->
-    <template v-if="view === 'list'">
-      <!-- Toolbar -->
-      <div class="toolbar">
-        <div class="toolbar__left">
-          <h2 class="toolbar__title">{{ selectedFolder.name }}</h2>
-          <span class="toolbar__count" v-if="store.total > 0">{{ store.total }}</span>
+    <!-- ============================================================
+         WIDE MODE: list + reading side by side (Outlook style)
+         ============================================================ -->
+    <template v-if="splitView">
+      <!-- Left: mail list -->
+      <div class="conv-list-col">
+        <!-- Toolbar -->
+        <div class="toolbar">
+          <div class="toolbar__left">
+            <h2 class="toolbar__title">{{ selectedFolder.name }}</h2>
+            <span class="toolbar__count" v-if="store.total > 0">{{ store.total }}</span>
+          </div>
+          <div class="toolbar__right">
+            <button v-if="authStore.isAdmin" @click="openIngest" class="toolbar__btn" title="Ingestar">
+              <i class='bx bx-plus'></i>
+            </button>
+          </div>
         </div>
-        <div class="toolbar__right">
-          <button v-if="authStore.isAdmin" @click="openIngest" class="toolbar__btn" title="Ingestar">
-            <i class='bx bx-plus'></i>
-          </button>
+
+        <!-- Search -->
+        <div class="search-bar">
+          <i class='bx bx-search'></i>
+          <input v-model="filterSearch" type="text" placeholder="Buscar..." class="search-bar__input">
         </div>
-      </div>
 
-      <!-- Search -->
-      <div class="search-bar">
-        <i class='bx bx-search'></i>
-        <input v-model="filterSearch" type="text" placeholder="Buscar conversaciones..." class="search-bar__input">
-      </div>
+        <!-- Loading -->
+        <div v-if="store.loading" class="state">
+          <i class='bx bx-loader-alt bx-spin'></i> Cargando...
+        </div>
 
-      <!-- Loading -->
-      <div v-if="store.loading" class="state">
-        <i class='bx bx-loader-alt bx-spin'></i> Cargando...
-      </div>
+        <!-- Error -->
+        <div v-else-if="store.error" class="state state--error">
+          <i class='bx bx-error-circle'></i> {{ store.error }}
+        </div>
 
-      <!-- Error -->
-      <div v-else-if="store.error" class="state state--error">
-        <i class='bx bx-error-circle'></i> {{ store.error }}
-      </div>
+        <!-- Empty -->
+        <div v-else-if="filteredConversations.length === 0" class="state">
+          <i class='bx bx-envelope'></i>
+          {{ filterSearch.trim() ? 'Sin resultados.' : 'Carpeta vacía' }}
+        </div>
 
-      <!-- Empty -->
-      <div v-else-if="filteredConversations.length === 0" class="state">
-        <i class='bx bx-envelope'></i>
-        {{ filterSearch.trim() ? 'Sin resultados.' : 'Carpeta vacia' }}
-      </div>
-
-      <!-- Mail list -->
-      <div v-else class="mail-list">
-        <div
-          v-for="conv in filteredConversations"
-          :key="conv.id"
-          class="mail-item"
-          :class="{ 'mail-item--dup': conv.isDuplicate }"
-          @click="openReading(conv)"
-        >
-          <div class="mail-item__accent"></div>
-          <div class="mail-item__body">
-            <div class="mail-item__top">
-              <span class="mail-item__sender">{{ senderName(conv.fromAddress) }}</span>
-              <span class="mail-item__date">{{ formatDateShort(conv.receivedAt) }}</span>
-            </div>
-            <div class="mail-item__subject">
-              <span v-if="conv.isDuplicate" class="dup-badge">DUP</span>
-              {{ conv.subject || '(Sin asunto)' }}
-            </div>
-            <div class="mail-item__preview">{{ bodyPreview(conv.body) }}</div>
-            <div v-if="conv.tags && conv.tags.length" class="mail-item__tags">
-              <span v-for="tag in conv.tags.slice(0, 3)" :key="tag" class="tag-chip">{{ tag }}</span>
+        <!-- Mail list -->
+        <div v-else class="mail-list">
+          <div
+            v-for="conv in filteredConversations"
+            :key="conv.id"
+            class="mail-item"
+            :class="{
+              'mail-item--dup': conv.isDuplicate,
+              'mail-item--selected': store.selectedConversation?.id === conv.id,
+            }"
+            @click="openReading(conv)"
+          >
+            <div class="mail-item__accent"></div>
+            <div class="mail-item__body">
+              <div class="mail-item__top">
+                <span class="mail-item__sender">{{ senderName(conv.fromAddress) }}</span>
+                <span class="mail-item__date">{{ formatDateShort(conv.receivedAt) }}</span>
+              </div>
+              <div class="mail-item__subject">
+                <span v-if="conv.isDuplicate" class="dup-badge">DUP</span>
+                {{ conv.subject || '(Sin asunto)' }}
+              </div>
+              <div class="mail-item__preview">{{ bodyPreview(conv.body) }}</div>
             </div>
           </div>
         </div>
-      </div>
 
-      <!-- Pagination -->
-      <div v-if="store.total > 0 && !store.loading" class="pag-bar">
-        <span class="pag-bar__info">{{ store.total }} correo{{ store.total !== 1 ? 's' : '' }}</span>
-        <div class="pag-bar__btns">
-          <button :disabled="store.page <= 1" @click="goToPage(store.page - 1)" class="pag-bar__btn"><i class='bx bx-chevron-left'></i></button>
-          <span class="pag-bar__page">{{ store.page }}/{{ store.totalPages }}</span>
-          <button :disabled="store.page >= store.totalPages" @click="goToPage(store.page + 1)" class="pag-bar__btn"><i class='bx bx-chevron-right'></i></button>
+        <!-- Pagination -->
+        <div v-if="store.total > 0 && !store.loading" class="pag-bar">
+          <span class="pag-bar__info">{{ store.total }}</span>
+          <div class="pag-bar__btns">
+            <button :disabled="store.page <= 1" @click="goToPage(store.page - 1)" class="pag-bar__btn"><i class='bx bx-chevron-left'></i></button>
+            <span class="pag-bar__page">{{ store.page }}/{{ store.totalPages }}</span>
+            <button :disabled="store.page >= store.totalPages" @click="goToPage(store.page + 1)" class="pag-bar__btn"><i class='bx bx-chevron-right'></i></button>
+          </div>
+        </div>
+
+        <!-- Ingest success -->
+        <div v-if="ingestSuccess" class="toast-banner" @click="ingestSuccess = ''">
+          <i class='bx bx-check-circle'></i> {{ ingestSuccess }}
         </div>
       </div>
 
-      <!-- Ingest success -->
-      <div v-if="ingestSuccess" class="toast-banner" @click="ingestSuccess = ''">
-        <i class='bx bx-check-circle'></i> {{ ingestSuccess }}
+      <!-- Right: reading pane -->
+      <div class="conv-reading-col">
+        <div v-if="store.loadingDetail" class="state">
+          <i class='bx bx-loader-alt bx-spin'></i> Cargando...
+        </div>
+        <template v-else-if="store.selectedConversation">
+          <div class="reading">
+            <div class="reading__header">
+              <div class="reading__avatar"><i class='bx bx-user'></i></div>
+              <div class="reading__header-info">
+                <div class="reading__from">{{ store.selectedConversation.fromAddress || 'Desconocido' }}</div>
+                <div class="reading__to">Para: {{ store.selectedConversation.toAddress || '—' }}</div>
+                <div class="reading__date">{{ formatDateTime(store.selectedConversation.receivedAt) }}</div>
+              </div>
+              <code class="reading__id">{{ store.selectedConversation.id }}</code>
+            </div>
+            <h2 class="reading__subject">{{ store.selectedConversation.subject || '(Sin asunto)' }}</h2>
+            <div v-if="store.selectedConversation.tags && store.selectedConversation.tags.length" class="reading__tags">
+              <span v-for="tag in store.selectedConversation.tags" :key="tag" class="tag-chip tag-chip--lg">{{ tag }}</span>
+            </div>
+            <div v-if="store.selectedConversation.isDuplicate" class="reading__dup-warn">
+              <i class='bx bx-copy'></i> Duplicada de <code>{{ store.selectedConversation.duplicateOf }}</code>
+            </div>
+            <div class="reading__body">{{ store.selectedConversation.body || '(Sin contenido)' }}</div>
+            <div class="reading__meta">
+              <div class="reading__meta-row">
+                <span class="reading__meta-label">Folder</span>
+                <code>{{ store.selectedConversation.folderId }}</code>
+              </div>
+              <div class="reading__meta-row">
+                <span class="reading__meta-label">Extraido</span>
+                <span>{{ formatDateTime(store.selectedConversation.extractedAt) }}</span>
+              </div>
+              <div v-if="store.selectedConversation.externalId" class="reading__meta-row">
+                <span class="reading__meta-label">External ID</span>
+                <span class="reading__meta-mono">{{ store.selectedConversation.externalId }}</span>
+              </div>
+            </div>
+            <div class="reading__section">
+              <h3 class="reading__section-title">
+                <i class='bx bx-transfer-alt'></i> Asignaciones
+                <i v-if="store.loadingAssignments" class='bx bx-loader-alt bx-spin'></i>
+              </h3>
+              <div v-if="store.selectedAssignments.length === 0 && !store.loadingAssignments" class="reading__empty">
+                Sin asignaciones.
+              </div>
+              <div v-for="a in store.selectedAssignments" :key="a.id" class="assign-card">
+                <div class="assign-card__top">
+                  <code class="assign-card__id">{{ a.id }}</code>
+                  <span class="assign-card__reason">{{ a.reasonLabel }}</span>
+                  <span :class="a.isActive ? 'st--active' : 'st--inactive'">{{ a.isActive ? 'Activa' : 'Cerrada' }}</span>
+                </div>
+                <div class="assign-card__bottom">
+                  <span>Especialista: <code>{{ a.specialistId }}</code></span>
+                  <span v-if="a.createdAt"> &middot; {{ formatDateTime(a.createdAt) }}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </template>
+        <div v-else class="reading-placeholder">
+          <i class='bx bx-mail-send reading-placeholder__icon'></i>
+          <p class="reading-placeholder__text">Selecciona un correo para leerlo</p>
+        </div>
       </div>
     </template>
 
-    <!-- ============ READING PANE ============ -->
-    <template v-if="view === 'reading'">
-      <!-- Reading toolbar -->
-      <div class="toolbar">
-        <button @click="backToList" class="toolbar__back" title="Volver a la lista">
-          <i class='bx bx-arrow-back'></i>
-        </button>
-        <span class="toolbar__breadcrumb">{{ selectedFolder.name }}</span>
-      </div>
-
-      <!-- Loading -->
-      <div v-if="store.loadingDetail" class="state">
-        <i class='bx bx-loader-alt bx-spin'></i> Cargando...
-      </div>
-
-      <template v-else-if="store.selectedConversation">
-        <div class="reading">
-          <!-- Email header -->
-          <div class="reading__header">
-            <div class="reading__avatar">
-              <i class='bx bx-user'></i>
-            </div>
-            <div class="reading__header-info">
-              <div class="reading__from">{{ store.selectedConversation.fromAddress || 'Desconocido' }}</div>
-              <div class="reading__to">Para: {{ store.selectedConversation.toAddress || '—' }}</div>
-              <div class="reading__date">{{ formatDateTime(store.selectedConversation.receivedAt) }}</div>
-            </div>
-            <code class="reading__id">{{ store.selectedConversation.id }}</code>
+    <!-- ============================================================
+         NARROW MODE: toggle between list and reading (current behavior)
+         ============================================================ -->
+    <template v-else>
+      <!-- LIST VIEW -->
+      <template v-if="view === 'list'">
+        <div class="toolbar">
+          <div class="toolbar__left">
+            <h2 class="toolbar__title">{{ selectedFolder.name }}</h2>
+            <span class="toolbar__count" v-if="store.total > 0">{{ store.total }}</span>
           </div>
-
-          <!-- Subject -->
-          <h2 class="reading__subject">{{ store.selectedConversation.subject || '(Sin asunto)' }}</h2>
-
-          <!-- Tags -->
-          <div v-if="store.selectedConversation.tags && store.selectedConversation.tags.length" class="reading__tags">
-            <span v-for="tag in store.selectedConversation.tags" :key="tag" class="tag-chip tag-chip--lg">{{ tag }}</span>
+          <div class="toolbar__right">
+            <button v-if="authStore.isAdmin" @click="openIngest" class="toolbar__btn" title="Ingestar">
+              <i class='bx bx-plus'></i>
+            </button>
           </div>
+        </div>
 
-          <!-- Duplicate warning -->
-          <div v-if="store.selectedConversation.isDuplicate" class="reading__dup-warn">
-            <i class='bx bx-copy'></i> Duplicada de <code>{{ store.selectedConversation.duplicateOf }}</code>
-          </div>
+        <div class="search-bar">
+          <i class='bx bx-search'></i>
+          <input v-model="filterSearch" type="text" placeholder="Buscar conversaciones..." class="search-bar__input">
+        </div>
 
-          <!-- Body -->
-          <div class="reading__body">{{ store.selectedConversation.body || '(Sin contenido)' }}</div>
+        <div v-if="store.loading" class="state">
+          <i class='bx bx-loader-alt bx-spin'></i> Cargando...
+        </div>
+        <div v-else-if="store.error" class="state state--error">
+          <i class='bx bx-error-circle'></i> {{ store.error }}
+        </div>
+        <div v-else-if="filteredConversations.length === 0" class="state">
+          <i class='bx bx-envelope'></i>
+          {{ filterSearch.trim() ? 'Sin resultados.' : 'Carpeta vacía' }}
+        </div>
 
-          <!-- Meta details -->
-          <div class="reading__meta">
-            <div class="reading__meta-row">
-              <span class="reading__meta-label">Folder</span>
-              <code>{{ store.selectedConversation.folderId }}</code>
-            </div>
-            <div class="reading__meta-row">
-              <span class="reading__meta-label">Extraido</span>
-              <span>{{ formatDateTime(store.selectedConversation.extractedAt) }}</span>
-            </div>
-            <div v-if="store.selectedConversation.externalId" class="reading__meta-row">
-              <span class="reading__meta-label">External ID</span>
-              <span class="reading__meta-mono">{{ store.selectedConversation.externalId }}</span>
-            </div>
-          </div>
-
-          <!-- Assignments section -->
-          <div class="reading__section">
-            <h3 class="reading__section-title">
-              <i class='bx bx-transfer-alt'></i> Asignaciones
-              <i v-if="store.loadingAssignments" class='bx bx-loader-alt bx-spin'></i>
-            </h3>
-            <div v-if="store.selectedAssignments.length === 0 && !store.loadingAssignments" class="reading__empty">
-              Sin asignaciones.
-            </div>
-            <div v-for="a in store.selectedAssignments" :key="a.id" class="assign-card">
-              <div class="assign-card__top">
-                <code class="assign-card__id">{{ a.id }}</code>
-                <span class="assign-card__reason">{{ a.reasonLabel }}</span>
-                <span :class="a.isActive ? 'st--active' : 'st--inactive'">{{ a.isActive ? 'Activa' : 'Cerrada' }}</span>
+        <div v-else class="mail-list">
+          <div
+            v-for="conv in filteredConversations"
+            :key="conv.id"
+            class="mail-item"
+            :class="{ 'mail-item--dup': conv.isDuplicate }"
+            @click="openReading(conv)"
+          >
+            <div class="mail-item__accent"></div>
+            <div class="mail-item__body">
+              <div class="mail-item__top">
+                <span class="mail-item__sender">{{ senderName(conv.fromAddress) }}</span>
+                <span class="mail-item__date">{{ formatDateShort(conv.receivedAt) }}</span>
               </div>
-              <div class="assign-card__bottom">
-                <span>Especialista: <code>{{ a.specialistId }}</code></span>
-                <span v-if="a.createdAt"> &middot; {{ formatDateTime(a.createdAt) }}</span>
+              <div class="mail-item__subject">
+                <span v-if="conv.isDuplicate" class="dup-badge">DUP</span>
+                {{ conv.subject || '(Sin asunto)' }}
+              </div>
+              <div class="mail-item__preview">{{ bodyPreview(conv.body) }}</div>
+              <div v-if="conv.tags && conv.tags.length" class="mail-item__tags">
+                <span v-for="tag in conv.tags.slice(0, 3)" :key="tag" class="tag-chip">{{ tag }}</span>
               </div>
             </div>
           </div>
         </div>
+
+        <div v-if="store.total > 0 && !store.loading" class="pag-bar">
+          <span class="pag-bar__info">{{ store.total }} correo{{ store.total !== 1 ? 's' : '' }}</span>
+          <div class="pag-bar__btns">
+            <button :disabled="store.page <= 1" @click="goToPage(store.page - 1)" class="pag-bar__btn"><i class='bx bx-chevron-left'></i></button>
+            <span class="pag-bar__page">{{ store.page }}/{{ store.totalPages }}</span>
+            <button :disabled="store.page >= store.totalPages" @click="goToPage(store.page + 1)" class="pag-bar__btn"><i class='bx bx-chevron-right'></i></button>
+          </div>
+        </div>
+
+        <div v-if="ingestSuccess" class="toast-banner" @click="ingestSuccess = ''">
+          <i class='bx bx-check-circle'></i> {{ ingestSuccess }}
+        </div>
+      </template>
+
+      <!-- READING VIEW (narrow) -->
+      <template v-if="view === 'reading'">
+        <div class="toolbar">
+          <button @click="backToList" class="toolbar__back" title="Volver a la lista">
+            <i class='bx bx-arrow-back'></i>
+          </button>
+          <span class="toolbar__breadcrumb">{{ selectedFolder.name }}</span>
+        </div>
+
+        <div v-if="store.loadingDetail" class="state">
+          <i class='bx bx-loader-alt bx-spin'></i> Cargando...
+        </div>
+
+        <template v-else-if="store.selectedConversation">
+          <div class="reading">
+            <div class="reading__header">
+              <div class="reading__avatar"><i class='bx bx-user'></i></div>
+              <div class="reading__header-info">
+                <div class="reading__from">{{ store.selectedConversation.fromAddress || 'Desconocido' }}</div>
+                <div class="reading__to">Para: {{ store.selectedConversation.toAddress || '—' }}</div>
+                <div class="reading__date">{{ formatDateTime(store.selectedConversation.receivedAt) }}</div>
+              </div>
+              <code class="reading__id">{{ store.selectedConversation.id }}</code>
+            </div>
+            <h2 class="reading__subject">{{ store.selectedConversation.subject || '(Sin asunto)' }}</h2>
+            <div v-if="store.selectedConversation.tags && store.selectedConversation.tags.length" class="reading__tags">
+              <span v-for="tag in store.selectedConversation.tags" :key="tag" class="tag-chip tag-chip--lg">{{ tag }}</span>
+            </div>
+            <div v-if="store.selectedConversation.isDuplicate" class="reading__dup-warn">
+              <i class='bx bx-copy'></i> Duplicada de <code>{{ store.selectedConversation.duplicateOf }}</code>
+            </div>
+            <div class="reading__body">{{ store.selectedConversation.body || '(Sin contenido)' }}</div>
+            <div class="reading__meta">
+              <div class="reading__meta-row">
+                <span class="reading__meta-label">Folder</span>
+                <code>{{ store.selectedConversation.folderId }}</code>
+              </div>
+              <div class="reading__meta-row">
+                <span class="reading__meta-label">Extraido</span>
+                <span>{{ formatDateTime(store.selectedConversation.extractedAt) }}</span>
+              </div>
+              <div v-if="store.selectedConversation.externalId" class="reading__meta-row">
+                <span class="reading__meta-label">External ID</span>
+                <span class="reading__meta-mono">{{ store.selectedConversation.externalId }}</span>
+              </div>
+            </div>
+            <div class="reading__section">
+              <h3 class="reading__section-title">
+                <i class='bx bx-transfer-alt'></i> Asignaciones
+                <i v-if="store.loadingAssignments" class='bx bx-loader-alt bx-spin'></i>
+              </h3>
+              <div v-if="store.selectedAssignments.length === 0 && !store.loadingAssignments" class="reading__empty">
+                Sin asignaciones.
+              </div>
+              <div v-for="a in store.selectedAssignments" :key="a.id" class="assign-card">
+                <div class="assign-card__top">
+                  <code class="assign-card__id">{{ a.id }}</code>
+                  <span class="assign-card__reason">{{ a.reasonLabel }}</span>
+                  <span :class="a.isActive ? 'st--active' : 'st--inactive'">{{ a.isActive ? 'Activa' : 'Cerrada' }}</span>
+                </div>
+                <div class="assign-card__bottom">
+                  <span>Especialista: <code>{{ a.specialistId }}</code></span>
+                  <span v-if="a.createdAt"> &middot; {{ formatDateTime(a.createdAt) }}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </template>
       </template>
     </template>
 
@@ -398,6 +528,44 @@ function senderName(addr) {
   overflow: hidden;
   background: var(--bg-main);
 }
+
+/* ===== Wide mode: side-by-side layout ===== */
+.conv-panel--wide {
+  flex-direction: row;
+}
+
+.conv-list-col {
+  width: 260px;
+  min-width: 200px;
+  max-width: 320px;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--border-light);
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.conv-reading-col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-width: 0;
+}
+
+/* ===== Reading placeholder (wide mode) ===== */
+.reading-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  gap: 0.5rem;
+  color: var(--text-secondary);
+  opacity: 0.4;
+}
+.reading-placeholder__icon { font-size: 2.5rem; }
+.reading-placeholder__text { font-size: 0.85rem; font-weight: 500; }
 
 /* ===== Toolbar ===== */
 .toolbar {
@@ -528,6 +696,13 @@ function senderName(addr) {
 }
 
 .mail-item:hover { background: #F8F9FA; }
+
+.mail-item--selected {
+  background: rgba(42, 199, 143, 0.08);
+}
+.mail-item--selected .mail-item__accent {
+  opacity: 1;
+}
 
 .mail-item__accent {
   width: 3px;

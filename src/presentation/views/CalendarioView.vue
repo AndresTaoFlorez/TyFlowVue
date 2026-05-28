@@ -30,6 +30,9 @@ const weekOffset = ref(0)
 const modalLoading = ref(false)
 const selectedGroup = ref(null)
 
+// Vista
+const viewMode = ref('week') // 'day' | 'week'
+
 // Filtros
 const filtroSpecialist = ref('all')
 const filtroApp = ref('all')
@@ -252,6 +255,38 @@ const handleReschedule = async ({ window: w, targetDate, startTime, endTime }) =
   }
 }
 
+// ---- Group reschedule (drag-to-move all windows in group) ----
+const handleGroupReschedule = async ({ group, targetDate, deltaHours }) => {
+  try {
+    const fmt = (h, m) => `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
+    const toHM = (decimal) => {
+      const h = Math.floor(decimal)
+      const m = Math.round((decimal % 1) * 60)
+      return fmt(h, m)
+    }
+
+    const updates = await Promise.all(
+      group.windows.map(async (w) => {
+        const newStart = w.startHour + deltaHours
+        const newEnd = w.endHour + deltaHours
+        return rescheduleWorkWindowUseCase(w, {
+          startTime: toHM(newStart),
+          endTime: toHM(newEnd),
+          targetDate,
+        })
+      })
+    )
+
+    // Replace updated windows in the array
+    const updatedMap = new Map(updates.map(u => [u.id, u]))
+    windows.value = windows.value.map(w => updatedMap.get(w.id) || w)
+    showToast(`${updates.length} ventanas movidas.`)
+  } catch (e) {
+    console.error('[Calendario] Error moviendo grupo:', e)
+    showToast(e.userMessage || 'Error al mover el grupo.', 'error')
+  }
+}
+
 // ---- Group panel: select individual from group ----
 const onGroupSelect = (w) => {
   selectedGroup.value = null
@@ -271,6 +306,10 @@ const goToday = () => { weekOffset.value = 0 }
 
 watch(weekOffset, () => loadWindows())
 
+// ---- Mobile ----
+const isMobile = ref(window.innerWidth < 768)
+function onResize() { isMobile.value = window.innerWidth < 768 }
+
 // ---- ESC ----
 const onEsc = (e) => {
   if (e.key === 'Escape') {
@@ -284,10 +323,12 @@ onMounted(() => {
   userStore.loadUsers()
   userStore.loadSelects()
   window.addEventListener('keydown', onEsc)
+  window.addEventListener('resize', onResize)
 })
 
 onUnmounted(() => {
   window.removeEventListener('keydown', onEsc)
+  window.removeEventListener('resize', onResize)
 })
 </script>
 
@@ -319,6 +360,21 @@ onUnmounted(() => {
           </button>
         </div>
         <span class="toolbar__label">{{ weekLabel }}</span>
+      </div>
+
+      <div class="toolbar__center">
+        <div class="toolbar__views">
+          <button
+            class="toolbar__view-btn"
+            :class="{ 'toolbar__view-btn--active': viewMode === 'day' }"
+            @click="viewMode = 'day'"
+          >Día</button>
+          <button
+            class="toolbar__view-btn"
+            :class="{ 'toolbar__view-btn--active': viewMode === 'week' }"
+            @click="viewMode = 'week'"
+          >Semana</button>
+        </div>
       </div>
 
       <div class="toolbar__right">
@@ -361,10 +417,13 @@ onUnmounted(() => {
       :specialists="userStore.users"
       :applications="userStore.applications"
       :selectable="authStore.isAdmin"
+      :is-mobile="isMobile"
+      :view-mode="viewMode"
       @select="selectedWindow = $event"
       @group-select="selectedGroup = $event"
       @range-selected="onRangeSelected"
       @reschedule="handleReschedule"
+      @group-reschedule="handleGroupReschedule"
     />
 
     <!-- Modal detalle -->
@@ -546,6 +605,49 @@ onUnmounted(() => {
   white-space: nowrap;
 }
 
+/* View toggle */
+.toolbar__center {
+  display: flex;
+  align-items: center;
+}
+
+.toolbar__views {
+  display: flex;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.toolbar__view-btn {
+  padding: 0.25rem 0.65rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  background: var(--bg-main);
+  border: none;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.toolbar__view-btn + .toolbar__view-btn {
+  border-left: 1px solid var(--border-light);
+}
+
+.toolbar__view-btn:hover {
+  color: var(--text-primary);
+  background: var(--bg-card);
+}
+
+.toolbar__view-btn--active {
+  background: var(--primary-500);
+  color: white;
+}
+
+.toolbar__view-btn--active:hover {
+  background: var(--primary-600);
+  color: white;
+}
+
 .toolbar__right {
   display: flex;
   align-items: center;
@@ -614,14 +716,39 @@ onUnmounted(() => {
 
 /* ---- Responsive ---- */
 @media (max-width: 768px) {
+  .content {
+    gap: 0.5rem;
+  }
+  .page-header {
+    padding: 0 0.25rem;
+  }
+  .page-header__title {
+    font-size: 1.15rem;
+  }
+  .page-header__subtitle {
+    font-size: 0.75rem;
+    margin-top: 0.1rem;
+  }
+  .btn-create {
+    padding: 0.45rem 0.75rem;
+    font-size: 0.8rem;
+  }
   .btn-create__label { display: none; }
   .btn-create__short { display: inline; }
   .toolbar {
     flex-direction: column;
     align-items: stretch;
+    padding: 0.4rem 0.5rem;
+    gap: 0.5rem;
   }
   .toolbar__left {
     justify-content: center;
+  }
+  .toolbar__center {
+    justify-content: center;
+  }
+  .toolbar__label {
+    font-size: 0.8rem;
   }
   .toolbar__right {
     flex-direction: column;
@@ -636,6 +763,26 @@ onUnmounted(() => {
 }
 
 @media (max-width: 480px) {
+  .page-header {
+    padding: 0;
+  }
+  .page-header__title {
+    font-size: 1rem;
+  }
+  .page-header__subtitle {
+    display: none;
+  }
+  .btn-create {
+    padding: 0.4rem 0.65rem;
+    font-size: 0.78rem;
+    gap: 0.3rem;
+  }
+  .btn-create i {
+    font-size: 1rem;
+  }
+  .toolbar {
+    padding: 0.35rem 0.4rem;
+  }
   .toolbar__legend {
     display: none;
   }

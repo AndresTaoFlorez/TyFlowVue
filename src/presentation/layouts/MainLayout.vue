@@ -15,7 +15,7 @@ const flushRoutes = ['/app/applications', '/app/calendario']
 const isFlush = computed(() => flushRoutes.some(r => route.path.startsWith(r)))
 
 // Auto-collapse sidebar on dense views when viewport is narrow
-const denseRoutes = ['/app/applications']
+const denseRoutes = ['/app/applications', '/app/calendario']
 let userExpandedSidebar = false
 
 watch([() => route.path, viewportWidth], ([path, width]) => {
