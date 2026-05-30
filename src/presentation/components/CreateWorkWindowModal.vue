@@ -134,10 +134,27 @@ const totalWindows = computed(() => {
   return selectedDates.value.length * validRows
 })
 
+// ---- Date/time validation ----
+const isPastDate = (iso) => iso < todayISO()
+
+const endTimeError = computed(() => {
+  if (!selectedDates.value.includes(todayISO())) return null
+  if (!endTime.value) return null
+  const [endH, endM] = endTime.value.split(':').map(Number)
+  const endMinutes = endH * 60 + endM
+  const now = new Date()
+  const nowMinutes = now.getHours() * 60 + now.getMinutes()
+  if (endMinutes < nowMinutes + 30) {
+    return 'La hora de fin debe ser al menos 30 min posterior a la hora actual para hoy.'
+  }
+  return null
+})
+
 // ---- Validation ----
 const canSubmit = computed(() => {
   if (selectedDates.value.length === 0) return false
   if (!startTime.value || !endTime.value) return false
+  if (endTimeError.value) return false
   return rows.value.some(r => r.specialistId && r.applicationId)
 })
 
@@ -220,8 +237,9 @@ const handleSubmit = () => {
               <div v-else class="row__content">
                 <input
                   :value="selectedDates[0]"
-                  @input="selectedDates = [$event.target.value]"
+                  @input="!isPastDate($event.target.value) && (selectedDates = [$event.target.value])"
                   type="date"
+                  :min="todayISO()"
                   class="row__date"
                   :disabled="creating"
                 >
@@ -238,6 +256,7 @@ const handleSubmit = () => {
                 <input v-model="endTime" type="time" class="time-input" :disabled="creating">
                 <span v-if="durationLabel" class="time-badge">{{ durationLabel }}</span>
               </div>
+              <span v-if="endTimeError" class="row__error">{{ endTimeError }}</span>
             </div>
 
             <!-- Separator -->
@@ -453,6 +472,12 @@ const handleSubmit = () => {
   font-size: 0.7rem;
   color: var(--text-secondary);
   text-transform: capitalize;
+}
+
+.row__error {
+  font-size: 0.7rem;
+  color: #ef4444;
+  margin-top: 0.2rem;
 }
 
 /* Chips */

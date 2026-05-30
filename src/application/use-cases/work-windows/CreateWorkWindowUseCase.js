@@ -16,21 +16,33 @@ export async function createWorkWindowUseCase(windowsData) {
     if (!item.startTime) throw new WorkWindowError(`Hora de inicio requerida${label}.`)
     if (!item.endTime) throw new WorkWindowError(`Hora de fin requerida${label}.`)
 
-    const startTime = WorkWindow.formatTimeTz(item.startTime)
-    const endTime = WorkWindow.formatTimeTz(item.endTime)
-
     const startMins = parseTimeMins(item.startTime)
     const endMins = parseTimeMins(item.endTime)
     if (startMins >= endMins) {
       throw new WorkWindowError(`La hora de inicio debe ser anterior a la de fin${label}.`)
     }
 
+    const date = item.scheduledDate || todayISO()
+    const today = todayISO()
+
+    if (date < today) {
+      throw new WorkWindowError(`No se pueden crear ventanas en fechas pasadas${label}.`)
+    }
+    if (date === today) {
+      const now = new Date()
+      const nowMins = now.getHours() * 60 + now.getMinutes()
+      if (endMins < nowMins + 30) {
+        throw new WorkWindowError(
+          `Para hoy, la hora de fin debe ser al menos 30 minutos posterior a la hora actual${label}.`
+        )
+      }
+    }
+
     return {
       specialistId: item.specialistId,
       applicationId: item.applicationId,
-      startTime,
-      endTime,
-      scheduledDate: item.scheduledDate || todayISO(),
+      startsAt: WorkWindow.toTimestampTz(date, item.startTime),
+      endsAt: WorkWindow.toTimestampTz(date, item.endTime),
       inheritsOnReopen: item.inheritsOnReopen ?? false,
     }
   })

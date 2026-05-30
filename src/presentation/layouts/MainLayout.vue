@@ -51,7 +51,6 @@ onUnmounted(() => window.removeEventListener('resize', onResize))
     <AppTopbar
       :collapsed="sidebarCollapsed"
       @toggle-sidebar="toggleSidebar"
-      @change-password="mostrarCambiarClave = true"
     />
 
     <div class="layout__overlay" @click="closeMobileSidebar"></div>

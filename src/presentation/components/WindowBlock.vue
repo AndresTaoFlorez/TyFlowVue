@@ -7,9 +7,10 @@ const props = defineProps({
   baseHour: { type: Number, default: 0 },
   col: { type: Number, default: 0 },
   totalCols: { type: Number, default: 1 },
+  selectable: { type: Boolean, default: false },
 })
 
-defineEmits(['click'])
+const emit = defineEmits(['click', 'resize-start'])
 
 const top = () => Math.max(0, (props.window.startHour - props.baseHour) * props.hourHeight + 2)
 const height = () => Math.max(props.hourHeight / 2, (props.window.endHour - props.window.startHour) * props.hourHeight - 4)
@@ -20,6 +21,11 @@ const statusClass = () => {
   if (props.window.isSessionOpen) return 'wb--open'
   if (!props.window.isActive) return 'wb--inactive'
   return 'wb--closed'
+}
+
+const onHandleDown = (direction, e) => {
+  e.stopPropagation()
+  emit('resize-start', { direction, event: e })
 }
 </script>
 
@@ -35,9 +41,25 @@ const statusClass = () => {
     }"
     @click="$emit('click', window)"
   >
+    <!-- Resize handle top -->
+    <div
+      v-if="selectable"
+      class="wb__handle wb__handle--top"
+      @mousedown="onHandleDown('top', $event)"
+      @touchstart.stop.prevent="onHandleDown('top', $event)"
+    ></div>
+
     <span class="wb__name">{{ specialistName }}</span>
     <span v-if="height() > 42" class="wb__time">{{ window.timeRange }}</span>
     <span v-if="height() > 60" class="wb__app">{{ applicationName }}</span>
+
+    <!-- Resize handle bottom -->
+    <div
+      v-if="selectable"
+      class="wb__handle wb__handle--bottom"
+      @mousedown="onHandleDown('bottom', $event)"
+      @touchstart.stop.prevent="onHandleDown('bottom', $event)"
+    ></div>
   </div>
 </template>
 
@@ -65,6 +87,41 @@ const statusClass = () => {
 
 .wb:active {
   transform: scale(0.99);
+}
+
+/* Resize handles */
+.wb__handle {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 8px;
+  cursor: ns-resize;
+  z-index: 3;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.wb:hover .wb__handle {
+  opacity: 1;
+}
+
+.wb__handle::after {
+  content: '';
+  width: 24px;
+  height: 3px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.5);
+}
+
+.wb__handle--top {
+  top: 0;
+}
+
+.wb__handle--bottom {
+  bottom: 0;
 }
 
 /* Open — green/teal */

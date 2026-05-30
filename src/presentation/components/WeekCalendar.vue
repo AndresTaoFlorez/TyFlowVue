@@ -11,10 +11,12 @@ const props = defineProps({
   applications: { type: Array, default: () => [] },
   selectable: { type: Boolean, default: false },
   isMobile: { type: Boolean, default: false },
-  viewMode: { type: String, default: 'week' }, // 'day' | 'week'
+  viewMode: { type: String, default: 'week' }, // 'day' | 'week' | 'month'
+  monthDates: { type: Array, default: () => [] }, // 42 ISO date strings for month grid
+  currentMonth: { type: Number, default: 0 }, // 0-11 for month view
 })
 
-const emit = defineEmits(['select', 'range-selected', 'group-select', 'reschedule', 'group-reschedule'])
+const emit = defineEmits(['select', 'range-selected', 'group-select', 'reschedule', 'group-reschedule', 'next-day', 'prev-day', 'resize', 'select-day'])
 
 const SLOT_H = 30               // px per half-hour slot
 const HOUR_H = SLOT_H * 2       // px per hour (used by WindowBlock)
@@ -25,7 +27,10 @@ const DAY_LABELS = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom']
 const scrollContainer = ref(null)
 
 // ---- Single day view (mobile or day viewMode) ----
-const showSingleDay = computed(() => props.isMobile || props.viewMode === 'day')
+const showSingleDay = computed(() => {
+  if (props.viewMode === 'month') return false
+  return props.isMobile || props.viewMode === 'day'
+})
 const activeMobileDay = ref(0)
 
 let swipeStartX = 0
@@ -40,7 +45,13 @@ const onCalSwipeEnd = (e) => {
   const dx = e.changedTouches[0].clientX - swipeStartX
   const dy = e.changedTouches[0].clientY - swipeStartY
   if (Math.abs(dx) < Math.abs(dy) || Math.abs(dx) < 40) return
-  if (dx < 0 && activeMobileDay.value < 6) activeMobileDay.value++
+  // In day mode (1 date from parent), emit to parent for navigation
+  if (props.viewMode === 'day') {
+    emit(dx < 0 ? 'next-day' : 'prev-day')
+    return
+  }
+  // In mobile week mode, navigate within the 7 days
+  if (dx < 0 && activeMobileDay.value < props.weekDates.length - 1) activeMobileDay.value++
   if (dx > 0 && activeMobileDay.value > 0) activeMobileDay.value--
 }
 
@@ -57,6 +68,16 @@ const todayIndex = computed(() => props.weekDates.indexOf(todayStr.value))
 // Reset active day when entering single-day mode
 watch(showSingleDay, (val) => {
   if (val) {
+    activeMobileDay.value = props.weekDates.length === 1 ? 0 : (todayIndex.value >= 0 ? todayIndex.value : 0)
+  }
+})
+
+// Reset activeMobileDay when weekDates changes
+watch(() => props.weekDates, () => {
+  if (props.weekDates.length === 1) {
+    activeMobileDay.value = 0
+  } else if (showSingleDay.value) {
+    // Switching from day→week on mobile: jump to today's column
     activeMobileDay.value = todayIndex.value >= 0 ? todayIndex.value : 0
   }
 })
@@ -74,7 +95,7 @@ onMounted(() => {
   })
   timeInterval = setInterval(() => { now.value = new Date() }, 30000)
   if (showSingleDay.value) {
-    activeMobileDay.value = todayIndex.value >= 0 ? todayIndex.value : 0
+    activeMobileDay.value = props.weekDates.length === 1 ? 0 : (todayIndex.value >= 0 ? todayIndex.value : 0)
   }
 })
 
@@ -224,16 +245,21 @@ const onCellTouchendTap = (dayIdx, slot, e) => {
 }
 
 const onTouchmove = (e) => {
-  // Cancel long-press if finger moves (user is scrolling)
-  if (touchTimer && !touchActive.value) {
-    clearTimeout(touchTimer)
-    touchTimer = null
-    return
+  // If the long-press hasn't activated yet, user is scrolling — cancel and don't interfere
+  if (!touchActive.value && !blockDragging.value && !resizing.value) {
+    if (touchTimer) {
+      clearTimeout(touchTimer)
+      touchTimer = null
+    }
+    return // Don't call preventDefault — let native scroll work
   }
-  if (!dragging.value && !blockDragging.value) return
+  if (!dragging.value && !blockDragging.value && !resizing.value) return
+  // Only prevent scroll when drag is confirmed
   e.preventDefault()
-  const touch = e.touches[0]
-  const elements = document.elementsFromPoint(touch.clientX, touch.clientY)
+  const clientX = e.touches[0]?.clientX
+  const clientY = e.touches[0]?.clientY
+  if (clientX == null || clientY == null) return
+  const elements = document.elementsFromPoint(clientX, clientY)
   const cell = elements.find(el => el.dataset.slot !== undefined)
   if (cell) {
     dragEndDay.value = parseInt(cell.dataset.day)
@@ -246,6 +272,7 @@ const onTouchend = () => {
   touchActive.value = false
   onMouseup()
   onBlockDragEnd()
+  onResizeEnd()
 }
 
 // ---- Block drag (reschedule) ----
@@ -255,39 +282,62 @@ const draggedGroup = ref(null)
 const draggedOriginDay = ref(-1)
 const draggedTargetDay = ref(-1)
 const draggedTargetSlot = ref(0)
+let dragGrabOffset = 0 // slots between cursor and block start
+let blockDragMoved = false // true if mouse actually moved during drag
 
 const onBlockDragStart = (w, dayIdx, e) => {
   if (!props.selectable) return
   e.stopPropagation()
   blockDragging.value = true
+  blockDragMoved = false
   draggedWindow.value = w
   draggedGroup.value = null
   draggedOriginDay.value = dayIdx
   draggedTargetDay.value = dayIdx
   draggedTargetSlot.value = Math.round(w.startHour * 2)
+
+  // Calculate grab offset: which slot did the user click?
+  const clientY = e.touches ? e.touches[0]?.clientY : e.clientY
+  const elements = document.elementsFromPoint(e.clientX ?? e.touches?.[0]?.clientX ?? 0, clientY)
+  const cell = elements.find(el => el.dataset.slot !== undefined)
+  const clickedSlot = cell ? parseInt(cell.dataset.slot) : Math.round(w.startHour * 2)
+  dragGrabOffset = clickedSlot - Math.round(w.startHour * 2)
 }
 
 const onGroupDragStart = (group, dayIdx, e) => {
   if (!props.selectable) return
   e.stopPropagation()
   blockDragging.value = true
+  blockDragMoved = false
   draggedGroup.value = group
   draggedWindow.value = { startHour: group.startHour, endHour: group.endHour }
   draggedOriginDay.value = dayIdx
   draggedTargetDay.value = dayIdx
   draggedTargetSlot.value = Math.round(group.startHour * 2)
+
+  const clientY = e.touches ? e.touches[0]?.clientY : e.clientY
+  const elements = document.elementsFromPoint(e.clientX ?? e.touches?.[0]?.clientX ?? 0, clientY)
+  const cell = elements.find(el => el.dataset.slot !== undefined)
+  const clickedSlot = cell ? parseInt(cell.dataset.slot) : Math.round(group.startHour * 2)
+  dragGrabOffset = clickedSlot - Math.round(group.startHour * 2)
 }
 
 const onBlockDragMove = (e) => {
+  if (resizing.value) { onResizeMove(e); return }
   if (!blockDragging.value) return
-  const x = e.clientX || e.touches?.[0]?.clientX
-  const y = e.clientY || e.touches?.[0]?.clientY
-  // Use elementsFromPoint to look through all layers (blocks sit on top of cells)
-  const elements = document.elementsFromPoint(x, y)
+  const clientX = e.touches ? e.touches[0]?.clientX : e.clientX
+  const clientY = e.touches ? e.touches[0]?.clientY : e.clientY
+  if (clientX == null || clientY == null) return
+  const elements = document.elementsFromPoint(clientX, clientY)
   const cell = elements.find(el => el.dataset.slot !== undefined)
   if (cell) {
-    draggedTargetDay.value = parseInt(cell.dataset.day)
-    draggedTargetSlot.value = parseInt(cell.dataset.slot)
+    const newDay = parseInt(cell.dataset.day)
+    const newSlot = Math.max(0, parseInt(cell.dataset.slot) - dragGrabOffset)
+    if (newDay !== draggedTargetDay.value || newSlot !== draggedTargetSlot.value) {
+      blockDragMoved = true
+    }
+    draggedTargetDay.value = newDay
+    draggedTargetSlot.value = newSlot
   }
 }
 
@@ -306,6 +356,7 @@ const onBlockDragEnd = () => {
   const group = draggedGroup.value
   const targetDay = draggedTargetDay.value
   const targetSlot = draggedTargetSlot.value
+  const originDay = draggedOriginDay.value
 
   blockDragging.value = false
   draggedWindow.value = null
@@ -323,16 +374,21 @@ const onBlockDragEnd = () => {
 
   const fmt = (h, m) => `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
 
+  const newStartHour = startH + startM / 60
+  const originDate = props.weekDates[originDay]
+
   if (group) {
-    // Reschedule all windows in the group by the same time delta
-    const deltaHours = (startH + startM / 60) - group.startHour
-    const deltaDate = targetDate !== props.weekDates[draggedOriginDay.value] ? targetDate : null
+    const deltaHours = newStartHour - group.startHour
+    // No movement → don't emit
+    if (deltaHours === 0 && targetDate === originDate) return
     emit('group-reschedule', {
       group,
       targetDate,
       deltaHours,
     })
   } else {
+    // No movement → don't emit (user just clicked)
+    if (Math.abs(newStartHour - w.startHour) < 0.01 && targetDate === originDate) return
     emit('reschedule', {
       window: w,
       targetDate,
@@ -342,34 +398,117 @@ const onBlockDragEnd = () => {
   }
 }
 
-// ---- Windows by day ----
+// ---- Block resize (stretch top/bottom edge) ----
+const resizing = ref(false)
+const resizeWindow = ref(null)
+const resizeDirection = ref(null) // 'top' | 'bottom'
+const resizeDayIdx = ref(-1)
+const resizeSlot = ref(0)
+
+const onResizeStart = (w, dayIdx, { direction, event }) => {
+  if (!props.selectable) return
+  event.stopPropagation()
+  event.preventDefault()
+  resizing.value = true
+  resizeWindow.value = w
+  resizeDirection.value = direction
+  resizeDayIdx.value = dayIdx
+  resizeSlot.value = direction === 'top'
+    ? Math.round(w.startHour * 2)
+    : Math.round(w.endHour * 2)
+}
+
+const onResizeMove = (e) => {
+  if (!resizing.value) return
+  const clientX = e.touches ? e.touches[0]?.clientX : e.clientX
+  const clientY = e.touches ? e.touches[0]?.clientY : e.clientY
+  if (clientX == null || clientY == null) return
+  const elements = document.elementsFromPoint(clientX, clientY)
+  const cell = elements.find(el => el.dataset.slot !== undefined)
+  if (cell) {
+    resizeSlot.value = parseInt(cell.dataset.slot)
+  }
+}
+
+const resizeGhostStyle = computed(() => {
+  if (!resizing.value || !resizeWindow.value) return null
+  const w = resizeWindow.value
+  let topSlot, bottomSlot
+  if (resizeDirection.value === 'top') {
+    topSlot = Math.min(resizeSlot.value, Math.round(w.endHour * 2) - 1)
+    bottomSlot = Math.round(w.endHour * 2)
+  } else {
+    topSlot = Math.round(w.startHour * 2)
+    bottomSlot = Math.max(resizeSlot.value + 1, topSlot + 1)
+  }
+  return {
+    top: topSlot * SLOT_H + 'px',
+    height: (bottomSlot - topSlot) * SLOT_H + 'px',
+  }
+})
+
+const onResizeEnd = () => {
+  if (!resizing.value) return
+  const w = resizeWindow.value
+  const dir = resizeDirection.value
+  const slot = resizeSlot.value
+
+  resizing.value = false
+  resizeWindow.value = null
+  resizeDirection.value = null
+
+  if (!w) return
+
+  const fmt = (h, m) => `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
+  let startSlot = Math.round(w.startHour * 2)
+  let endSlot = Math.round(w.endHour * 2)
+
+  if (dir === 'top') {
+    startSlot = Math.min(slot, endSlot - 1)
+  } else {
+    endSlot = Math.max(slot + 1, startSlot + 1)
+  }
+
+  const sH = Math.floor(startSlot / 2)
+  const sM = (startSlot % 2) * 30
+  const eH = Math.floor(endSlot / 2)
+  const eM = (endSlot % 2) * 30
+
+  // Only emit if something changed
+  if (startSlot === Math.round(w.startHour * 2) && endSlot === Math.round(w.endHour * 2)) return
+
+  emit('resize', {
+    window: w,
+    startTime: fmt(sH, sM),
+    endTime: fmt(eH, eM),
+  })
+}
+
+// ---- Windows by day (keep original WorkWindow refs, no spread) ----
 const windowsByDay = computed(() => {
-  const byDay = Array.from({ length: 7 }, () => [])
+  const numDays = props.weekDates.length
+  const byDay = Array.from({ length: numDays }, () => [])
   for (const w of props.windows) {
     if (!w.scheduledDate) continue
     const dayIdx = props.weekDates.indexOf(w.scheduledDate)
     if (dayIdx === -1) continue
-    const copy = { ...w, startHour: w.startHour, endHour: w.endHour, isSessionOpen: w.isSessionOpen, timeRange: w.timeRange, _dayIndex: dayIdx }
-    byDay[dayIdx].push(copy)
-  }
-  for (let d = 0; d < 7; d++) {
-    const sorted = byDay[d].sort((a, b) => a.startHour - b.startHour)
-    const placed = []
-    for (const block of sorted) {
-      let col = 0
-      for (const p of placed) {
-        if (block.startHour < p.endHour && block.endHour > p.startHour && p._col === col) col++
-      }
-      block._col = col
-      placed.push(block)
-    }
-    const maxCols = placed.length > 0 ? Math.max(...placed.map(p => p._col)) + 1 : 1
-    for (const block of byDay[d]) block._totalCols = maxCols
+    byDay[dayIdx].push(w)
   }
   return byDay
 })
 
 const groupedByDay = useWindowGroups(windowsByDay)
+
+// Suppress click after drag — click fires after mouseup on the same element
+const onBlockClick = (w) => {
+  if (blockDragMoved) return
+  emit('select', w)
+}
+
+const onGroupClick = (group) => {
+  if (blockDragMoved) return
+  emit('group-select', group)
+}
 
 const findSpecialist = (id) => props.specialists.find(u => u.specialistId === id)
 const findApp = (id) => props.applications.find(a => a.id === id)
@@ -384,6 +523,38 @@ const formatHour = (h) => {
 
 const isWeekend = (dayIdx) => dayIdx >= 5
 const isHourTop = (slot) => slot % 2 === 0
+
+// ---- Month view ----
+const monthWindowsByDate = computed(() => {
+  const map = new Map()
+  for (const w of props.windows) {
+    if (!w.scheduledDate) continue
+    if (!map.has(w.scheduledDate)) map.set(w.scheduledDate, [])
+    map.get(w.scheduledDate).push(w)
+  }
+  return map
+})
+
+const monthWeeks = computed(() => {
+  if (props.viewMode !== 'month' || props.monthDates.length === 0) return []
+  const result = []
+  for (let r = 0; r < 6; r++) {
+    const row = []
+    for (let c = 0; c < 7; c++) {
+      const date = props.monthDates[r * 7 + c]
+      if (!date) continue
+      const parts = date.split('-')
+      const month = parseInt(parts[1], 10) - 1
+      const dayNum = parseInt(parts[2], 10)
+      const wins = monthWindowsByDate.value.get(date) || []
+      let open = 0, closed = 0
+      for (const w of wins) { if (w.isSessionOpen) open++; else closed++ }
+      row.push({ date, dayNum, isCurrentMonth: month === props.currentMonth, isToday: date === todayStr.value, isWeekend: c >= 5, open, closed, total: wins.length })
+    }
+    result.push(row)
+  }
+  return result
+})
 </script>
 
 <template>
@@ -391,7 +562,7 @@ const isHourTop = (slot) => slot % 2 === 0
     class="cal"
     :class="{ 'cal--selectable': selectable }"
     @mouseleave="cancelDrag"
-    @mouseup="onMouseup(); onBlockDragEnd()"
+    @mouseup="onMouseup(); onBlockDragEnd(); onResizeEnd()"
     @mousemove="onBlockDragMove"
     @touchmove="onTouchmove"
     @touchend="onTouchend"
@@ -400,8 +571,8 @@ const isHourTop = (slot) => slot % 2 === 0
 
     <!-- ── MOBILE: vista de 1 día ── -->
     <template v-if="showSingleDay">
-      <!-- Nav de días -->
-      <div class="cal-mobile-nav">
+      <!-- Nav de días (only when parent sends multiple dates, i.e. mobile week) -->
+      <div v-if="weekDates.length > 1" class="cal-mobile-nav">
         <button class="cal-mobile-nav__arrow"
                 :disabled="activeMobileDay === 0"
                 @click="activeMobileDay--">
@@ -425,7 +596,7 @@ const isHourTop = (slot) => slot % 2 === 0
         </div>
 
         <button class="cal-mobile-nav__arrow"
-                :disabled="activeMobileDay === 6"
+                :disabled="activeMobileDay >= weekDates.length - 1"
                 @click="activeMobileDay++">
           <i class="bx bx-chevron-right"></i>
         </button>
@@ -495,6 +666,13 @@ const isHourTop = (slot) => slot % 2 === 0
               :style="blockDragGhostStyle"
             ></div>
 
+            <!-- Resize ghost -->
+            <div
+              v-if="resizing && resizeDayIdx === activeMobileDay && resizeGhostStyle"
+              class="cal-resize-ghost"
+              :style="resizeGhostStyle"
+            ></div>
+
             <!-- Bloques del día activo -->
             <template v-for="item in groupedByDay[activeMobileDay]"
                       :key="item.type === 'group' ? item.id : item.window.id">
@@ -506,8 +684,8 @@ const isHourTop = (slot) => slot % 2 === 0
                 :col="0"
                 :total-cols="1"
                 :specialists="specialists"
-                @click="$emit('group-select', item)"
-                @mousedown.stop="!isMobile && onGroupDragStart(item, activeMobileDay, $event)"
+                @click="onGroupClick(item)"
+                @mousedown.stop="onGroupDragStart(item, activeMobileDay, $event)"
               />
               <WindowBlock
                 v-else
@@ -518,10 +696,42 @@ const isHourTop = (slot) => slot % 2 === 0
                 :base-hour="BASE_HOUR"
                 :col="0"
                 :total-cols="1"
-                @click="$emit('select', item.window)"
-                @mousedown.stop="!isMobile && onBlockDragStart(item.window, activeMobileDay, $event)"
+                :selectable="selectable"
+                @click="onBlockClick(item.window)"
+                @mousedown.stop="onBlockDragStart(item.window, activeMobileDay, $event)"
+                @resize-start="onResizeStart(item.window, activeMobileDay, $event)"
               />
             </template>
+          </div>
+        </div>
+      </div>
+    </template>
+
+    <!-- ── MES: grid mensual ── -->
+    <template v-else-if="viewMode === 'month'">
+      <div class="mcal">
+        <div class="mcal__header">
+          <div v-for="label in DAY_LABELS" :key="label" class="mcal__header-cell">{{ label }}</div>
+        </div>
+        <div class="mcal__body">
+          <div v-for="(week, ri) in monthWeeks" :key="ri" class="mcal__row">
+            <button
+              v-for="cell in week"
+              :key="cell.date"
+              class="mcal__cell"
+              :class="{
+                'mcal__cell--other': !cell.isCurrentMonth,
+                'mcal__cell--today': cell.isToday,
+                'mcal__cell--weekend': cell.isWeekend && !cell.isToday,
+              }"
+              @click="$emit('select-day', cell.date)"
+            >
+              <span class="mcal__day">{{ cell.dayNum }}</span>
+              <div v-if="cell.total > 0" class="mcal__dots">
+                <span v-if="cell.open > 0" class="mcal__dot mcal__dot--open">{{ cell.open }}</span>
+                <span v-if="cell.closed > 0" class="mcal__dot mcal__dot--closed">{{ cell.closed }}</span>
+              </div>
+            </button>
           </div>
         </div>
       </div>
@@ -614,7 +824,7 @@ const isHourTop = (slot) => slot % 2 === 0
                 :col="item._col"
                 :total-cols="item._totalCols"
                 :specialists="specialists"
-                @click="$emit('group-select', item)"
+                @click="onGroupClick(item)"
                 @mousedown.stop="onGroupDragStart(item, dayIdx, $event)"
               />
               <WindowBlock
@@ -626,9 +836,11 @@ const isHourTop = (slot) => slot % 2 === 0
                 :base-hour="BASE_HOUR"
                 :col="item._col"
                 :total-cols="item._totalCols"
+                :selectable="selectable"
                 :data-window-id="item.window.id"
-                @click="$emit('select', item.window)"
+                @click="onBlockClick(item.window)"
                 @mousedown.stop="onBlockDragStart(item.window, dayIdx, $event)"
+                @resize-start="onResizeStart(item.window, dayIdx, $event)"
               />
             </template>
 
@@ -637,6 +849,13 @@ const isHourTop = (slot) => slot % 2 === 0
               v-if="blockDragging && draggedTargetDay === dayIdx && blockDragGhostStyle"
               class="cal-drag-ghost"
               :style="blockDragGhostStyle"
+            ></div>
+
+            <!-- Resize ghost -->
+            <div
+              v-if="resizing && resizeDayIdx === dayIdx && resizeGhostStyle"
+              class="cal-resize-ghost"
+              :style="resizeGhostStyle"
             ></div>
           </div>
         </div>
@@ -889,6 +1108,18 @@ const isHourTop = (slot) => slot % 2 === 0
   pointer-events: none;
 }
 
+/* ========== Resize ghost ========== */
+.cal-resize-ghost {
+  position: absolute;
+  left: 3%;
+  width: 92%;
+  background: rgba(42, 199, 143, 0.12);
+  border: 2px dashed rgba(42, 199, 143, 0.5);
+  border-radius: 4px;
+  z-index: 14;
+  pointer-events: none;
+}
+
 /* ========== Mobile preselection ========== */
 .cal-col__cell--preselected {
   background: rgba(42, 199, 143, 0.1) !important;
@@ -1022,6 +1253,148 @@ const isHourTop = (slot) => slot % 2 === 0
   .cal-header__label { font-size: 0.52rem; }
   .cal-gutter__label { font-size: 0.5rem; }
   .cal-drag__label { font-size: 0.6rem; }
+}
+
+/* ========== Month grid ========== */
+.mcal {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.mcal__header {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  background: #252839;
+  border-bottom: 1px solid #3b3f54;
+}
+
+.mcal__header-cell {
+  padding: 0.5rem 0;
+  text-align: center;
+  font-size: 0.65rem;
+  font-weight: 600;
+  color: #6c7293;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.mcal__body {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.mcal__row {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  flex: 1;
+  min-height: 0;
+  border-bottom: 1px solid #33374a;
+}
+
+.mcal__row:last-child {
+  border-bottom: none;
+}
+
+.mcal__cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  padding: 0.4rem 0.25rem;
+  gap: 0.25rem;
+  border-right: 1px solid #33374a;
+  background: #292d3e;
+  cursor: pointer;
+  border-top: none;
+  border-bottom: none;
+  border-left: none;
+  transition: background 0.12s;
+  min-height: 3.5rem;
+}
+
+.mcal__cell:last-child {
+  border-right: none;
+}
+
+.mcal__cell:hover {
+  background: rgba(42, 199, 143, 0.06);
+}
+
+.mcal__cell--other {
+  background: #242736;
+}
+
+.mcal__cell--other .mcal__day {
+  color: #4a4e66;
+}
+
+.mcal__cell--weekend:not(.mcal__cell--today) {
+  background: #262938;
+}
+
+.mcal__cell--today {
+  background: rgba(42, 199, 143, 0.08);
+}
+
+.mcal__cell--today .mcal__day {
+  color: var(--primary-500);
+  font-weight: 700;
+}
+
+.mcal__day {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #c8cdd8;
+  line-height: 1;
+}
+
+.mcal__dots {
+  display: flex;
+  gap: 0.2rem;
+  align-items: center;
+}
+
+.mcal__dot {
+  font-size: 0.55rem;
+  font-weight: 700;
+  padding: 0.1rem 0.3rem;
+  border-radius: 4px;
+  line-height: 1;
+}
+
+.mcal__dot--open {
+  background: rgba(42, 199, 143, 0.18);
+  color: var(--primary-500);
+}
+
+.mcal__dot--closed {
+  background: rgba(96, 125, 234, 0.15);
+  color: #607dea;
+}
+
+@media (max-width: 768px) {
+  .mcal__cell {
+    padding: 0.3rem 0.15rem;
+    min-height: 2.8rem;
+  }
+
+  .mcal__day {
+    font-size: 0.75rem;
+  }
+
+  .mcal__dot {
+    font-size: 0.5rem;
+    padding: 0.08rem 0.2rem;
+  }
+
+  .mcal__header-cell {
+    font-size: 0.55rem;
+    padding: 0.35rem 0;
+  }
 }
 
 @media (max-width: 480px) {

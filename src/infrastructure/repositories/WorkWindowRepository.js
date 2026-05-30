@@ -19,9 +19,8 @@ export const WorkWindowRepository = {
       windows: list.map(w => ({
         specialist_id: w.specialistId,
         application_id: w.applicationId,
-        start_time: w.startTime,
-        end_time: w.endTime,
-        scheduled_date: w.scheduledDate,
+        starts_at: w.startsAt,
+        ends_at: w.endsAt,
         inherits_on_reopen: w.inheritsOnReopen ?? false,
       })),
     })
@@ -40,11 +39,10 @@ export const WorkWindowRepository = {
     await client.post(`/work-windows/${id}/close`)
   },
 
-  async update(id, { startTime = null, endTime = null, scheduledDate = null, note = null } = {}) {
+  async update(id, { startsAt = null, endsAt = null, note = null } = {}) {
     const payload = {}
-    if (startTime != null) payload.start_time = startTime
-    if (endTime != null) payload.end_time = endTime
-    if (scheduledDate != null) payload.scheduled_date = scheduledDate
+    if (startsAt != null) payload.starts_at = startsAt
+    if (endsAt != null) payload.ends_at = endsAt
     if (note != null) payload.note = note
     const { data } = await client.patch(`/work-windows/${id}`, payload)
     return new WorkWindow(data)

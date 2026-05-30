@@ -1,6 +1,7 @@
 <script setup>
 import { ref } from 'vue'
 import { recoverPasswordUseCase } from '@/application/use-cases/auth/RecoverPasswordUseCase'
+import LoginBanner from '@/presentation/components/LoginBanner.vue'
 
 const email = ref('')
 const successMessage = ref('')
@@ -25,38 +26,49 @@ const handleSubmit = async () => {
 </script>
 
 <template>
-  <main class="login-page">
-    <div class="login-card login-card--narrow">
+  <main class="auth-page">
+    <div class="auth-card">
 
-      <div class="login-card__banner">
-        <h3>TYFLOW</h3>
-        <p>Recupera el acceso a tu cuenta.</p>
-      </div>
+      <LoginBanner />
 
-      <div class="login-card__form">
-        <h1>Recuperar Contrasena</h1>
-        <p class="form-description">Ingresa tu correo electronico y te enviaremos un enlace para restablecer tu contrasena.</p>
+      <div class="auth-form">
+        <h1 class="auth-form__title">Recuperar Contrasena</h1>
+        <p class="auth-form__desc">Ingresa tu correo electronico y te enviaremos un enlace para restablecer tu contrasena.</p>
 
-        <form @submit.prevent="handleSubmit">
-          <label for="email">Correo Electronico</label>
-          <input
-            v-model="email"
-            type="email"
-            id="email"
-            placeholder="correo@ejemplo.com"
-            required
-          >
+        <form @submit.prevent="handleSubmit" class="auth-form__body">
+          <div class="form-group">
+            <label for="email">Correo Electronico</label>
+            <input
+              v-model="email"
+              type="email"
+              id="email"
+              placeholder="correo@ejemplo.com"
+              required
+            >
+          </div>
 
-          <p v-if="errorMessage" class="errorMessage">{{ errorMessage }}</p>
-          <p v-if="successMessage" class="successMessage">{{ successMessage }}</p>
+          <Transition name="error-fade">
+            <div v-if="errorMessage" class="auth-alert auth-alert--error">
+              <i class='bx bx-error-circle'></i>
+              <span>{{ errorMessage }}</span>
+            </div>
+          </Transition>
 
-          <button type="submit" class="btn-submit" :disabled="cargando">
+          <Transition name="error-fade">
+            <div v-if="successMessage" class="auth-alert auth-alert--success">
+              <i class='bx bx-check-circle'></i>
+              <span>{{ successMessage }}</span>
+            </div>
+          </Transition>
+
+          <button type="submit" class="auth-btn" :disabled="cargando">
+            <i v-if="cargando" class='bx bx-loader-alt bx-spin'></i>
             {{ cargando ? 'Enviando...' : 'Enviar Enlace' }}
           </button>
         </form>
 
-        <div class="form-footer">
-          <RouterLink to="/" class="form-link">Volver al inicio de sesion</RouterLink>
+        <div class="auth-footer">
+          <RouterLink to="/" class="auth-link">Volver al inicio de sesion</RouterLink>
         </div>
       </div>
 
@@ -65,8 +77,9 @@ const handleSubmit = async () => {
 </template>
 
 <style scoped>
-.login-page {
+.auth-page {
   min-height: 100vh;
+  min-height: 100dvh;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -74,7 +87,7 @@ const handleSubmit = async () => {
   padding: 1rem;
 }
 
-.login-card {
+.auth-card {
   display: grid;
   grid-template-columns: 1fr 1fr;
   width: 100%;
@@ -85,127 +98,196 @@ const handleSubmit = async () => {
   box-shadow: var(--shadow-lg);
 }
 
-.login-card__form {
+.auth-form {
   display: flex;
   flex-direction: column;
   padding: 3rem;
   justify-content: center;
 }
 
-.login-card__form h1 {
+.auth-form__title {
   text-align: center;
   color: var(--primary-500);
   margin-bottom: 0.75rem;
   font-size: 1.8rem;
 }
 
-.form-description {
+.auth-form__desc {
   text-align: center;
   color: var(--text-secondary);
   margin-bottom: 1.5rem;
   font-size: 0.9rem;
-  line-height: 1.4;
+  line-height: 1.5;
 }
 
-.login-card__form label {
-  margin-top: 1rem;
-  margin-bottom: 0.5rem;
+.auth-form__body {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.form-group label {
   font-weight: 600;
   color: var(--text-main);
+  font-size: 0.9rem;
 }
 
-.login-card__form input {
+.form-group input {
   width: 100%;
-  padding: 12px;
-  border: 1px solid #d1d5db;
+  padding: 0.75rem;
+  border: 1px solid var(--border-light);
   border-radius: var(--radius-md);
   font-size: 1rem;
+  background: var(--bg-main);
+  color: var(--text-main);
+  transition: border-color 0.2s;
 }
 
-.btn-submit {
-  padding: 15px;
-  margin-top: 2rem;
-  width: 100%;
+.form-group input:focus {
+  outline: none;
+  border-color: var(--primary-500);
+}
+
+/* Alert */
+.auth-alert {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem;
+  border-radius: var(--radius-md);
+  font-size: 0.85rem;
+  font-weight: 600;
+  border-left: 3px solid;
+}
+
+.auth-alert--error {
+  background-color: var(--error-bg);
+  color: var(--error-text);
+  border-left-color: var(--error-500);
+}
+
+.auth-alert--success {
+  background-color: var(--success-bg);
+  color: var(--success-text);
+  border-left-color: #10B981;
+}
+
+.auth-alert i {
+  font-size: 1.2rem;
+  flex-shrink: 0;
+}
+
+/* Submit button */
+.auth-btn {
+  padding: 0.85rem;
+  margin-top: 0.5rem;
   background-color: var(--primary-500);
   color: white;
   border: none;
   border-radius: var(--radius-md);
   cursor: pointer;
-  font-weight: bold;
+  font-weight: 700;
   font-size: 1rem;
-  transition: background 0.3s;
+  transition: background 0.2s, transform 0.1s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
 }
 
-.btn-submit:hover:not(:disabled) {
+.auth-btn:hover:not(:disabled) {
   background-color: var(--primary-600);
 }
 
-.btn-submit:disabled {
+.auth-btn:active:not(:disabled) {
+  transform: scale(0.99);
+}
+
+.auth-btn:disabled {
   opacity: 0.6;
   cursor: not-allowed;
 }
 
-.login-card__banner {
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  align-items: center;
-  background: var(--primary-gradient);
-  padding: 60px;
-  color: white;
-  text-align: center;
-}
-
-.login-card__banner h3 {
-  font-size: 2.5rem;
-  margin-bottom: 1rem;
-}
-
-.errorMessage {
-  color: var(--error-500);
-  margin-top: 1rem;
-  text-align: center;
-  font-weight: bold;
-}
-
-.successMessage {
-  color: var(--success-text);
-  background-color: var(--success-bg);
-  margin-top: 1rem;
-  padding: 0.75rem 1rem;
-  border-radius: var(--radius-md);
-  text-align: center;
-  font-weight: 600;
-}
-
-.form-footer {
+/* Footer */
+.auth-footer {
   margin-top: 1.5rem;
   text-align: center;
 }
 
-.form-link {
+.auth-link {
   color: var(--primary-500);
   font-weight: 600;
   font-size: 0.9rem;
+  transition: color 0.2s;
 }
 
-.form-link:hover {
+.auth-link:hover {
   text-decoration: underline;
+  color: var(--primary-600);
 }
 
+/* Transitions */
+.error-fade-enter-active { animation: slideDown 0.25s ease-out; }
+.error-fade-leave-active { animation: slideDown 0.2s ease-in reverse; }
+
+@keyframes slideDown {
+  from { opacity: 0; transform: translateY(-8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Mobile */
 @media (max-width: 768px) {
-  .login-page { padding: 0; align-items: flex-start; }
-  .login-card {
+  .auth-page {
+    padding: 0;
+    align-items: stretch;
+  }
+
+  .auth-card {
     grid-template-columns: 1fr;
     border-radius: 0;
     min-height: 100vh;
+    min-height: 100dvh;
     box-shadow: none;
   }
-  .login-card__banner { padding: 40px 20px; order: 1; }
-  .login-card__banner h3 { font-size: 2rem; }
-  .login-card__form { padding: 2rem; order: 2; }
-  .login-card__form h1 { font-size: 1.5rem; }
-  .login-card__form input { padding: 14px; font-size: 16px; }
-  .btn-submit { margin-top: 1.5rem; padding: 18px; font-size: 1.1rem; }
+
+  .auth-form {
+    padding: 2rem 1.5rem;
+    order: 2;
+  }
+
+  .auth-form__title {
+    font-size: 1.5rem;
+  }
+
+  .auth-form__desc {
+    font-size: 0.85rem;
+  }
+
+  .form-group input {
+    padding: 0.85rem;
+    font-size: 16px;
+  }
+
+  .auth-btn {
+    margin-top: 1rem;
+    padding: 1rem;
+    font-size: 1.05rem;
+  }
+}
+
+@media (max-width: 390px) {
+  .auth-form {
+    padding: 1.5rem 1rem;
+  }
+
+  .auth-form__title {
+    font-size: 1.35rem;
+  }
 }
 </style>

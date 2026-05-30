@@ -17,3 +17,5 @@ Supabase Data Base
 -- ideas:
 --- Pueden estar asociadas a una relación entre application y specialist.
 --- Cada asignación debe evaluar varias columans de otras tablas para detectar la disponibilidad del analista, y revisar si esto es cumple en la tabla de assigment_decision
+
+

@@ -5,15 +5,15 @@ import { computed } from 'vue'
  * Windows are grouped when they share the same scheduledDate
  * and their startHour/endHour are identical (or overlap > 80%).
  *
- * Returns: Array[7] of arrays, each containing either:
+ * Returns: Array[days] of arrays, each containing either:
  *   - { type: 'single', window, _col, _totalCols }
- *   - { type: 'group', windows: [...], startHour, endHour, _col, _totalCols }
+ *   - { type: 'group', windows: [...], startHour, endHour, _col, _totalCols, id }
  */
 export function useWindowGroups(windowsByDay) {
   return computed(() => {
     return windowsByDay.value.map(dayWindows => {
       if (dayWindows.length <= 1) {
-        return dayWindows.map(w => ({ type: 'single', window: w, ...w }))
+        return dayWindows.map(w => ({ type: 'single', window: w, _col: 0, _totalCols: 1 }))
       }
 
       // Group by similar time ranges
@@ -36,7 +36,7 @@ export function useWindowGroups(windowsByDay) {
         }
 
         if (members.length === 1) {
-          groups.push({ type: 'single', window: a, ...a })
+          groups.push({ type: 'single', window: a, _col: 0, _totalCols: 1 })
         } else {
           const startHour = Math.min(...members.map(m => m.startHour))
           const endHour = Math.max(...members.map(m => m.endHour))
@@ -46,6 +46,8 @@ export function useWindowGroups(windowsByDay) {
             startHour,
             endHour,
             id: `group-${members.map(m => m.id).join('-')}`,
+            _col: 0,
+            _totalCols: 1,
           })
         }
       }
@@ -57,22 +59,22 @@ export function useWindowGroups(windowsByDay) {
         return aStart - bStart
       })
 
-      const placed = []
+      const colEndTimes = []
       for (const block of sorted) {
         const bStart = block.type === 'group' ? block.startHour : block.window.startHour
         const bEnd = block.type === 'group' ? block.endHour : block.window.endHour
-        let col = 0
-        for (const p of placed) {
-          const pStart = p.type === 'group' ? p.startHour : p.window.startHour
-          const pEnd = p.type === 'group' ? p.endHour : p.window.endHour
-          if (bStart < pEnd && bEnd > pStart && p._col === col) col++
+        let assignedCol = colEndTimes.findIndex(endTime => endTime <= bStart)
+        if (assignedCol === -1) {
+          assignedCol = colEndTimes.length
+          colEndTimes.push(bEnd)
+        } else {
+          colEndTimes[assignedCol] = bEnd
         }
-        block._col = col
-        placed.push(block)
+        block._col = assignedCol
       }
 
-      const maxCols = placed.length > 0 ? Math.max(...placed.map(p => p._col)) + 1 : 1
-      for (const block of sorted) block._totalCols = maxCols
+      const totalCols = colEndTimes.length || 1
+      for (const block of sorted) block._totalCols = totalCols
 
       return sorted
     })

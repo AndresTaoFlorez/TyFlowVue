@@ -14,20 +14,15 @@ export async function rescheduleWorkWindowUseCase(window, { startTime, endTime, 
     throw new WorkWindowError('Se requiere hora de inicio y fin.')
   }
 
-  const formattedStart = WorkWindow.formatTimeTz(startTime)
-  const formattedEnd = WorkWindow.formatTimeTz(endTime)
+  const date = targetDate || window.scheduledDate
 
-  const updatePayload = {
-    startTime: formattedStart,
-    endTime: formattedEnd,
-  }
-
-  if (targetDate && targetDate !== window.scheduledDate) {
-    updatePayload.scheduledDate = targetDate
+  const payload = {
+    startsAt: WorkWindow.toTimestampTz(date, startTime),
+    endsAt: WorkWindow.toTimestampTz(date, endTime),
   }
 
   try {
-    return await WorkWindowRepository.update(window.id, updatePayload)
+    return await WorkWindowRepository.update(window.id, payload)
   } catch (e) {
     throw WorkWindowError.fromHttp(e, 'Error al mover la ventana.')
   }

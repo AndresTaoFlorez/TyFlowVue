@@ -10,6 +10,7 @@ const authStore = useAuthStore()
 
 const email = ref('')
 const password = ref('')
+const showPassword = ref(false)
 const errorMessage = ref('')
 const cargando = ref(false)
 const emailExiste = ref(false)
@@ -52,39 +53,62 @@ const handleSubmit = async () => {
 </script>
 
 <template>
-  <main class="login-page">
-    <div class="login-card">
+  <main class="auth-page">
+    <div class="auth-card">
 
       <LoginBanner />
 
-      <div class="login-card__form">
-        <h1>Autenticacion</h1>
-        <form @submit.prevent="handleSubmit" id="loginForm">
+      <div class="auth-form">
+        <h1 class="auth-form__title">Autenticacion</h1>
 
-          <label for="email">Usuario
-            <input v-model="email" type="email" id="email" placeholder="correo@ejemplo.com" required>
-          </label>
+        <form @submit.prevent="handleSubmit" class="auth-form__body">
+          <div class="form-group">
+            <label for="email">Usuario</label>
+            <input
+              v-model="email"
+              type="email"
+              id="email"
+              placeholder="correo@ejemplo.com"
+              required
+            >
+          </div>
 
-          <label for="password">
-            Contrasena
-            <input v-model="password" type="password" id="password" placeholder="••••••••" required>
-          </label>
+          <div class="form-group">
+            <label for="password">Contrasena</label>
+            <div class="input-wrap">
+              <input
+                v-model="password"
+                :type="showPassword ? 'text' : 'password'"
+                id="password"
+                placeholder="••••••••"
+                required
+              >
+              <button
+                type="button"
+                class="input-wrap__toggle"
+                @click="showPassword = !showPassword"
+                tabindex="-1"
+              >
+                <i :class="['bx', showPassword ? 'bx-hide' : 'bx-show']"></i>
+              </button>
+            </div>
+          </div>
 
           <Transition name="error-fade">
-            <div v-if="errorMessage" class="login-error">
+            <div v-if="errorMessage" class="auth-alert auth-alert--error">
               <i class='bx bx-error-circle'></i>
               <span>{{ errorMessage }}</span>
             </div>
           </Transition>
 
-          <button type="submit" class="btn-submit" :disabled="cargando">
+          <button type="submit" class="auth-btn" :disabled="cargando">
             <i v-if="cargando" class='bx bx-loader-alt bx-spin'></i>
             {{ cargando ? 'Ingresando...' : 'Iniciar Sesion' }}
           </button>
         </form>
 
-        <div v-if="emailExiste" class="form-footer">
-          <RouterLink to="/forgot-password" class="form-link">¿Olvidaste tu contrasena?</RouterLink>
+        <div v-if="emailExiste" class="auth-footer">
+          <RouterLink to="/forgot-password" class="auth-link">¿Olvidaste tu contrasena?</RouterLink>
         </div>
       </div>
 
@@ -93,34 +117,9 @@ const handleSubmit = async () => {
 </template>
 
 <style scoped>
-.login-error {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.75rem 1rem;
-  background-color: var(--error-bg);
-  color: var(--error-text);
-  border-radius: var(--radius-md);
-  font-size: 0.85rem;
-  font-weight: 600;
-  border-left: 3px solid var(--error-500);
-}
-
-.login-error i {
-  font-size: 1.2rem;
-  flex-shrink: 0;
-}
-
-.error-fade-enter-active { animation: slideDown 0.25s ease-out; }
-.error-fade-leave-active { animation: slideDown 0.2s ease-in reverse; }
-
-@keyframes slideDown {
-  from { opacity: 0; transform: translateY(-8px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
-.login-page {
+.auth-page {
   min-height: 100vh;
+  min-height: 100dvh;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -128,7 +127,7 @@ const handleSubmit = async () => {
   padding: 1rem;
 }
 
-.login-card {
+.auth-card {
   display: grid;
   grid-template-columns: 1fr 1fr;
   width: 100%;
@@ -139,123 +138,215 @@ const handleSubmit = async () => {
   box-shadow: var(--shadow-lg);
 }
 
-.login-card__form {
+.auth-form {
   display: flex;
   flex-direction: column;
   padding: 3rem;
   justify-content: center;
-
-  #loginForm {
-    display: inherit;
-    flex-direction: inherit;
-    gap: 1rem;
-
-    label {
-      display: inherit;
-      flex-direction: inherit;
-      gap: 0.5rem;
-      margin: 0;
-    }
-  }
 }
 
-.login-card__form h1 {
+.auth-form__title {
   text-align: center;
   color: var(--primary-500);
   margin-bottom: 1.5rem;
   font-size: 1.8rem;
 }
 
-.login-card__form label {
-  margin-top: 1rem;
-  margin-bottom: 0.5rem;
+.auth-form__body {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.form-group label {
   font-weight: 600;
   color: var(--text-main);
+  font-size: 0.9rem;
 }
 
-.login-card__form input {
+.form-group input {
   width: 100%;
-  padding: 12px;
-  border: 1px solid #d1d5db;
+  padding: 0.75rem;
+  border: 1px solid var(--border-light);
   border-radius: var(--radius-md);
   font-size: 1rem;
+  background: var(--bg-main);
+  color: var(--text-main);
+  transition: border-color 0.2s;
 }
 
-.btn-submit {
-  padding: 15px;
-  margin-top: 1rem;
+.form-group input:focus {
+  outline: none;
+  border-color: var(--primary-500);
+}
+
+/* Password toggle wrapper */
+.input-wrap {
+  position: relative;
+}
+
+.input-wrap input {
+  padding-right: 2.75rem;
+}
+
+.input-wrap__toggle {
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: 2.75rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-secondary);
+  font-size: 1.2rem;
+  transition: color 0.2s;
+}
+
+.input-wrap__toggle:hover {
+  color: var(--primary-500);
+}
+
+/* Alert */
+.auth-alert {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem;
+  border-radius: var(--radius-md);
+  font-size: 0.85rem;
+  font-weight: 600;
+  border-left: 3px solid;
+}
+
+.auth-alert--error {
+  background-color: var(--error-bg);
+  color: var(--error-text);
+  border-left-color: var(--error-500);
+}
+
+.auth-alert--success {
+  background-color: var(--success-bg);
+  color: var(--success-text);
+  border-left-color: #10B981;
+}
+
+.auth-alert i {
+  font-size: 1.2rem;
+  flex-shrink: 0;
+}
+
+/* Submit button */
+.auth-btn {
+  padding: 0.85rem;
+  margin-top: 0.5rem;
   background-color: var(--primary-500);
   color: white;
   border: none;
   border-radius: var(--radius-md);
   cursor: pointer;
-  font-weight: bold;
+  font-weight: 700;
   font-size: 1rem;
-  transition: background 0.3s;
+  transition: background 0.2s, transform 0.1s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
 }
 
-.btn-submit:hover {
+.auth-btn:hover:not(:disabled) {
   background-color: var(--primary-600);
 }
 
-@media (max-width: 768px) {
-  .login-page {
-    padding: 0;
-    align-items: flex-start;
-  }
-
-  .login-card {
-    grid-template-columns: 1fr;
-    border-radius: 0;
-    min-height: 100vh;
-    box-shadow: none;
-  }
-
-  .login-card__form {
-    padding: 2rem;
-    order: 2;
-
-    #loginForm {
-      gap: 0.8rem;
-
-      label {
-        gap: 0.25rem;
-      }
-    }
-  }
-
-  .login-card__form h1 {
-    font-size: 1.5rem;
-  }
-
-  .login-card__form input {
-    padding: 14px;
-    font-size: 16px;
-  }
-
-  .btn-submit {
-    margin-top: 1.5rem;
-    padding: 18px;
-    width: 100%;
-    display: block;
-    font-size: 1.1rem;
-  }
-
-
+.auth-btn:active:not(:disabled) {
+  transform: scale(0.99);
 }
 
-.form-footer {
+.auth-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* Footer */
+.auth-footer {
   margin-top: 1.5rem;
   text-align: center;
 }
 
-.form-link {
+.auth-link {
   color: var(--primary-500);
   font-weight: 600;
   font-size: 0.9rem;
+  transition: color 0.2s;
 }
 
-.form-link:hover {
+.auth-link:hover {
   text-decoration: underline;
+  color: var(--primary-600);
+}
+
+/* Transitions */
+.error-fade-enter-active { animation: slideDown 0.25s ease-out; }
+.error-fade-leave-active { animation: slideDown 0.2s ease-in reverse; }
+
+@keyframes slideDown {
+  from { opacity: 0; transform: translateY(-8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Mobile */
+@media (max-width: 768px) {
+  .auth-page {
+    padding: 0;
+    align-items: stretch;
+  }
+
+  .auth-card {
+    grid-template-columns: 1fr;
+    border-radius: 0;
+    min-height: 100vh;
+    min-height: 100dvh;
+    box-shadow: none;
+  }
+
+  .auth-form {
+    padding: 2rem 1.5rem;
+    order: 2;
+  }
+
+  .auth-form__title {
+    font-size: 1.5rem;
+    margin-bottom: 1.25rem;
+  }
+
+  .form-group input {
+    padding: 0.85rem;
+    font-size: 16px; /* iOS zoom prevention */
+  }
+
+  .auth-btn {
+    margin-top: 0.5rem;
+    padding: 0.75rem;
+    font-size: 0.95rem;
+  }
+}
+
+@media (max-width: 390px) {
+  .auth-form {
+    padding: 1.5rem 1rem;
+  }
+
+  .auth-form__title {
+    font-size: 1.35rem;
+  }
 }
 </style>

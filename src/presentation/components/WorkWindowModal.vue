@@ -6,9 +6,30 @@ const props = defineProps({
   specialistName: { type: String, default: '—' },
   applicationName: { type: String, default: '—' },
   loading: { type: Boolean, default: false },
+  specialists: { type: Array, default: () => [] },
+  applications: { type: Array, default: () => [] },
 })
 
-const emit = defineEmits(['close', 'open', 'close-session', 'delete', 'update'])
+const emit = defineEmits(['close', 'open', 'close-session', 'delete', 'update', 'add-window'])
+
+// ---- Add to same schedule ----
+const addSpecialistId = ref('')
+const addApplicationId = ref('')
+
+const canAdd = computed(() => addSpecialistId.value && addApplicationId.value)
+
+function submitAdd() {
+  if (!canAdd.value) return
+  emit('add-window', {
+    scheduledDate: props.window.scheduledDate,
+    startTime: props.window.startTime,
+    endTime: props.window.endTime,
+    specialistId: addSpecialistId.value,
+    applicationId: addApplicationId.value,
+  })
+  addSpecialistId.value = ''
+  addApplicationId.value = ''
+}
 
 // ---- Edit mode ----
 const editing = ref(false)
@@ -41,8 +62,8 @@ function saveEdit() {
   emit('update', props.window, payload)
 }
 
-// Reset edit mode when window changes or modal closes
-watch(() => props.window?.id, () => { editing.value = false })
+// Reset edit mode and add fields when window changes or modal closes
+watch(() => props.window?.id, () => { editing.value = false; addSpecialistId.value = ''; addApplicationId.value = '' })
 watch(() => props.loading, (val) => { if (!val && editing.value) editing.value = false })
 
 const hasTimeChanged = computed(() => {
@@ -179,6 +200,29 @@ const statusClass = computed(() => props.window.isSessionOpen ? 'open' : 'closed
         <!-- Inheritance badge -->
         <div v-if="window.inheritsOnReopen" class="wm__badge">
           <i class='bx bx-transfer'></i> Hereda conteo al reabrir
+        </div>
+
+        <!-- Add to same schedule -->
+        <div v-if="!editing && specialists.length" class="wm__add-section">
+          <div class="wm__divider"></div>
+          <span class="wm__add-title">Agregar al mismo horario</span>
+          <div class="wm__add-row">
+            <select v-model="addSpecialistId" class="wm__add-select" :disabled="loading">
+              <option value="">Especialista</option>
+              <option v-for="s in specialists" :key="s.specialistId" :value="s.specialistId">
+                {{ s.fullName }}
+              </option>
+            </select>
+            <select v-model="addApplicationId" class="wm__add-select" :disabled="loading">
+              <option value="">Aplicación</option>
+              <option v-for="a in applications" :key="a.id" :value="a.id">
+                {{ a.name }}
+              </option>
+            </select>
+            <button class="wm__btn wm__btn--primary wm__btn--sm" :disabled="!canAdd || loading" @click="submitAdd">
+              <i class='bx bx-plus'></i>
+            </button>
+          </div>
         </div>
       </div>
 
@@ -486,6 +530,48 @@ const statusClass = computed(() => props.window.isSessionOpen ? 'open' : 'closed
   padding: 4px 10px;
   border-radius: var(--radius-full);
   width: fit-content;
+}
+
+/* ===== Add to same schedule ===== */
+.wm__add-section {
+  margin-top: 4px;
+}
+
+.wm__add-title {
+  display: block;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 8px;
+}
+
+.wm__add-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.wm__add-select {
+  flex: 1;
+  padding: 6px 8px;
+  font-size: 12px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  background: white;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.wm__add-select:focus {
+  outline: none;
+  border-color: var(--primary-500);
+}
+
+.wm__btn--sm {
+  padding: 6px 10px;
+  font-size: 14px;
 }
 
 /* ===== Footer ===== */
