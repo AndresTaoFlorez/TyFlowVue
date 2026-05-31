@@ -6,6 +6,7 @@ const props = defineProps({
   group: { type: Object, default: null },
   specialists: { type: Array, default: () => [] },
   applications: { type: Array, default: () => [] },
+  allWindows: { type: Array, default: () => [] },
   loading: { type: Boolean, default: false },
   cutWindowIds: { type: Object, default: () => new Set() },
 })
@@ -16,6 +17,18 @@ const specName = (w) => props.specialists.find(s => s.specialistId === w.special
 const findApp = (w) => props.applications.find(a => a.id === w.applicationId)
 const appName = (w) => findApp(w)?.name || w.applicationId
 const appColor = (w) => { const a = findApp(w); return a?.color || a?.theme?.color || '#2AC78F' }
+
+const inheritLabel = (w) => {
+  if (!w.inheritedFromWindowId) return ''
+  const parent = props.allWindows.find(p => p.id === w.inheritedFromWindowId)
+  if (parent) {
+    const name = specName(parent)
+    const time = parent.timeRange
+    const dayNum = parent.scheduledDate ? parseInt(parent.scheduledDate.split('-')[2], 10) : ''
+    return `← ${name} · ${dayNum} ${time}`
+  }
+  return '← (otra semana)'
+}
 
 const statusLabel = (w) => w.isActive ? 'Activa' : 'Inactiva'
 const statusClass = (w) => w.isActive ? 'item--active' : 'item--inactive'
@@ -97,6 +110,9 @@ function onCtxAction(action) {
               <span class="item__status" :class="w.isActive ? 'item__status--active' : 'item__status--inactive'">
                 {{ statusLabel(w) }}
               </span>
+            </span>
+            <span v-if="inheritLabel(w)" class="item__inherit-label" :title="inheritLabel(w)">
+              {{ inheritLabel(w) }}
             </span>
           </div>
           <div class="item__actions">
@@ -296,6 +312,16 @@ function onCtxAction(action) {
   font-size: 0.8rem;
   opacity: 0.5;
   flex-shrink: 0;
+}
+
+.item__inherit-label {
+  font-size: 0.62rem;
+  color: var(--text-secondary);
+  opacity: 0.7;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1;
 }
 
 .item__app {

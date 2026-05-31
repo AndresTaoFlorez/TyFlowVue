@@ -713,7 +713,7 @@ onUnmounted(() => {
 
     <!-- Panel grupo -->
     <WindowGroupPanel v-if="selectedGroup" :group="selectedGroup" :specialists="userStore.users"
-      :applications="userStore.applications" :loading="modalLoading" :cut-window-ids="cutWindowIds"
+      :applications="userStore.applications" :all-windows="calStore.windows" :loading="modalLoading" :cut-window-ids="cutWindowIds"
       @close="selectedGroup = null"
       @select="onGroupSelect" @delete="handleDelete"
       @delete-group="handleDeleteGroup" @toggle="handleToggle"

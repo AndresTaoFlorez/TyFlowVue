@@ -12,6 +12,7 @@ const props = defineProps({
   selected: { type: Boolean, default: false },
   cut: { type: Boolean, default: false },
   inherited: { type: Boolean, default: false },
+  inheritLabel: { type: String, default: '' },
 })
 
 const resolvedColor = () => props.appColor || '#2AC78F'
@@ -69,6 +70,7 @@ const onHandleDown = (direction, e) => {
     </span>
     <span v-if="height() > 42" class="wb__time">{{ window.timeRange }}</span>
     <span v-if="height() > 60" class="wb__app">{{ applicationName }}</span>
+    <span v-if="inheritLabel && height() > 48" class="wb__inherit-label" :title="inheritLabel">{{ inheritLabel }}</span>
 
     <!-- Resize handle bottom -->
     <div
@@ -222,6 +224,18 @@ const onHandleDown = (direction, e) => {
   font-size: 0.72rem;
   opacity: 0.85;
   flex-shrink: 0;
+}
+
+.wb__inherit-label {
+  font-size: 0.5rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.45);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: auto;
+  line-height: 1;
+  letter-spacing: 0.01em;
 }
 
 .wb__time {

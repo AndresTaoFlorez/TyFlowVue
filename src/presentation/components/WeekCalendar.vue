@@ -963,6 +963,28 @@ const specName = (w) => findSpecialist(w.specialistId)?.fullName || w.specialist
 const appName = (w) => findApp(w.applicationId)?.name || w.applicationId
 const appColor = (w) => { const a = findApp(w.applicationId); return a?.color || a?.theme?.color || null }
 
+// Build a map of windowId → parent label for inheritance indicator
+const inheritLabelMap = computed(() => {
+  const map = new Map()
+  const windowById = new Map()
+  for (const w of props.windows) windowById.set(w.id, w)
+  for (const w of props.windows) {
+    if (!w.inheritedFromWindowId) continue
+    const parent = windowById.get(w.inheritedFromWindowId)
+    if (parent) {
+      const name = specName(parent)
+      const time = parent.timeRange
+      const date = parent.scheduledDate
+      const dayNum = date ? parseInt(date.split('-')[2], 10) : ''
+      map.set(w.id, `← ${name} · ${dayNum} ${time}`)
+    } else {
+      map.set(w.id, '← (otra semana)')
+    }
+  }
+  return map
+})
+const inheritLabel = (w) => inheritLabelMap.value.get(w.id) || ''
+
 const formatHour = (h) => {
   const suffix = h < 12 ? 'AM' : 'PM'
   const display = h === 0 ? 12 : h > 12 ? h - 12 : h
@@ -1221,6 +1243,7 @@ const monthWeeks = computed(() => {
                 :selected="selectedWindowIds.has((item.window._originalWindow || item.window).id)"
                 :cut="cutWindowIds.has((item.window._originalWindow || item.window).id)"
                 :inherited="!!(item.window.inheritedFromWindowId || item.window.inheritsOnReopen)"
+                :inherit-label="inheritLabel(item.window)"
                 @click="onBlockClick(item.window, $event)"
                 @contextmenu.prevent="onWindowContext(item.window, $event)"
                 @touchstart.passive="onWindowLongPress(item.window, $event)"
@@ -1420,6 +1443,7 @@ const monthWeeks = computed(() => {
                 :selected="selectedWindowIds.has((item.window._originalWindow || item.window).id)"
                 :cut="cutWindowIds.has((item.window._originalWindow || item.window).id)"
                 :inherited="!!(item.window.inheritedFromWindowId || item.window.inheritsOnReopen)"
+                :inherit-label="inheritLabel(item.window)"
                 :data-window-id="item.window.id"
                 @click="onBlockClick(item.window, $event)"
                 @contextmenu.prevent="onWindowContext(item.window, $event)"

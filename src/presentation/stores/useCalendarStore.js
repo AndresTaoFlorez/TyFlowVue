@@ -280,6 +280,14 @@ export const useCalendarStore = defineStore('calendar', () => {
     _cache.delete(`${fromDate}|${toDate}`)
   }
 
+  /** Remove specific window IDs from ALL cached weeks (for cross-week cut+paste). */
+  function _purgeFromAllCaches(idSet) {
+    for (const [key, cached] of _cache.entries()) {
+      const filtered = cached.filter(w => !idSet.has(w.id))
+      if (filtered.length !== cached.length) _cache.set(key, filtered)
+    }
+  }
+
   function _addDays(dateStr, days) {
     const d = new Date(dateStr + 'T12:00:00')
     d.setDate(d.getDate() + days)
@@ -574,9 +582,10 @@ export const useCalendarStore = defineStore('calendar', () => {
     const snapshot = [...windows.value]
     const originals = ids.map(id => _findOriginal(id)).filter(Boolean)
 
-    // Optimistic
+    // Optimistic — remove from current view AND all cached weeks
     const deleteSet = new Set(ids)
     windows.value = windows.value.filter(w => !deleteSet.has(w.id))
+    _purgeFromAllCaches(deleteSet)
     _invalidateCache()
 
     try {
