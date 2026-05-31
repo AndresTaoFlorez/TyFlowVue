@@ -29,8 +29,14 @@ export class WorkWindow {
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
   }
 
-  get isSessionOpen() {
-    return this.closedAt == null && this.deletedAt == null
+  get endDate() {
+    if (!this.endsAt) return this.scheduledDate
+    const d = new Date(this.endsAt)
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  }
+
+  get spansMultipleDays() {
+    return this.scheduledDate !== this.endDate
   }
 
   get startTime() {
@@ -86,21 +92,10 @@ export class WorkWindow {
     }
   }
 
-  withOpened() {
+  withToggled(newIsActive) {
     return new WorkWindow({
       ...this._toRaw(),
-      is_active: true,
-      closed_at: null,
-      closing_count: null,
-    })
-  }
-
-  withClosed() {
-    return new WorkWindow({
-      ...this._toRaw(),
-      is_active: false,
-      closed_at: new Date().toISOString(),
-      closing_count: this.currentCount,
+      is_active: newIsActive,
     })
   }
 

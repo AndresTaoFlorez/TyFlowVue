@@ -1,87 +1,179 @@
 <script setup>
-import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
+import { ref, nextTick, onMounted, onUnmounted } from 'vue'
+import { storeToRefs } from 'pinia'
 import { useAuthStore } from '@/presentation/stores/useAuthStore'
 import { useUserStore } from '@/presentation/stores/useUserStore'
-import { fetchWorkWindowsUseCase } from '@/application/use-cases/work-windows/FetchWorkWindowsUseCase'
-import { createWorkWindowUseCase } from '@/application/use-cases/work-windows/CreateWorkWindowUseCase'
-import { openWorkWindowUseCase } from '@/application/use-cases/work-windows/OpenWorkWindowUseCase'
-import { closeWorkWindowUseCase } from '@/application/use-cases/work-windows/CloseWorkWindowUseCase'
-import { deleteWorkWindowUseCase } from '@/application/use-cases/work-windows/DeleteWorkWindowUseCase'
-import { updateWorkWindowUseCase } from '@/application/use-cases/work-windows/UpdateWorkWindowUseCase'
-import { rescheduleWorkWindowUseCase } from '@/application/use-cases/work-windows/RescheduleWorkWindowUseCase'
-import { WorkWindow } from '@/domain/entities/WorkWindow'
+import { useCalendarStore } from '@/presentation/stores/useCalendarStore'
 import WeekCalendar from '@/presentation/components/WeekCalendar.vue'
 import WorkWindowModal from '@/presentation/components/WorkWindowModal.vue'
 import CreateWorkWindowModal from '@/presentation/components/CreateWorkWindowModal.vue'
 import WindowGroupPanel from '@/presentation/components/WindowGroupPanel.vue'
 import SectionLoader from '@/presentation/components/SectionLoader.vue'
 import ToastNotification from '@/presentation/components/ToastNotification.vue'
+import ContextMenu from '@/presentation/components/ContextMenu.vue'
 
 const authStore = useAuthStore()
 const userStore = useUserStore()
+const calStore = useCalendarStore()
 
-const windows = ref([])
-const loading = ref(false)
+const {
+  calView, weekDates, monthDates, currentMonth, weekLabel,
+  loading, windowsFiltradas,
+  filtroSpecialist, filtroApp, specOptions, appOptions, specialistsConVentana,
+  isMobile, canUndo,
+} = storeToRefs(calStore)
+
+// ---- Date picker ----
+const datePickerRef = ref(null)
+const openDatePicker = () => { datePickerRef.value?.showPicker() }
+const onDatePicked = (e) => {
+  const val = e.target.value
+  if (val) calStore.goToDate(val)
+}
+
+// ---- Ephemeral UI state (view-only, not shared) ----
 const selectedWindow = ref(null)
+const openModalInEdit = ref(false)
 const mostrarCrear = ref(false)
 const creando = ref(false)
 const errorCrear = ref('')
 const prefillData = ref(null)
-const weekOffset = ref(0)
-const dayOffset = ref(0)
-const monthOffset = ref(0)
 const modalLoading = ref(false)
 const selectedGroup = ref(null)
+const showMobileFilters = ref(false)
 
-// Vista
-const calView = ref(window.innerWidth < 768 ? 'day' : 'week')
+// Tool mode & selection
+const activeTool = ref('default') // 'default' | 'eraser' | 'select'
+const selectedWindows = ref(new Set())
 
-// Sync offsets when switching views so the same date stays visible
-watch(calView, (newView, oldView) => {
-  if (newView === 'week') {
-    if (oldView === 'day') {
-      const target = new Date()
-      target.setDate(target.getDate() + dayOffset.value)
-      const now = new Date()
-      const diffMs = target.getTime() - now.getTime()
-      weekOffset.value = Math.round(diffMs / (7 * 24 * 60 * 60 * 1000))
-    } else if (oldView === 'month') {
-      const now = new Date()
-      const target = new Date(now.getFullYear(), now.getMonth() + monthOffset.value, 1)
-      const diffMs = target.getTime() - now.getTime()
-      weekOffset.value = Math.round(diffMs / (7 * 24 * 60 * 60 * 1000))
+function setTool(tool) {
+  activeTool.value = tool
+  selectedWindows.value = new Set()
+}
+
+function onSelectionChange(ids) {
+  selectedWindows.value = ids
+}
+
+// Context menu & clipboard
+const ctxMenu = ref({ visible: false, x: 0, y: 0, items: [], target: null, targetType: null })
+const clipboard = ref(null)
+
+function closeCtxMenu() { ctxMenu.value.visible = false }
+
+function onWindowContext({ window: w, x, y }) {
+  const items = [
+    { label: 'Editar', icon: 'bx-pencil', action: 'edit' },
+    { label: w.isActive ? 'Inhabilitar' : 'Habilitar', icon: w.isActive ? 'bx-block' : 'bx-check-circle', action: 'toggle' },
+    { label: 'Copiar ventana', icon: 'bx-copy', action: 'copy' },
+    { label: 'Copiar ID', icon: 'bx-hash', action: 'copy-id' },
+    { label: 'Eliminar', icon: 'bx-trash', action: 'delete', danger: true },
+  ]
+  ctxMenu.value = { visible: true, x, y, items, target: w, targetType: 'window' }
+}
+
+function onGroupContext({ group, x, y }) {
+  const items = [
+    { label: 'Ver grupo', icon: 'bx-expand-alt', action: 'view-group' },
+    { label: 'Copiar grupo', icon: 'bx-copy', action: 'copy-group' },
+    { label: 'Eliminar grupo', icon: 'bx-trash', action: 'delete-group', danger: true },
+  ]
+  ctxMenu.value = { visible: true, x, y, items, target: group, targetType: 'group' }
+}
+
+function onCellContext({ date, time, x, y }) {
+  const items = [
+    { label: 'Crear ventana', icon: 'bx-plus', action: 'create' },
+    ...(clipboard.value ? [{ label: 'Pegar ventana', icon: 'bx-paste', action: 'paste' }] : []),
+  ]
+  ctxMenu.value = { visible: true, x, y, items, target: { date, time }, targetType: 'cell' }
+}
+
+async function handleCtxAction(action) {
+  const { target, targetType } = ctxMenu.value
+  closeCtxMenu()
+
+  if (targetType === 'window') {
+    const w = target
+    switch (action) {
+      case 'edit':
+        selectedWindow.value = null
+        openModalInEdit.value = false
+        await nextTick()
+        openModalInEdit.value = true
+        selectedWindow.value = w
+        break
+      case 'copy':
+        clipboard.value = { type: 'window', data: w }
+        showToast('Ventana copiada.')
+        break
+      case 'copy-id':
+        await navigator.clipboard.writeText(w.id)
+        showToast('ID copiado: ' + w.id)
+        break
+      case 'toggle': handleToggle(w); break
+      case 'delete': handleDelete(w); break
     }
-  } else if (newView === 'day') {
-    if (oldView === 'week') {
-      const now = new Date()
-      const day = now.getDay()
-      const toMonday = day === 0 ? -6 : 1 - day
-      dayOffset.value = toMonday + weekOffset.value * 7
-    } else if (oldView === 'month') {
-      const now = new Date()
-      const target = new Date(now.getFullYear(), now.getMonth() + monthOffset.value, 1)
-      dayOffset.value = Math.round((target.getTime() - now.getTime()) / (24 * 60 * 60 * 1000))
+  } else if (targetType === 'group') {
+    const group = target
+    switch (action) {
+      case 'view-group': selectedGroup.value = group; break
+      case 'copy-group':
+        clipboard.value = { type: 'group', data: group.windows }
+        showToast(`${group.windows.length} ventanas copiadas.`)
+        break
+      case 'delete-group': handleDeleteGroup(group); break
     }
-  } else if (newView === 'month') {
-    if (oldView === 'week') {
-      const now = new Date()
-      const monday = new Date(now)
-      const day = monday.getDay()
-      const diff = day === 0 ? -6 : 1 - day
-      monday.setDate(monday.getDate() + diff + weekOffset.value * 7)
-      monthOffset.value = (monday.getFullYear() - now.getFullYear()) * 12 + (monday.getMonth() - now.getMonth())
-    } else if (oldView === 'day') {
-      const now = new Date()
-      const target = new Date()
-      target.setDate(target.getDate() + dayOffset.value)
-      monthOffset.value = (target.getFullYear() - now.getFullYear()) * 12 + (target.getMonth() - now.getMonth())
+  } else if (targetType === 'cell') {
+    const { date, time } = target
+    const endSlot = parseInt(time.split(':')[0]) * 2 + (parseInt(time.split(':')[1]) >= 30 ? 1 : 0) + 2
+    const endH = Math.floor(endSlot / 2)
+    const endM = (endSlot % 2) * 30
+    const endTime = `${String(endH).padStart(2, '0')}:${String(endM).padStart(2, '0')}`
+    switch (action) {
+      case 'create':
+        prefillData.value = { dates: [date], startTime: time, endTime }
+        mostrarCrear.value = true
+        break
+      case 'paste':
+        if (!clipboard.value) break
+        const pasteWindows = clipboard.value.type === 'group' ? clipboard.value.data : [clipboard.value.data]
+        try {
+          // Calculate offset from cell time to shift all pasted windows
+          const cellMins = parseInt(time.split(':')[0]) * 60 + parseInt(time.split(':')[1])
+          const firstW = pasteWindows[0]
+          const firstMins = parseInt(firstW.startTime.split(':')[0]) * 60 + parseInt(firstW.startTime.split(':')[1])
+          const offsetMins = cellMins - firstMins
+
+          const fmtTime = (totalMins) => {
+            const h = Math.floor(totalMins / 60)
+            const m = totalMins % 60
+            return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
+          }
+
+          const createData = pasteWindows.map(w => {
+            const wStartMins = parseInt(w.startTime.split(':')[0]) * 60 + parseInt(w.startTime.split(':')[1])
+            const wEndMins = parseInt(w.endTime.split(':')[0]) * 60 + parseInt(w.endTime.split(':')[1])
+            const newStart = Math.max(0, Math.min(wStartMins + offsetMins, 1439))
+            const newEnd = Math.max(newStart + 30, Math.min(wEndMins + offsetMins, 1440))
+            return {
+              specialistId: w.specialistId,
+              applicationId: w.applicationId,
+              startTime: fmtTime(newStart),
+              endTime: fmtTime(newEnd),
+              scheduledDate: date,
+              inheritsOnReopen: w.inheritsOnReopen || false,
+            }
+          })
+          await calStore.createWindows(createData)
+          showToast(createData.length === 1 ? 'Ventana pegada.' : `${createData.length} ventanas pegadas.`)
+        } catch (e) {
+          showToast(e.userMessage || 'Error al pegar.', 'error')
+        }
+        break
     }
   }
-})
-
-// Filtros
-const filtroSpecialist = ref('all')
-const filtroApp = ref('all')
+}
 
 // Toast
 const toastVisible = ref(false)
@@ -91,123 +183,6 @@ const showToast = (msg, type = 'success') => {
   toastMessage.value = msg
   toastType.value = type
   toastVisible.value = true
-}
-
-// ---- Specialists que tienen ventanas o son del store ----
-const specialistsConVentana = computed(() => {
-  return userStore.users.filter(u => u.specialistId)
-})
-
-// ---- Fechas visibles ----
-const weekDates = computed(() => {
-  if (calView.value === 'month') {
-    // Return the full month range (from monthDates) for API fetching
-    return monthDates.value.length ? [monthDates.value[0], monthDates.value[monthDates.value.length - 1]] : []
-  }
-  if (calView.value === 'day') {
-    const d = new Date()
-    d.setDate(d.getDate() + dayOffset.value)
-    const y = d.getFullYear()
-    const m = String(d.getMonth() + 1).padStart(2, '0')
-    const dd = String(d.getDate()).padStart(2, '0')
-    return [`${y}-${m}-${dd}`]
-  }
-  const now = new Date()
-  const monday = new Date(now)
-  const day = monday.getDay()
-  const diff = day === 0 ? -6 : 1 - day
-  monday.setDate(monday.getDate() + diff + weekOffset.value * 7)
-  monday.setHours(0, 0, 0, 0)
-  return Array.from({ length: 7 }, (_, i) => {
-    const d = new Date(monday)
-    d.setDate(monday.getDate() + i)
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-  })
-})
-
-// ---- Month grid dates (42 = 6 weeks × 7 days, starting from Monday) ----
-const monthDates = computed(() => {
-  if (calView.value !== 'month') return []
-  const now = new Date()
-  const first = new Date(now.getFullYear(), now.getMonth() + monthOffset.value, 1)
-  // Monday before (or on) the 1st
-  const day = first.getDay()
-  const toMonday = day === 0 ? -6 : 1 - day
-  const start = new Date(first)
-  start.setDate(first.getDate() + toMonday)
-  const fmt = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-  return Array.from({ length: 42 }, (_, i) => {
-    const d = new Date(start)
-    d.setDate(start.getDate() + i)
-    return fmt(d)
-  })
-})
-
-const currentMonth = computed(() => {
-  const now = new Date()
-  const d = new Date(now.getFullYear(), now.getMonth() + monthOffset.value, 1)
-  return d.getMonth()
-})
-
-const weekLabel = computed(() => {
-  const meses = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic']
-  const mesesLargo = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
-  if (calView.value === 'month') {
-    const now = new Date()
-    const d = new Date(now.getFullYear(), now.getMonth() + monthOffset.value, 1)
-    return `${mesesLargo[d.getMonth()]} ${d.getFullYear()}`
-  }
-  if (calView.value === 'day') {
-    const diasCorto = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb']
-    const diasLargo = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado']
-    const parts = weekDates.value[0].split('-')
-    const dateObj = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]))
-    const dayName = isMobile.value ? diasCorto[dateObj.getDay()] : diasLargo[dateObj.getDay()]
-    return `${dayName}, ${parseInt(parts[2])} ${meses[parseInt(parts[1]) - 1]}`
-  }
-  const first = weekDates.value[0].split('-')
-  const last = weekDates.value[6].split('-')
-  return `${parseInt(first[2])} – ${parseInt(last[2])} ${meses[parseInt(last[1]) - 1]} ${last[0]}`
-})
-
-// ---- Filtrar ventanas ----
-const windowsFiltradas = computed(() => {
-  return windows.value.filter(w => {
-    if (filtroSpecialist.value !== 'all' && w.specialistId !== filtroSpecialist.value) return false
-    if (filtroApp.value !== 'all' && w.applicationId !== filtroApp.value) return false
-    return true
-  })
-})
-
-// ---- Opciones de filtro ----
-const specOptions = computed(() => {
-  const ids = new Set(windows.value.map(w => w.specialistId))
-  return specialistsConVentana.value.filter(u => ids.has(u.specialistId))
-})
-
-const appOptions = computed(() => {
-  const ids = new Set(windows.value.map(w => w.applicationId))
-  return userStore.applications.filter(a => ids.has(a.id))
-})
-
-// ---- Cargar ventanas (solo loader en carga inicial) ----
-const loadWindows = async () => {
-  const isFirstLoad = windows.value.length === 0
-  if (isFirstLoad) loading.value = true
-  try {
-    const fromDate = weekDates.value[0]
-    const toDate = weekDates.value[weekDates.value.length - 1]
-    const tzOffset = WorkWindow.toTimestampTz(fromDate, '00:00')?.slice(-6) || '-05:00'
-    windows.value = await fetchWorkWindowsUseCase({
-      date_from: `${fromDate}T00:00:00${tzOffset}`,
-      date_to: `${toDate}T23:59:59${tzOffset}`,
-    })
-  } catch (e) {
-    console.error('[Calendario] Error cargando ventanas:', e)
-    showToast('Error al cargar ventanas de trabajo.', 'error')
-  } finally {
-    loading.value = false
-  }
 }
 
 // ---- Seleccion en calendario ----
@@ -226,8 +201,7 @@ const handleCreate = async (data) => {
   creando.value = true
   errorCrear.value = ''
   try {
-    const created = await createWorkWindowUseCase(data)
-    windows.value = [...windows.value, ...created]
+    const created = await calStore.createWindows(data)
     mostrarCrear.value = false
     prefillData.value = null
     const n = created.length
@@ -237,46 +211,6 @@ const handleCreate = async (data) => {
     errorCrear.value = e.userMessage || 'Error al crear la ventana.'
   } finally {
     creando.value = false
-  }
-}
-
-// ---- Abrir sesion ----
-const handleOpen = async (w) => {
-  modalLoading.value = true
-  try {
-    const updated = await openWorkWindowUseCase(w)
-    const idx = windows.value.findIndex(x => x.id === w.id)
-    if (idx !== -1) {
-      windows.value = [...windows.value.slice(0, idx), updated, ...windows.value.slice(idx + 1)]
-    }
-    selectedWindow.value = null
-    syncGroupWindow(updated)
-    showToast('Sesión abierta.')
-  } catch (e) {
-    console.error('[Calendario] Error abriendo sesión:', e)
-    showToast(e.userMessage || 'Error al abrir sesión.', 'error')
-  } finally {
-    modalLoading.value = false
-  }
-}
-
-// ---- Cerrar sesion ----
-const handleCloseSession = async (w) => {
-  modalLoading.value = true
-  try {
-    const updated = await closeWorkWindowUseCase(w)
-    const idx = windows.value.findIndex(x => x.id === w.id)
-    if (idx !== -1) {
-      windows.value = [...windows.value.slice(0, idx), updated, ...windows.value.slice(idx + 1)]
-    }
-    selectedWindow.value = null
-    syncGroupWindow(updated)
-    showToast('Sesión cerrada.')
-  } catch (e) {
-    console.error('[Calendario] Error cerrando sesión:', e)
-    showToast(e.userMessage || 'Error al cerrar sesión.', 'error')
-  } finally {
-    modalLoading.value = false
   }
 }
 
@@ -306,8 +240,7 @@ function removeFromGroup(id) {
 const handleDelete = async (w) => {
   modalLoading.value = true
   try {
-    await deleteWorkWindowUseCase(w.id)
-    windows.value = windows.value.filter(x => x.id !== w.id)
+    await calStore.deleteWindow(w.id)
     selectedWindow.value = null
     removeFromGroup(w.id)
     showToast('Ventana eliminada.')
@@ -319,16 +252,39 @@ const handleDelete = async (w) => {
   }
 }
 
+// ---- Toggle habilitar/inhabilitar ----
+const handleToggle = async (w) => {
+  try {
+    const updated = await calStore.toggleWindow(w)
+    if (selectedWindow.value?.id === w.id) selectedWindow.value = updated
+    showToast(updated.isActive ? 'Ventana habilitada.' : 'Ventana inhabilitada.')
+  } catch (e) {
+    showToast(e.userMessage || 'Error al cambiar estado.', 'error')
+  }
+}
+
+// ---- Eliminar grupo completo ----
+const handleDeleteGroup = async (group) => {
+  modalLoading.value = true
+  try {
+    await calStore.deleteGroup(group)
+    selectedGroup.value = null
+    showToast(`${group.windows.length} ventanas eliminadas.`)
+  } catch (e) {
+    console.error('[Calendario] Error eliminando grupo:', e)
+    showToast(e.userMessage || 'Error al eliminar el grupo.', 'error')
+  } finally {
+    modalLoading.value = false
+  }
+}
+
 // ---- Actualizar ventana (edición de horario) ----
 const handleUpdate = async (w, payload) => {
   modalLoading.value = true
   try {
-    const updated = await updateWorkWindowUseCase(w, payload)
-    const idx = windows.value.findIndex(x => x.id === w.id)
-    if (idx !== -1) {
-      windows.value = [...windows.value.slice(0, idx), updated, ...windows.value.slice(idx + 1)]
-    }
+    const updated = await calStore.updateWindow(w, payload)
     selectedWindow.value = updated
+    openModalInEdit.value = false
     showToast('Horario actualizado.')
   } catch (e) {
     console.error('[Calendario] Error actualizando ventana:', e)
@@ -338,55 +294,73 @@ const handleUpdate = async (w, payload) => {
   }
 }
 
-// ---- Optimistic helpers ----
-function findOriginal(id) {
-  return windows.value.find(x => x.id === id)
-}
-
-function buildOptimisticWindow(original, { startTime, endTime, targetDate }) {
-  const date = targetDate || original.scheduledDate
-  const raw = original._toRaw()
-  raw.starts_at = WorkWindow.toTimestampTz(date, startTime)
-  raw.ends_at = WorkWindow.toTimestampTz(date, endTime)
-  return new WorkWindow(raw)
-}
-
-function replaceWindow(id, updated) {
-  const idx = windows.value.findIndex(x => x.id === id)
-  if (idx !== -1) {
-    windows.value = [...windows.value.slice(0, idx), updated, ...windows.value.slice(idx + 1)]
+// ---- Eraser tool ----
+const handleErase = async ({ dates, startTime, endTime }) => {
+  try {
+    await calStore.eraseRange(dates, startTime, endTime)
+    showToast('Rango borrado.')
+  } catch (e) {
+    console.error('[Calendario] Error borrando rango:', e)
+    showToast(e.userMessage || 'Error al borrar el rango.', 'error')
   }
 }
 
-// ---- Resize (drag edge to stretch) ----
-const handleResize = async ({ window: w, startTime, endTime }) => {
-  const original = findOriginal(w.id)
-  if (!original) return
-  const optimistic = buildOptimisticWindow(original, { startTime, endTime })
-  replaceWindow(w.id, optimistic)
-
+// ---- Batch actions (selection tool) ----
+const handleBatchDelete = async () => {
+  if (selectedWindows.value.size === 0) return
   try {
-    const confirmed = await updateWorkWindowUseCase(original, { startTime, endTime })
-    replaceWindow(w.id, confirmed)
+    await calStore.batchDelete([...selectedWindows.value])
+    showToast(`${selectedWindows.value.size} ventana(s) eliminada(s).`)
+    selectedWindows.value = new Set()
   } catch (e) {
-    replaceWindow(w.id, original)
+    showToast(e.userMessage || 'Error al eliminar.', 'error')
+  }
+}
+
+const handleBatchToggle = async () => {
+  if (selectedWindows.value.size === 0) return
+  try {
+    await calStore.batchToggle([...selectedWindows.value])
+    showToast(`${selectedWindows.value.size} ventana(s) actualizada(s).`)
+    selectedWindows.value = new Set()
+  } catch (e) {
+    showToast(e.userMessage || 'Error al cambiar estado.', 'error')
+  }
+}
+
+const handleBatchCopy = () => {
+  if (selectedWindows.value.size === 0) return
+  const wins = calStore.windows.filter(w => selectedWindows.value.has(w.id))
+  clipboard.value = { type: 'group', data: wins }
+  showToast(`${wins.length} ventana(s) copiada(s).`)
+}
+
+// ---- Resize (drag edge to stretch) ----
+const handleResize = async (data) => {
+  try {
+    await calStore.resizeWindow(data)
+  } catch (e) {
     console.error('[Calendario] Error redimensionando ventana:', e)
     showToast(e.userMessage || 'Error al redimensionar la ventana.', 'error')
   }
 }
 
-// ---- Reschedule (drag-to-move) ----
-const handleReschedule = async ({ window: w, targetDate, startTime, endTime }) => {
-  const original = findOriginal(w.id)
-  if (!original) return
-  const optimistic = buildOptimisticWindow(original, { startTime, endTime, targetDate })
-  replaceWindow(w.id, optimistic)
-
+// ---- Horizontal expand (stretch across days) ----
+const handleHorizontalExpand = async ({ window: w, direction, dates }) => {
   try {
-    const confirmed = await rescheduleWorkWindowUseCase(original, { startTime, endTime, targetDate })
-    replaceWindow(w.id, confirmed)
+    await calStore.horizontalExpand(w, direction, dates)
+    showToast(`${dates.length} ventana${dates.length > 1 ? 's' : ''} creada${dates.length > 1 ? 's' : ''}.`)
   } catch (e) {
-    replaceWindow(w.id, original)
+    console.error('[Calendario] Error expandiendo ventana:', e)
+    showToast(e.userMessage || 'Error al expandir la ventana.', 'error')
+  }
+}
+
+// ---- Reschedule (drag-to-move) ----
+const handleReschedule = async (data) => {
+  try {
+    await calStore.rescheduleWindow(data)
+  } catch (e) {
     console.error('[Calendario] Error moviendo ventana:', e)
     showToast(e.userMessage || 'Error al mover la ventana.', 'error')
   }
@@ -395,8 +369,7 @@ const handleReschedule = async ({ window: w, targetDate, startTime, endTime }) =
 // ---- Agregar ventana al mismo horario ----
 const handleAddWindow = async (data) => {
   try {
-    const created = await createWorkWindowUseCase([data])
-    windows.value = [...windows.value, ...created]
+    await calStore.addWindowToSlot(data)
     showToast('Ventana agregada al mismo horario.')
   } catch (e) {
     console.error('[Calendario] Error agregando ventana:', e)
@@ -404,120 +377,87 @@ const handleAddWindow = async (data) => {
   }
 }
 
-// ---- Group reschedule (drag-to-move all windows in group) ----
-const handleGroupReschedule = async ({ group, targetDate, deltaHours }) => {
-  const fmt = (h, m) => `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
-  const toHM = (decimal) => {
-    const h = Math.floor(decimal)
-    const m = Math.round((decimal % 1) * 60)
-    return fmt(h, m)
-  }
-
-  // Optimistic: update all windows in the group immediately
-  const originals = new Map()
-  for (const gw of group.windows) {
-    const orig = findOriginal(gw.id)
-    if (!orig) continue
-    originals.set(gw.id, orig)
-    const newStart = orig.startHour + deltaHours
-    const newEnd = orig.endHour + deltaHours
-    const optimistic = buildOptimisticWindow(orig, {
-      startTime: toHM(newStart),
-      endTime: toHM(newEnd),
-      targetDate,
-    })
-    replaceWindow(gw.id, optimistic)
-  }
-
+// ---- Group resize ----
+const handleGroupResize = async (data) => {
   try {
-    const updates = await Promise.all(
-      [...originals.values()].map(async (w) => {
-        const newStart = w.startHour + deltaHours
-        const newEnd = w.endHour + deltaHours
-        return rescheduleWorkWindowUseCase(w, {
-          startTime: toHM(newStart),
-          endTime: toHM(newEnd),
-          targetDate,
-        })
-      })
-    )
-    const updatedMap = new Map(updates.map(u => [u.id, u]))
-    windows.value = windows.value.map(w => updatedMap.get(w.id) || w)
+    await calStore.resizeGroup(data)
   } catch (e) {
-    // Rollback
-    windows.value = windows.value.map(w => originals.get(w.id) || w)
+    console.error('[Calendario] Error redimensionando grupo:', e)
+    showToast(e.userMessage || 'Error al redimensionar el grupo.', 'error')
+  }
+}
+
+// ---- Group reschedule ----
+const handleGroupReschedule = async (data) => {
+  try {
+    await calStore.rescheduleGroup(data)
+  } catch (e) {
     console.error('[Calendario] Error moviendo grupo:', e)
     showToast(e.userMessage || 'Error al mover el grupo.', 'error')
+  }
+}
+
+// ---- Batch reschedule (drag selected windows) ----
+const handleBatchReschedule = async ({ ids, targetDate, deltaHours }) => {
+  try {
+    await calStore.batchReschedule(ids, targetDate, deltaHours)
+  } catch (e) {
+    console.error('[Calendario] Error moviendo ventanas:', e)
+    showToast(e.userMessage || 'Error al mover las ventanas.', 'error')
   }
 }
 
 // ---- Group panel: select individual from group ----
 const onGroupSelect = (w) => {
   selectedGroup.value = null
+  openModalInEdit.value = false
   selectedWindow.value = w
 }
 
-// ---- Helpers ----
-const findSpec = (id) => userStore.users.find(u => u.specialistId === id)
-const findApp = (id) => userStore.applications.find(a => a.id === id)
-const specName = (w) => findSpec(w.specialistId)?.fullName || w.specialistId
-const appName = (w) => findApp(w.applicationId)?.name || w.applicationId
-
-// ---- Navegacion ----
-const prevNav = () => {
-  if (calView.value === 'day') dayOffset.value--
-  else if (calView.value === 'month') monthOffset.value--
-  else weekOffset.value--
-}
-const nextNav = () => {
-  if (calView.value === 'day') dayOffset.value++
-  else if (calView.value === 'month') monthOffset.value++
-  else weekOffset.value++
-}
-const goToday = () => {
-  if (calView.value === 'day') dayOffset.value = 0
-  else if (calView.value === 'month') monthOffset.value = 0
-  else weekOffset.value = 0
+// ---- Ungroup: open individual modal in edit mode ----
+const handleUngroup = (w) => {
+  selectedGroup.value = null
+  openModalInEdit.value = true
+  selectedWindow.value = w
 }
 
-const handleSelectDay = (dateStr) => {
-  // Switch to day view at the selected date
-  const target = new Date(dateStr + 'T12:00:00')
-  const now = new Date()
-  now.setHours(12, 0, 0, 0)
-  dayOffset.value = Math.round((target.getTime() - now.getTime()) / (24 * 60 * 60 * 1000))
-  calView.value = 'day'
-}
+// ---- Resize listener ----
+function onResize() { calStore.updateMobile(window.innerWidth < 768) }
 
-const handleNextDay = () => { dayOffset.value++ }
-const handlePrevDay = () => { dayOffset.value-- }
-
-watch([weekDates, monthDates], () => loadWindows())
-
-// ---- Mobile ----
-const isMobile = ref(window.innerWidth < 768)
-const showMobileFilters = ref(false)
-function onResize() { isMobile.value = window.innerWidth < 768 }
-
-// ---- ESC ----
-const onEsc = (e) => {
+// ---- Keyboard shortcuts ----
+const onKeydown = (e) => {
+  // Ctrl+Z: undo
+  if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
+    e.preventDefault()
+    if (calStore.canUndo) {
+      calStore.undo()
+        .then(() => showToast('Acción deshecha.'))
+        .catch(() => showToast('Error al deshacer.', 'error'))
+    }
+    return
+  }
+  // Escape
   if (e.key === 'Escape') {
+    if (selectedWindows.value.size > 0) { selectedWindows.value = new Set(); return }
+    if (activeTool.value !== 'default') { setTool('default'); return }
     if (selectedWindow.value) selectedWindow.value = null
     else if (mostrarCrear.value) { mostrarCrear.value = false; prefillData.value = null; errorCrear.value = '' }
   }
 }
 
 onMounted(() => {
-  loadWindows()
+  calStore.loadWindows()
   userStore.loadUsers()
   userStore.loadSelects()
-  window.addEventListener('keydown', onEsc)
+  window.addEventListener('keydown', onKeydown)
   window.addEventListener('resize', onResize)
+  window.addEventListener('click', closeCtxMenu)
 })
 
 onUnmounted(() => {
-  window.removeEventListener('keydown', onEsc)
+  window.removeEventListener('keydown', onKeydown)
   window.removeEventListener('resize', onResize)
+  window.removeEventListener('click', closeCtxMenu)
 })
 </script>
 
@@ -540,14 +480,18 @@ onUnmounted(() => {
     <div class="toolbar">
       <!-- Row 1: nav + label -->
       <div class="toolbar__row">
-        <button class="toolbar__arrow" @click="prevNav">
+        <button class="toolbar__arrow" @click="calStore.prevNav">
           <i class='bx bx-chevron-left'></i>
         </button>
-        <button class="toolbar__today" @click="goToday">Hoy</button>
-        <button class="toolbar__arrow" @click="nextNav">
+        <button class="toolbar__today" @click="calStore.goToday">Hoy</button>
+        <button class="toolbar__arrow" @click="calStore.nextNav">
           <i class='bx bx-chevron-right'></i>
         </button>
-        <span class="toolbar__label">{{ weekLabel }}</span>
+        <button class="toolbar__date-btn" @click="openDatePicker">
+          <span class="toolbar__date-text">{{ weekLabel }}</span>
+          <i class='bx bx-calendar'></i>
+        </button>
+        <input ref="datePickerRef" type="date" class="toolbar__date-picker" @change="onDatePicked" />
 
         <!-- View toggle (siempre visible) -->
         <div class="toolbar__views">
@@ -558,6 +502,29 @@ onUnmounted(() => {
           <button class="toolbar__view-btn" :class="{ 'toolbar__view-btn--active': calView === 'month' }"
             @click="calView = 'month'">Mes</button>
         </div>
+
+        <!-- Tool toggle (admin only) -->
+        <div v-if="authStore.isAdmin" class="toolbar__tools">
+          <button class="toolbar__tool-btn" :class="{ 'toolbar__tool-btn--active': activeTool === 'default' }"
+            @click="setTool('default')" title="Modo normal">
+            <i class='bx bx-pointer'></i>
+          </button>
+          <button class="toolbar__tool-btn" :class="{ 'toolbar__tool-btn--active': activeTool === 'eraser' }"
+            @click="setTool('eraser')" title="Borrador">
+            <i class='bx bx-eraser'></i>
+          </button>
+          <button class="toolbar__tool-btn" :class="{ 'toolbar__tool-btn--active': activeTool === 'select' }"
+            @click="setTool('select')" title="Seleccionar">
+            <i class='bx bx-select-multiple'></i>
+          </button>
+        </div>
+
+        <!-- Undo button -->
+        <button v-if="authStore.isAdmin" class="toolbar__undo-btn" :disabled="!canUndo"
+          @click="calStore.undo().then(() => showToast('Acción deshecha.')).catch(() => showToast('Error al deshacer.', 'error'))"
+          title="Deshacer (Ctrl+Z)">
+          <i class='bx bx-undo'></i>
+        </button>
 
         <!-- Filter toggle (mobile only, collapses filters) -->
         <button v-if="isMobile" class="toolbar__filter-toggle"
@@ -619,21 +586,27 @@ onUnmounted(() => {
     <!-- Calendario -->
     <WeekCalendar v-else :windows="windowsFiltradas" :week-dates="weekDates" :specialists="userStore.users"
       :applications="userStore.applications" :selectable="authStore.isAdmin" :is-mobile="isMobile" :view-mode="calView"
-      :month-dates="monthDates" :current-month="currentMonth" @select="selectedWindow = $event"
+      :month-dates="monthDates" :current-month="currentMonth" :active-tool="activeTool"
+      :selected-window-ids="selectedWindows" @select="selectedWindow = $event"
       @group-select="selectedGroup = $event" @range-selected="onRangeSelected" @reschedule="handleReschedule"
-      @group-reschedule="handleGroupReschedule" @next-day="handleNextDay" @prev-day="handlePrevDay"
-      @resize="handleResize" @select-day="handleSelectDay" />
+      @group-reschedule="handleGroupReschedule" @batch-reschedule="handleBatchReschedule" @group-resize="handleGroupResize"
+      @next-day="calStore.nextDay" @prev-day="calStore.prevDay"
+      @resize="handleResize" @horizontal-expand="handleHorizontalExpand" @select-day="calStore.selectDay"
+      @erase="handleErase" @selection-change="onSelectionChange"
+      @context-window="onWindowContext" @context-group="onGroupContext" @context-cell="onCellContext" />
 
     <!-- Modal detalle -->
-    <WorkWindowModal v-if="selectedWindow" :window="selectedWindow" :specialist-name="specName(selectedWindow)"
-      :application-name="appName(selectedWindow)" :loading="modalLoading" :specialists="specialistsConVentana"
-      :applications="userStore.applications" @close="selectedWindow = null" @open="handleOpen"
-      @close-session="handleCloseSession" @delete="handleDelete" @update="handleUpdate" @add-window="handleAddWindow" />
+    <WorkWindowModal v-if="selectedWindow" :window="selectedWindow" :specialist-name="calStore.specName(selectedWindow)"
+      :application-name="calStore.appName(selectedWindow)" :loading="modalLoading" :specialists="specialistsConVentana"
+      :applications="userStore.applications" :start-in-edit-mode="openModalInEdit"
+      @close="selectedWindow = null; openModalInEdit = false"
+      @delete="handleDelete" @update="handleUpdate" @add-window="handleAddWindow" @toggle="handleToggle" />
 
     <!-- Panel grupo -->
     <WindowGroupPanel v-if="selectedGroup" :group="selectedGroup" :specialists="userStore.users"
       :applications="userStore.applications" :loading="modalLoading" @close="selectedGroup = null"
-      @select="onGroupSelect" @open="handleOpen" @close-session="handleCloseSession" @delete="handleDelete" />
+      @select="onGroupSelect" @delete="handleDelete"
+      @delete-group="handleDeleteGroup" @ungroup="handleUngroup" @toggle="handleToggle" />
 
     <!-- Modal crear -->
     <CreateWorkWindowModal :visible="mostrarCrear" :creating="creando" :error="errorCrear"
@@ -645,8 +618,30 @@ onUnmounted(() => {
       <i class='bx bx-plus'></i>
     </button>
 
+    <!-- Selection action bar -->
+    <Teleport to="body">
+      <div v-if="selectedWindows.size > 0" class="sel-bar">
+        <span class="sel-bar__count">{{ selectedWindows.size }} seleccionada{{ selectedWindows.size > 1 ? 's' : '' }}</span>
+        <button class="sel-bar__btn" @click="handleBatchCopy" title="Copiar">
+          <i class='bx bx-copy'></i>
+        </button>
+        <button class="sel-bar__btn" @click="handleBatchToggle" title="Habilitar/Inhabilitar">
+          <i class='bx bx-toggle-left'></i>
+        </button>
+        <button class="sel-bar__btn sel-bar__btn--danger" @click="handleBatchDelete" title="Eliminar">
+          <i class='bx bx-trash'></i>
+        </button>
+        <button class="sel-bar__btn" @click="selectedWindows = new Set()" title="Limpiar selección">
+          <i class='bx bx-x'></i>
+        </button>
+      </div>
+    </Teleport>
+
     <ToastNotification :visible="toastVisible" :message="toastMessage" :type="toastType"
       @close="toastVisible = false" />
+
+    <ContextMenu :visible="ctxMenu.visible" :x="ctxMenu.x" :y="ctxMenu.y" :items="ctxMenu.items"
+      @select="handleCtxAction" @close="closeCtxMenu" />
   </section>
 </template>
 
@@ -664,6 +659,7 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  padding: 0.75rem 1.2rem 0.6rem;
 }
 
 .page-header__title {
@@ -820,7 +816,30 @@ onUnmounted(() => {
   border-color: var(--primary-500);
 }
 
-.toolbar__label {
+.toolbar__date-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.25rem 0.55rem;
+  background: var(--bg-main);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  margin-right: auto;
+  transition: all 0.15s;
+  min-width: 0;
+}
+
+.toolbar__date-btn:hover {
+  border-color: var(--primary-500);
+  background: rgba(42, 199, 143, 0.06);
+}
+
+.toolbar__date-btn:hover i {
+  color: var(--primary-500);
+}
+
+.toolbar__date-text {
   font-size: 0.82rem;
   font-weight: 600;
   color: var(--text-primary);
@@ -828,7 +847,22 @@ onUnmounted(() => {
   overflow: hidden;
   text-overflow: ellipsis;
   min-width: 0;
-  margin-right: auto;
+}
+
+.toolbar__date-btn i {
+  font-size: 0.9rem;
+  color: var(--text-tertiary);
+  flex-shrink: 0;
+  transition: color 0.15s;
+}
+
+.toolbar__date-picker {
+  position: absolute;
+  width: 0;
+  height: 0;
+  opacity: 0;
+  pointer-events: none;
+  overflow: hidden;
 }
 
 /* View toggle */
@@ -868,6 +902,120 @@ onUnmounted(() => {
 .toolbar__view-btn--active:hover {
   background: var(--primary-600);
   color: white;
+}
+
+/* Tool toggle */
+.toolbar__tools {
+  display: flex;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  flex-shrink: 0;
+  margin-left: 0.25rem;
+}
+
+.toolbar__tool-btn {
+  padding: 0.2rem 0.4rem;
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+  background: var(--bg-main);
+  border: none;
+  cursor: pointer;
+  transition: all 0.15s;
+  display: flex;
+  align-items: center;
+}
+
+.toolbar__tool-btn+.toolbar__tool-btn {
+  border-left: 1px solid var(--border-light);
+}
+
+.toolbar__tool-btn:hover {
+  color: var(--text-primary);
+  background: var(--bg-card);
+}
+
+.toolbar__tool-btn--active {
+  background: var(--primary-500);
+  color: white;
+}
+
+.toolbar__tool-btn--active:hover {
+  background: var(--primary-600);
+  color: white;
+}
+
+/* Undo button */
+.toolbar__undo-btn {
+  padding: 0.2rem 0.4rem;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  background: none;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all 0.15s;
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  margin-left: 0.15rem;
+}
+
+.toolbar__undo-btn:not(:disabled):hover {
+  color: var(--primary-500);
+  border-color: var(--primary-500);
+}
+
+.toolbar__undo-btn:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+/* Selection action bar */
+.sel-bar {
+  position: fixed;
+  bottom: 1.5rem;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  background: var(--bg-card, #1e2030);
+  border: 1px solid var(--border-light, #2a2d3e);
+  border-radius: var(--radius-md, 8px);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+  z-index: 300;
+}
+
+.sel-bar__count {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--text-primary, #e0e0e0);
+  white-space: nowrap;
+}
+
+.sel-bar__btn {
+  padding: 0.3rem 0.4rem;
+  border: 1px solid var(--border-light, #2a2d3e);
+  border-radius: var(--radius-sm, 4px);
+  background: none;
+  color: var(--text-secondary, #a0a0a0);
+  cursor: pointer;
+  font-size: 0.85rem;
+  display: flex;
+  align-items: center;
+  transition: all 0.15s;
+}
+
+.sel-bar__btn:hover {
+  color: var(--primary-500);
+  border-color: var(--primary-500);
+}
+
+.sel-bar__btn--danger:hover {
+  color: #ef4444;
+  border-color: #ef4444;
 }
 
 /* Legend */
@@ -966,10 +1114,6 @@ onUnmounted(() => {
     gap: 0.4rem;
   }
 
-  .page-header {
-    padding: 0.75rem 1.2rem 0.6rem;
-  }
-
   .page-header__title {
     font-size: 1.05rem;
   }
@@ -982,8 +1126,13 @@ onUnmounted(() => {
     padding: 0.35rem 0.4rem;
   }
 
-  .toolbar__label {
+  .toolbar__date-text {
     font-size: 0.72rem;
+  }
+
+  .toolbar__date-btn {
+    padding: 0.2rem 0.4rem;
+    gap: 0.3rem;
   }
 }
 
@@ -1011,8 +1160,17 @@ onUnmounted(() => {
     font-size: 0.65rem;
   }
 
-  .toolbar__label {
+  .toolbar__date-text {
     font-size: 0.65rem;
+  }
+
+  .toolbar__date-btn {
+    padding: 0.15rem 0.3rem;
+    gap: 0.25rem;
+  }
+
+  .toolbar__date-btn i {
+    font-size: 0.75rem;
   }
 
   .toolbar__view-btn {

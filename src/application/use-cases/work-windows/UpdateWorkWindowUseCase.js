@@ -7,11 +7,13 @@ export async function updateWorkWindowUseCase(window, data) {
     throw new WorkWindowError('No se especificó la ventana a actualizar.')
   }
 
-  const date = window.scheduledDate
+  const startDate = data.targetDate || window.scheduledDate
+  const endDate = data.endDate || (data.targetDate ? data.targetDate : (window.endDate || window.scheduledDate))
   const payload = {}
-  if (data.startTime != null) payload.startsAt = WorkWindow.toTimestampTz(date, data.startTime)
-  if (data.endTime != null) payload.endsAt = WorkWindow.toTimestampTz(date, data.endTime)
+  if (data.startTime != null) payload.startsAt = WorkWindow.toTimestampTz(startDate, data.startTime)
+  if (data.endTime != null) payload.endsAt = WorkWindow.toTimestampTz(endDate, data.endTime)
   if (data.note != null) payload.note = data.note
+  if (data.inheritsOnReopen != null) payload.inheritsOnReopen = data.inheritsOnReopen
 
   try {
     return await WorkWindowRepository.update(window.id, payload)

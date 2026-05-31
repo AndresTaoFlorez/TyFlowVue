@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
 
 const props = defineProps({
   window: { type: Object, required: true },
@@ -8,9 +8,10 @@ const props = defineProps({
   loading: { type: Boolean, default: false },
   specialists: { type: Array, default: () => [] },
   applications: { type: Array, default: () => [] },
+  startInEditMode: { type: Boolean, default: false },
 })
 
-const emit = defineEmits(['close', 'open', 'close-session', 'delete', 'update', 'add-window'])
+const emit = defineEmits(['close', 'toggle', 'delete', 'update', 'add-window'])
 
 // ---- Add to same schedule ----
 const addSpecialistId = ref('')
@@ -33,13 +34,23 @@ function submitAdd() {
 
 // ---- Edit mode ----
 const editing = ref(false)
-const editStart = ref('')
-const editEnd = ref('')
+const editStartDate = ref('')
+const editStartTime = ref('')
+const editEndDate = ref('')
+const editEndTime = ref('')
 const editNote = ref('')
 
+function dateFromTimestamp(ts) {
+  if (!ts) return ''
+  const d = new Date(ts)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
 function enterEdit() {
-  editStart.value = fmtForInput(props.window.startTime)
-  editEnd.value = fmtForInput(props.window.endTime)
+  editStartDate.value = dateFromTimestamp(props.window.startsAt) || props.window.scheduledDate || ''
+  editStartTime.value = fmtForInput(props.window.startTime)
+  editEndDate.value = dateFromTimestamp(props.window.endsAt) || props.window.scheduledDate || ''
+  editEndTime.value = fmtForInput(props.window.endTime)
   editNote.value = ''
   editing.value = true
 }
@@ -50,11 +61,22 @@ function cancelEdit() {
 
 function saveEdit() {
   const payload = {}
-  const origStart = fmtForInput(props.window.startTime)
-  const origEnd = fmtForInput(props.window.endTime)
-  if (editStart.value !== origStart) payload.startTime = editStart.value
-  if (editEnd.value !== origEnd) payload.endTime = editEnd.value
+  const origStartDate = dateFromTimestamp(props.window.startsAt) || props.window.scheduledDate || ''
+  const origEndDate = dateFromTimestamp(props.window.endsAt) || props.window.scheduledDate || ''
+  const origStartTime = fmtForInput(props.window.startTime)
+  const origEndTime = fmtForInput(props.window.endTime)
+
+  const startDateChanged = editStartDate.value !== origStartDate
+  const endDateChanged = editEndDate.value !== origEndDate
+  const startTimeChanged = editStartTime.value !== origStartTime
+  const endTimeChanged = editEndTime.value !== origEndTime
+
+  if (startDateChanged) payload.targetDate = editStartDate.value
+  if (endDateChanged) payload.endDate = editEndDate.value
+  if (startTimeChanged || startDateChanged) payload.startTime = editStartTime.value
+  if (endTimeChanged || endDateChanged) payload.endTime = editEndTime.value
   if (editNote.value.trim()) payload.note = editNote.value.trim()
+
   if (Object.keys(payload).length === 0) {
     editing.value = false
     return
@@ -62,14 +84,24 @@ function saveEdit() {
   emit('update', props.window, payload)
 }
 
-// Reset edit mode and add fields when window changes or modal closes
-watch(() => props.window?.id, () => { editing.value = false; addSpecialistId.value = ''; addApplicationId.value = '' })
-watch(() => props.loading, (val) => { if (!val && editing.value) editing.value = false })
+onMounted(() => {
+  if (props.startInEditMode && props.window) enterEdit()
+})
 
-const hasTimeChanged = computed(() => {
+watch(() => props.window?.id, () => {
+  addSpecialistId.value = ''
+  addApplicationId.value = ''
+  if (props.startInEditMode) { enterEdit() } else { editing.value = false }
+})
+
+const hasChanged = computed(() => {
   if (!editing.value) return false
-  return editStart.value !== fmtForInput(props.window.startTime) ||
-         editEnd.value !== fmtForInput(props.window.endTime) ||
+  const origStartDate = dateFromTimestamp(props.window.startsAt) || props.window.scheduledDate || ''
+  const origEndDate = dateFromTimestamp(props.window.endsAt) || props.window.scheduledDate || ''
+  return editStartDate.value !== origStartDate ||
+         editEndDate.value !== origEndDate ||
+         editStartTime.value !== fmtForInput(props.window.startTime) ||
+         editEndTime.value !== fmtForInput(props.window.endTime) ||
          editNote.value.trim() !== ''
 })
 
@@ -96,8 +128,8 @@ function fmtDate(date) {
   return d.toLocaleDateString('es-CO', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })
 }
 
-const statusLabel = computed(() => props.window.isSessionOpen ? 'Abierta' : 'Cerrada')
-const statusClass = computed(() => props.window.isSessionOpen ? 'open' : 'closed')
+const statusLabel = computed(() => props.window.isActive ? 'Activa' : 'Inactiva')
+const statusClass = computed(() => props.window.isActive ? 'open' : 'closed')
 </script>
 
 <template>
@@ -129,31 +161,41 @@ const statusClass = computed(() => props.window.isSessionOpen ? 'open' : 'closed
 
       <!-- Body -->
       <div class="wm__body">
-        <!-- Date -->
-        <div class="wm__row wm__row--date">
-          <i class='bx bx-calendar'></i>
-          <span>{{ fmtDate(window.scheduledDate) }}</span>
-        </div>
+        <!-- Date + Time (view mode) -->
+        <template v-if="!editing">
+          <div class="wm__row wm__row--date">
+            <i class='bx bx-calendar'></i>
+            <span>{{ fmtDate(window.scheduledDate) }}</span>
+          </div>
+          <div class="wm__row wm__row--time">
+            <i class='bx bx-time-five'></i>
+            <span>{{ fmtDisplay(window.startTime) }} — {{ fmtDisplay(window.endTime) }}</span>
+          </div>
+        </template>
 
-        <!-- Time (view or edit) -->
-        <div v-if="!editing" class="wm__row wm__row--time">
-          <i class='bx bx-time-five'></i>
-          <span>{{ fmtDisplay(window.startTime) }} — {{ fmtDisplay(window.endTime) }}</span>
-        </div>
-        <div v-else class="wm__edit-times">
-          <i class='bx bx-time-five wm__edit-icon'></i>
-          <div class="wm__time-inputs">
-            <div class="wm__time-field">
+        <!-- Date + Time (edit mode) -->
+        <template v-else>
+          <div class="wm__edit-row">
+            <i class='bx bx-calendar wm__edit-icon'></i>
+            <div class="wm__edit-row-fields">
               <label>Inicio</label>
-              <input type="time" v-model="editStart" class="wm__time-input">
-            </div>
-            <span class="wm__time-sep">—</span>
-            <div class="wm__time-field">
-              <label>Fin</label>
-              <input type="time" v-model="editEnd" class="wm__time-input">
+              <div class="wm__edit-row-inputs">
+                <input type="date" v-model="editStartDate" class="wm__date-input">
+                <input type="time" v-model="editStartTime" class="wm__time-input">
+              </div>
             </div>
           </div>
-        </div>
+          <div class="wm__edit-row">
+            <i class='bx bx-calendar-check wm__edit-icon'></i>
+            <div class="wm__edit-row-fields">
+              <label>Fin</label>
+              <div class="wm__edit-row-inputs">
+                <input type="date" v-model="editEndDate" class="wm__date-input">
+                <input type="time" v-model="editEndTime" class="wm__time-input">
+              </div>
+            </div>
+          </div>
+        </template>
 
         <!-- Note field (edit mode only) -->
         <div v-if="editing" class="wm__edit-note">
@@ -203,7 +245,7 @@ const statusClass = computed(() => props.window.isSessionOpen ? 'open' : 'closed
         </div>
 
         <!-- Add to same schedule -->
-        <div v-if="!editing && specialists.length" class="wm__add-section">
+        <div v-if="editing && specialists.length" class="wm__add-section">
           <div class="wm__divider"></div>
           <span class="wm__add-title">Agregar al mismo horario</span>
           <div class="wm__add-row">
@@ -230,7 +272,7 @@ const statusClass = computed(() => props.window.isSessionOpen ? 'open' : 'closed
       <div class="wm__footer">
         <template v-if="editing">
           <button class="wm__btn wm__btn--ghost" @click="cancelEdit" :disabled="loading">Cancelar</button>
-          <button class="wm__btn wm__btn--primary" @click="saveEdit" :disabled="loading || !hasTimeChanged">
+          <button class="wm__btn wm__btn--primary" @click="saveEdit" :disabled="loading || !hasChanged">
             <i v-if="loading" class='bx bx-loader-alt bx-spin'></i>
             <i v-else class='bx bx-check'></i>
             Guardar
@@ -248,24 +290,14 @@ const statusClass = computed(() => props.window.isSessionOpen ? 'open' : 'closed
           </button>
           <div class="wm__footer-right">
             <button
-              v-if="!window.isSessionOpen && window.isActive"
-              class="wm__btn wm__btn--primary"
+              class="wm__btn"
+              :class="window.isActive ? 'wm__btn--danger' : 'wm__btn--primary'"
               :disabled="loading"
-              @click="$emit('open', window)"
+              @click="$emit('toggle', window)"
             >
               <i v-if="loading" class='bx bx-loader-alt bx-spin'></i>
-              <i v-else class='bx bx-play'></i>
-              Abrir sesión
-            </button>
-            <button
-              v-if="window.isSessionOpen"
-              class="wm__btn wm__btn--danger"
-              :disabled="loading"
-              @click="$emit('close-session', window)"
-            >
-              <i v-if="loading" class='bx bx-loader-alt bx-spin'></i>
-              <i v-else class='bx bx-stop'></i>
-              Cerrar sesión
+              <i v-else class='bx' :class="window.isActive ? 'bx-block' : 'bx-check-circle'"></i>
+              {{ window.isActive ? 'Inhabilitar' : 'Habilitar' }}
             </button>
           </div>
         </template>
@@ -390,10 +422,10 @@ const statusClass = computed(() => props.window.isSessionOpen ? 'open' : 'closed
   font-weight: 500;
 }
 
-/* ===== Edit time fields ===== */
-.wm__edit-times {
+/* ===== Edit row (date + time) ===== */
+.wm__edit-row {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 8px;
   padding: 4px 0;
 }
@@ -404,23 +436,17 @@ const statusClass = computed(() => props.window.isSessionOpen ? 'open' : 'closed
   width: 18px;
   text-align: center;
   flex-shrink: 0;
+  margin-top: 18px;
 }
 
-.wm__time-inputs {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+.wm__edit-row-fields {
   flex: 1;
-}
-
-.wm__time-field {
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  flex: 1;
+  gap: 4px;
 }
 
-.wm__time-field label {
+.wm__edit-row-fields label {
   font-size: 10px;
   font-weight: 600;
   color: var(--text-secondary);
@@ -428,26 +454,29 @@ const statusClass = computed(() => props.window.isSessionOpen ? 'open' : 'closed
   letter-spacing: 0.03em;
 }
 
+.wm__edit-row-inputs {
+  display: flex;
+  gap: 6px;
+}
+
+.wm__date-input,
 .wm__time-input {
   padding: 6px 8px;
   border: 1.5px solid var(--border-light);
   border-radius: var(--radius-sm);
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 500;
   color: var(--text-primary);
   background: var(--bg-main);
   outline: none;
   transition: border-color 0.15s;
-  width: 100%;
 }
 
+.wm__date-input { flex: 1.4; min-width: 0; }
+.wm__time-input { flex: 1; min-width: 0; }
+
+.wm__date-input:focus,
 .wm__time-input:focus { border-color: var(--primary-500); }
-
-.wm__time-sep {
-  font-size: 14px;
-  color: var(--text-secondary);
-  margin-top: 14px;
-}
 
 /* ===== Note input ===== */
 .wm__edit-note {

@@ -36,6 +36,28 @@
   display: none;
 }
 
+/* Sidebar resize handle */
+.layout__resize {
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  width: 6px;
+  margin-left: -3px;
+  cursor: col-resize;
+  z-index: 50;
+  background: transparent;
+  transition: background 0.12s;
+}
+
+.layout__resize:hover,
+.layout__resize--active {
+  background: rgba(42, 199, 143, 0.4);
+}
+
+.layout__resize--active {
+  background: rgba(42, 199, 143, 0.55);
+}
+
 /* =========================================
    Topbar
    ========================================= */

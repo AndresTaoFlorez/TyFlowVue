@@ -15,6 +15,7 @@ const emit = defineEmits(['close', 'create'])
 // ---- Form state ----
 const startTime = ref('08:00')
 const endTime = ref('17:00')
+const endDate = ref('')
 const selectedDates = ref([])
 const inheritsOnReopen = ref(false)
 
@@ -39,7 +40,10 @@ const openDropdown = (key) => {
   if (activeDropdown.value === key) { activeDropdown.value = null; return }
   activeDropdown.value = key
   dropdownSearch.value = ''
-  nextTick(() => searchInput.value?.focus())
+  nextTick(() => {
+    const el = Array.isArray(searchInput.value) ? searchInput.value[0] : searchInput.value
+    el?.focus()
+  })
 }
 
 const closeDropdowns = () => { activeDropdown.value = null }
@@ -80,6 +84,16 @@ const todayISO = () => {
 }
 
 const isMultiDay = computed(() => selectedDates.value.length > 1)
+
+const onStartDateChange = (val) => {
+  if (isPastDate(val)) return
+  const oldStart = selectedDates.value[0]
+  selectedDates.value = [val]
+  // If endDate was same as old start or before new start, sync it
+  if (!endDate.value || endDate.value === oldStart || endDate.value < val) {
+    endDate.value = val
+  }
+}
 
 const formatDateChip = (iso) => {
   const d = new Date(iso + 'T12:00:00')
@@ -150,6 +164,10 @@ const endTimeError = computed(() => {
   return null
 })
 
+const hasCompleteRow = computed(() => rows.value.some(r => r.specialistId && r.applicationId))
+
+watch(hasCompleteRow, (v) => { if (!v) inheritsOnReopen.value = false })
+
 // ---- Validation ----
 const canSubmit = computed(() => {
   if (selectedDates.value.length === 0) return false
@@ -171,13 +189,21 @@ watch(() => props.visible, (val) => {
     endTime.value = `${eh}:${em}`
     if (props.prefill.days && props.prefill.days.length > 0) {
       selectedDates.value = props.prefill.days.map(d => d.date)
+      endDate.value = selectedDates.value[selectedDates.value.length - 1]
+    } else if (props.prefill.dates && props.prefill.dates.length > 0) {
+      selectedDates.value = props.prefill.dates
+      endDate.value = props.prefill.dates[props.prefill.dates.length - 1]
     } else {
       selectedDates.value = [props.prefill.date || todayISO()]
+      endDate.value = selectedDates.value[0]
     }
+    if (props.prefill.startTime) startTime.value = props.prefill.startTime
+    if (props.prefill.endTime) endTime.value = props.prefill.endTime
   } else {
     startTime.value = '08:00'
     endTime.value = '17:00'
     selectedDates.value = [todayISO()]
+    endDate.value = todayISO()
   }
   rows.value = [{ specialistId: '', applicationId: '' }]
   inheritsOnReopen.value = false
@@ -188,6 +214,7 @@ const handleSubmit = () => {
   if (!canSubmit.value) return
   const validRows = rows.value.filter(r => r.specialistId && r.applicationId)
   const windows = []
+  const useEndDate = !isMultiDay.value && endDate.value && endDate.value !== selectedDates.value[0]
   for (const date of selectedDates.value) {
     for (const row of validRows) {
       windows.push({
@@ -196,6 +223,7 @@ const handleSubmit = () => {
         startTime: startTime.value,
         endTime: endTime.value,
         scheduledDate: date,
+        ...(useEndDate ? { endDate: endDate.value } : {}),
         inheritsOnReopen: inheritsOnReopen.value,
       })
     }
@@ -219,36 +247,19 @@ const handleSubmit = () => {
 
           <!-- Body -->
           <div class="modal__body">
-            <!-- Dates -->
-            <div class="row" @click.stop="closeDropdowns">
+            <!-- Multi-day chips -->
+            <div v-if="isMultiDay" class="row" @click.stop="closeDropdowns">
               <i class='bx bx-calendar'></i>
-              <div v-if="isMultiDay" class="chips">
-                <span
-                  v-for="date in selectedDates"
-                  :key="date"
-                  class="chip"
-                >
+              <div class="chips">
+                <span v-for="date in selectedDates" :key="date" class="chip">
                   {{ formatDateChip(date) }}
                   <button class="chip__remove" @click="removeDate(date)" :disabled="creating">
                     <i class='bx bx-x'></i>
                   </button>
                 </span>
               </div>
-              <div v-else class="row__content">
-                <input
-                  :value="selectedDates[0]"
-                  @input="!isPastDate($event.target.value) && (selectedDates = [$event.target.value])"
-                  type="date"
-                  :min="todayISO()"
-                  class="row__date"
-                  :disabled="creating"
-                >
-                <span v-if="selectedDates[0]" class="row__hint">{{ formatDateFull(selectedDates[0]) }}</span>
-              </div>
             </div>
-
-            <!-- Time -->
-            <div class="row" @click.stop="closeDropdowns">
+            <div v-if="isMultiDay" class="row" @click.stop="closeDropdowns">
               <i class='bx bx-time-five'></i>
               <div class="row__time">
                 <input v-model="startTime" type="time" class="time-input" :disabled="creating">
@@ -258,6 +269,45 @@ const handleSubmit = () => {
               </div>
               <span v-if="endTimeError" class="row__error">{{ endTimeError }}</span>
             </div>
+
+            <!-- Single/range: Google Calendar style (date+time start, date+time end) -->
+            <template v-if="!isMultiDay">
+              <div class="row" @click.stop="closeDropdowns">
+                <i class='bx bx-calendar'></i>
+                <div class="row__datetime">
+                  <label class="row__datetime-label">Inicio</label>
+                  <div class="row__datetime-inputs">
+                    <input
+                      :value="selectedDates[0]"
+                      @input="onStartDateChange($event.target.value)"
+                      type="date"
+                      :min="todayISO()"
+                      class="row__date"
+                      :disabled="creating"
+                    >
+                    <input v-model="startTime" type="time" class="time-input" :disabled="creating">
+                  </div>
+                </div>
+              </div>
+              <div class="row" @click.stop="closeDropdowns">
+                <i class='bx bx-calendar-check'></i>
+                <div class="row__datetime">
+                  <label class="row__datetime-label">Fin</label>
+                  <div class="row__datetime-inputs">
+                    <input
+                      v-model="endDate"
+                      type="date"
+                      :min="selectedDates[0] || todayISO()"
+                      class="row__date"
+                      :disabled="creating"
+                    >
+                    <input v-model="endTime" type="time" class="time-input" :disabled="creating">
+                    <span v-if="durationLabel" class="time-badge">{{ durationLabel }}</span>
+                  </div>
+                </div>
+                <span v-if="endTimeError" class="row__error">{{ endTimeError }}</span>
+              </div>
+            </template>
 
             <!-- Separator -->
             <div class="section-label">Personas</div>
@@ -339,13 +389,20 @@ const handleSubmit = () => {
             </div>
 
             <!-- Inherit toggle -->
-            <label class="row row--toggle" @click.prevent="closeDropdowns(); inheritsOnReopen = !inheritsOnReopen">
+            <label
+              class="row row--toggle"
+              :class="{ 'row--disabled': !hasCompleteRow }"
+              @click.prevent="if (hasCompleteRow) { closeDropdowns(); inheritsOnReopen = !inheritsOnReopen }"
+            >
               <i class='bx bx-transfer' :class="{ 'icon--active': inheritsOnReopen }"></i>
-              <span class="row__label" :class="{ 'row__label--active': inheritsOnReopen }">Heredar conteo al reabrir</span>
+              <span class="row__label" :class="{ 'row__label--active': inheritsOnReopen }">Heredar de ventana anterior</span>
               <div class="switch" :class="{ 'switch--on': inheritsOnReopen }">
                 <div class="switch__knob"></div>
               </div>
             </label>
+            <p v-if="inheritsOnReopen" class="modal__hint">
+              Al abrir esta ventana, se heredará el conteo de la última ventana cerrada del mismo especialista y aplicación.
+            </p>
 
             <!-- Error -->
             <div v-if="error" class="modal__error">
@@ -458,20 +515,45 @@ const handleSubmit = () => {
 }
 
 .row__date {
-  border: none;
+  border: 1.5px solid var(--border-light);
+  border-radius: var(--radius-sm);
   background: none;
-  font-size: 0.85rem;
-  font-weight: 600;
+  font-size: 0.8rem;
+  font-weight: 500;
   color: var(--text-primary);
-  padding: 0;
+  padding: 0.3rem 0.4rem;
   cursor: pointer;
   outline: none;
+  transition: border-color 0.15s;
 }
+.row__date:focus { border-color: var(--primary-500); }
 
 .row__hint {
   font-size: 0.7rem;
   color: var(--text-secondary);
   text-transform: capitalize;
+}
+
+/* DateTime row (Google Calendar style) */
+.row__datetime {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  flex: 1;
+}
+
+.row__datetime-label {
+  font-size: 0.65rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.row__datetime-inputs {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
 }
 
 .row__error {
@@ -716,6 +798,7 @@ const handleSubmit = () => {
 
 /* Toggle row */
 .row--toggle { cursor: pointer; }
+.row--disabled { opacity: 0.4; cursor: not-allowed; pointer-events: none; }
 
 .row__label {
   flex: 1;
@@ -751,6 +834,14 @@ const handleSubmit = () => {
 }
 
 .switch--on .switch__knob { transform: translateX(0.8rem); }
+
+/* ---- Hint ---- */
+.modal__hint {
+  margin: -0.2rem 1.4rem 0.3rem 2.8rem;
+  font-size: 0.7rem;
+  color: var(--text-secondary);
+  line-height: 1.35;
+}
 
 /* ---- Error ---- */
 .modal__error {

@@ -38,11 +38,13 @@ export async function createWorkWindowUseCase(windowsData) {
       }
     }
 
+    const endDateVal = item.endDate || date
+
     return {
       specialistId: item.specialistId,
       applicationId: item.applicationId,
       startsAt: WorkWindow.toTimestampTz(date, item.startTime),
-      endsAt: WorkWindow.toTimestampTz(date, item.endTime),
+      endsAt: WorkWindow.toTimestampTz(endDateVal, item.endTime),
       inheritsOnReopen: item.inheritsOnReopen ?? false,
     }
   })

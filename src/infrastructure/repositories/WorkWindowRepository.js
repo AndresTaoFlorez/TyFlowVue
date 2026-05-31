@@ -28,27 +28,22 @@ export const WorkWindowRepository = {
     return items.map((item) => new WorkWindow(item))
   },
 
-  async openSession(id, { inheritedFromWindowId = null, note = null } = {}) {
-    await client.post(`/work-windows/${id}/open`, {
-      inherited_from_window_id: inheritedFromWindowId,
-      note,
-    })
-  },
-
-  async closeSession(id) {
-    await client.post(`/work-windows/${id}/close`)
-  },
-
-  async update(id, { startsAt = null, endsAt = null, note = null } = {}) {
+  async update(id, { startsAt = null, endsAt = null, note = null, inheritsOnReopen = null } = {}) {
     const payload = {}
     if (startsAt != null) payload.starts_at = startsAt
     if (endsAt != null) payload.ends_at = endsAt
     if (note != null) payload.note = note
+    if (inheritsOnReopen != null) payload.inherits_on_reopen = inheritsOnReopen
     const { data } = await client.patch(`/work-windows/${id}`, payload)
     return new WorkWindow(data)
   },
 
   async deleteWindows(ids) {
     await client.delete('/work-windows', { data: { ids } })
+  },
+
+  async toggleWindows(ids) {
+    const { data } = await client.post('/work-windows/toggle', { ids })
+    return data
   },
 }

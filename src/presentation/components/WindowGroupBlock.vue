@@ -6,51 +6,106 @@ const props = defineProps({
   col: { type: Number, default: 0 },
   totalCols: { type: Number, default: 1 },
   specialists: { type: Array, default: () => [] },
+  applications: { type: Array, default: () => [] },
+  selectable: { type: Boolean, default: false },
 })
 
-defineEmits(['click'])
+const emit = defineEmits(['click', 'resize-start'])
 
-const top = () => Math.max(0, (props.group.startHour - props.baseHour) * props.hourHeight + 2)
-const height = () => Math.max(props.hourHeight / 2, (props.group.endHour - props.group.startHour) * props.hourHeight - 4)
+const groupTop = () => Math.max(0, (props.group.startHour - props.baseHour) * props.hourHeight + 2)
+const groupHeight = () => Math.max(props.hourHeight / 2, (props.group.endHour - props.group.startHour) * props.hourHeight - 4)
 const left = () => props.totalCols === 1 ? '3%' : `${(props.col / props.totalCols) * 92 + 2}%`
 const width = () => props.totalCols === 1 ? '92%' : `${92 / props.totalCols}%`
 
 const count = () => props.group.windows.length
 
-const initials = () => {
-  return props.group.windows.slice(0, 3).map(w => {
+// Sub-bar data for each window in the group
+const subBars = () => {
+  const gStart = props.group.startHour
+  const gDuration = props.group.endHour - gStart
+  if (gDuration <= 0) return []
+  const total = props.group.windows.length
+  const gH = groupHeight()
+
+  return props.group.windows.map((w, i) => {
     const spec = props.specialists.find(s => s.specialistId === w.specialistId)
-    if (!spec?.fullName) return '?'
-    const parts = spec.fullName.split(' ')
-    return parts.length >= 2 ? parts[0][0] + parts[1][0] : parts[0][0]
+    const app = props.applications.find(a => a.id === w.applicationId)
+    const color = app?.color || app?.theme?.color || '#8b8fea'
+    const initials = spec?.fullName
+      ? spec.fullName.split(' ').slice(0, 2).map(p => p[0]).join('')
+      : '?'
+
+    // Vertical position within the group block
+    const barTop = ((w.startHour - gStart) / gDuration) * gH
+    const barHeight = Math.max(8, ((w.endHour - w.startHour) / gDuration) * gH)
+
+    return {
+      id: w.id,
+      initials: initials.toUpperCase(),
+      color,
+      isOpen: w.isActive,
+      barTop,
+      barHeight,
+      left: `${(i / total) * 100}%`,
+      width: `${100 / total}%`,
+    }
   })
 }
 
-const hasOpen = () => props.group.windows.some(w => w.isSessionOpen)
+const onHandleDown = (direction, e) => {
+  e.stopPropagation()
+  emit('resize-start', { direction, event: e })
+}
 </script>
 
 <template>
   <div
     class="wgb"
-    :class="{ 'wgb--has-open': hasOpen() }"
     :style="{
-      top: top() + 'px',
-      height: height() + 'px',
+      top: groupTop() + 'px',
+      height: groupHeight() + 'px',
       left: left(),
       width: width(),
     }"
     @click="$emit('click', group)"
   >
-    <div class="wgb__badge">{{ count() }}</div>
-    <div class="wgb__initials">
-      <span v-for="(ini, i) in initials()" :key="i" class="wgb__avatar">{{ ini }}</span>
-      <span v-if="count() > 3" class="wgb__more">+{{ count() - 3 }}</span>
+    <!-- Resize handle top -->
+    <div
+      v-if="selectable"
+      class="wgb__handle wgb__handle--top"
+      @mousedown="onHandleDown('top', $event)"
+      @touchstart.stop.prevent="onHandleDown('top', $event)"
+    ></div>
+
+    <!-- Sub-bars -->
+    <div class="wgb__bars">
+      <div
+        v-for="bar in subBars()"
+        :key="bar.id"
+        class="wgb__bar"
+        :class="{ 'wgb__bar--open': bar.isOpen }"
+        :style="{
+          left: bar.left,
+          width: bar.width,
+          top: bar.barTop + 'px',
+          height: bar.barHeight + 'px',
+          '--bar-color': bar.color,
+        }"
+      >
+        <span class="wgb__bar-initials">{{ bar.initials }}</span>
+      </div>
     </div>
-    <span v-if="height() > 42" class="wgb__time">
-      {{ Math.floor(group.startHour) }}:{{ String(Math.round((group.startHour % 1) * 60)).padStart(2, '0') }}
-      –
-      {{ Math.floor(group.endHour) }}:{{ String(Math.round((group.endHour % 1) * 60)).padStart(2, '0') }}
-    </span>
+
+    <!-- Badge -->
+    <div class="wgb__badge">{{ count() }}</div>
+
+    <!-- Resize handle bottom -->
+    <div
+      v-if="selectable"
+      class="wgb__handle wgb__handle--bottom"
+      @mousedown="onHandleDown('bottom', $event)"
+      @touchstart.stop.prevent="onHandleDown('bottom', $event)"
+    ></div>
   </div>
 </template>
 
@@ -58,92 +113,109 @@ const hasOpen = () => props.group.windows.some(w => w.isSessionOpen)
 .wgb {
   position: absolute;
   border-radius: 4px;
-  padding: 0.3rem 0.4rem;
   cursor: pointer;
   overflow: hidden;
-  border-left: 3px solid #8b8fea;
-  background: rgba(120, 130, 230, 0.18);
+  background: rgba(30, 35, 50, 0.06);
+  border: 1px solid rgba(120, 130, 230, 0.2);
   z-index: 2;
-  display: flex;
-  flex-direction: column;
-  gap: 0.15rem;
-  transition: transform 0.1s ease, box-shadow 0.15s ease, filter 0.15s ease;
-}
-
-.wgb--has-open {
-  border-left-color: #2AC78F;
-  background: rgba(42, 199, 143, 0.15);
+  transition: transform 0.1s ease, box-shadow 0.15s ease;
 }
 
 .wgb:hover {
   transform: translateY(-1px);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
-  filter: brightness(1.15);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
   z-index: 10;
+  border-color: rgba(120, 130, 230, 0.4);
 }
 
+/* ---- Sub-bars container ---- */
+.wgb__bars {
+  position: absolute;
+  inset: 0;
+}
+
+.wgb__bar {
+  position: absolute;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--bar-color) 20%, transparent);
+  border-left: 3px solid var(--bar-color);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 0.2rem;
+  box-sizing: border-box;
+  transition: filter 0.12s;
+}
+
+.wgb__bar--open {
+  background: color-mix(in srgb, var(--bar-color) 28%, transparent);
+}
+
+.wgb:hover .wgb__bar {
+  filter: brightness(1.1);
+}
+
+.wgb__bar-initials {
+  font-size: 0.5rem;
+  font-weight: 700;
+  color: var(--bar-color);
+  text-transform: uppercase;
+  line-height: 1;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+/* ---- Badge ---- */
 .wgb__badge {
   position: absolute;
-  top: 3px;
-  right: 4px;
-  font-size: 0.55rem;
+  top: 2px;
+  right: 3px;
+  font-size: 0.5rem;
   font-weight: 800;
   color: white;
-  background: #8b8fea;
-  width: 1rem;
-  height: 1rem;
+  background: rgba(60, 65, 80, 0.7);
+  width: 0.9rem;
+  height: 0.9rem;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
   line-height: 1;
+  z-index: 2;
 }
 
-.wgb--has-open .wgb__badge {
-  background: #2AC78F;
-}
-
-.wgb__initials {
+/* ---- Resize handles ---- */
+.wgb__handle {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 8px;
+  cursor: ns-resize;
+  z-index: 3;
   display: flex;
-  gap: 0.15rem;
-  margin-top: 0.1rem;
-}
-
-.wgb__avatar {
-  font-size: 0.52rem;
-  font-weight: 700;
-  color: #b4b8f8;
-  background: rgba(120, 130, 230, 0.25);
-  width: 1.1rem;
-  height: 1.1rem;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
   justify-content: center;
-  text-transform: uppercase;
-}
-
-.wgb--has-open .wgb__avatar {
-  color: #6ee7b7;
-  background: rgba(42, 199, 143, 0.25);
-}
-
-.wgb__more {
-  font-size: 0.5rem;
-  font-weight: 700;
-  color: #9ea2e8;
-  display: flex;
   align-items: center;
+  opacity: 0;
+  transition: opacity 0.15s;
 }
 
-.wgb__time {
-  font-size: 0.55rem;
-  font-weight: 500;
-  color: #9ea2e8;
-  white-space: nowrap;
+.wgb:hover .wgb__handle {
+  opacity: 1;
 }
 
-.wgb--has-open .wgb__time {
-  color: #5dd9a8;
+.wgb__handle::after {
+  content: '';
+  width: 24px;
+  height: 3px;
+  border-radius: 2px;
+  background: rgba(100, 110, 140, 0.5);
+}
+
+.wgb__handle--top {
+  top: 0;
+}
+
+.wgb__handle--bottom {
+  bottom: 0;
 }
 </style>

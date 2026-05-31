@@ -8,6 +8,7 @@ const props = defineProps({
   col: { type: Number, default: 0 },
   totalCols: { type: Number, default: 1 },
   selectable: { type: Boolean, default: false },
+  selected: { type: Boolean, default: false },
 })
 
 const emit = defineEmits(['click', 'resize-start'])
@@ -18,9 +19,8 @@ const left = () => props.totalCols === 1 ? '3%' : `${(props.col / props.totalCol
 const width = () => props.totalCols === 1 ? '92%' : `${92 / props.totalCols}%`
 
 const statusClass = () => {
-  if (props.window.isSessionOpen) return 'wb--open'
   if (!props.window.isActive) return 'wb--inactive'
-  return 'wb--closed'
+  return 'wb--open'
 }
 
 const onHandleDown = (direction, e) => {
@@ -32,7 +32,7 @@ const onHandleDown = (direction, e) => {
 <template>
   <div
     class="wb"
-    :class="statusClass()"
+    :class="[statusClass(), { 'wb--selected': selected }]"
     :style="{
       top: top() + 'px',
       height: height() + 'px',
@@ -49,6 +49,14 @@ const onHandleDown = (direction, e) => {
       @touchstart.stop.prevent="onHandleDown('top', $event)"
     ></div>
 
+    <!-- Resize handle left -->
+    <div
+      v-if="selectable"
+      class="wb__handle wb__handle--left"
+      @mousedown="onHandleDown('left', $event)"
+      @touchstart.stop.prevent="onHandleDown('left', $event)"
+    ></div>
+
     <span class="wb__name">{{ specialistName }}</span>
     <span v-if="height() > 42" class="wb__time">{{ window.timeRange }}</span>
     <span v-if="height() > 60" class="wb__app">{{ applicationName }}</span>
@@ -59,6 +67,14 @@ const onHandleDown = (direction, e) => {
       class="wb__handle wb__handle--bottom"
       @mousedown="onHandleDown('bottom', $event)"
       @touchstart.stop.prevent="onHandleDown('bottom', $event)"
+    ></div>
+
+    <!-- Resize handle right -->
+    <div
+      v-if="selectable"
+      class="wb__handle wb__handle--right"
+      @mousedown="onHandleDown('right', $event)"
+      @touchstart.stop.prevent="onHandleDown('right', $event)"
     ></div>
   </div>
 </template>
@@ -124,6 +140,32 @@ const onHandleDown = (direction, e) => {
   bottom: 0;
 }
 
+.wb__handle--left,
+.wb__handle--right {
+  top: 0;
+  bottom: 0;
+  left: auto;
+  right: auto;
+  width: 8px;
+  height: auto;
+  cursor: ew-resize;
+  flex-direction: column;
+}
+
+.wb__handle--left {
+  left: 0;
+}
+
+.wb__handle--right {
+  right: 0;
+}
+
+.wb__handle--left::after,
+.wb__handle--right::after {
+  width: 3px;
+  height: 24px;
+}
+
 /* Open — green/teal */
 .wb--open {
   background: rgba(42, 199, 143, 0.22);
@@ -141,6 +183,13 @@ const onHandleDown = (direction, e) => {
 .wb--closed .wb__name { color: #b4b8f8; }
 .wb--closed .wb__time { color: #9ea2e8; }
 .wb--closed .wb__app { color: #8b90d8; }
+
+/* Selected — highlighted */
+.wb--selected {
+  outline: 2px solid #60a5fa;
+  outline-offset: -1px;
+  filter: brightness(1.1);
+}
 
 /* Inactive — muted */
 .wb--inactive {

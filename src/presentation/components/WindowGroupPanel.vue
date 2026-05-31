@@ -6,13 +6,13 @@ const props = defineProps({
   loading: { type: Boolean, default: false },
 })
 
-defineEmits(['close', 'select', 'open', 'close-session', 'delete'])
+defineEmits(['close', 'select', 'toggle', 'delete', 'delete-group', 'ungroup'])
 
 const specName = (w) => props.specialists.find(s => s.specialistId === w.specialistId)?.fullName || w.specialistId
 const appName = (w) => props.applications.find(a => a.id === w.applicationId)?.name || w.applicationId
 
-const statusLabel = (w) => w.isSessionOpen ? 'Abierta' : 'Cerrada'
-const statusClass = (w) => w.isSessionOpen ? 'item--open' : 'item--closed'
+const statusLabel = (w) => w.isActive ? 'Activa' : 'Inactiva'
+const statusClass = (w) => w.isActive ? 'item--open' : 'item--closed'
 </script>
 
 <template>
@@ -20,7 +20,17 @@ const statusClass = (w) => w.isSessionOpen ? 'item--open' : 'item--closed'
     <div class="panel">
       <div class="panel__header">
         <h3>{{ group.windows.length }} ventanas</h3>
-        <button @click="$emit('close')" class="panel__close"><i class='bx bx-x'></i></button>
+        <div class="panel__header-actions">
+          <button
+            class="panel__delete"
+            :disabled="loading"
+            @click="$emit('delete-group', group)"
+            title="Eliminar grupo"
+          >
+            <i class='bx bx-trash'></i>
+          </button>
+          <button @click="$emit('close')" class="panel__close"><i class='bx bx-x'></i></button>
+        </div>
       </div>
 
       <div class="panel__body">
@@ -37,22 +47,21 @@ const statusClass = (w) => w.isSessionOpen ? 'item--open' : 'item--closed'
           </div>
           <div class="item__actions">
             <button
-              v-if="!w.isSessionOpen && w.isActive"
-              class="item__btn item__btn--open"
+              class="item__btn"
+              :class="w.isActive ? 'item__btn--close' : 'item__btn--open'"
               :disabled="loading"
-              @click="$emit('open', w)"
-              title="Abrir sesión"
+              @click="$emit('toggle', w)"
+              :title="w.isActive ? 'Inhabilitar' : 'Habilitar'"
             >
-              <i class='bx bx-play'></i>
+              <i class='bx' :class="w.isActive ? 'bx-block' : 'bx-check-circle'"></i>
             </button>
             <button
-              v-if="w.isSessionOpen"
-              class="item__btn item__btn--close"
+              class="item__btn item__btn--ungroup"
               :disabled="loading"
-              @click="$emit('close-session', w)"
-              title="Cerrar sesión"
+              @click="$emit('ungroup', w)"
+              title="Desagrupar"
             >
-              <i class='bx bx-stop'></i>
+              <i class='bx bx-transfer-alt'></i>
             </button>
             <button
               class="item__btn item__btn--delete"
@@ -115,6 +124,38 @@ const statusClass = (w) => w.isSessionOpen ? 'item--open' : 'item--closed'
   font-size: 0.95rem;
   font-weight: 700;
   color: var(--text-primary);
+}
+
+.panel__header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.panel__delete {
+  background: none;
+  border: 1px solid var(--border-light);
+  color: var(--text-secondary);
+  font-size: 0.95rem;
+  width: 2rem;
+  height: 2rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all 0.12s;
+}
+
+.panel__delete:hover:not(:disabled) {
+  color: var(--error-500);
+  border-color: var(--error-500);
+  background: rgba(239, 68, 68, 0.06);
+}
+
+.panel__delete:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 .panel__close {
@@ -199,6 +240,7 @@ const statusClass = (w) => w.isSessionOpen ? 'item--open' : 'item--closed'
 .item__btn:hover:not(:disabled) { color: var(--text-primary); border-color: var(--text-secondary); }
 .item__btn--open:hover:not(:disabled) { color: var(--primary-500); border-color: var(--primary-500); }
 .item__btn--close:hover:not(:disabled) { color: #607dea; border-color: #607dea; }
+.item__btn--ungroup:hover:not(:disabled) { color: #f59e0b; border-color: #f59e0b; }
 .item__btn--delete:hover:not(:disabled) { color: var(--error-500); border-color: var(--error-500); }
 .item__btn:disabled { opacity: 0.4; cursor: not-allowed; }
 </style>
