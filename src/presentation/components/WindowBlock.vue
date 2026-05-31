@@ -3,13 +3,18 @@ const props = defineProps({
   window: { type: Object, required: true },
   specialistName: { type: String, default: '—' },
   applicationName: { type: String, default: '—' },
+  appColor: { type: String, default: null },
   hourHeight: { type: Number, default: 60 },
   baseHour: { type: Number, default: 0 },
   col: { type: Number, default: 0 },
   totalCols: { type: Number, default: 1 },
   selectable: { type: Boolean, default: false },
   selected: { type: Boolean, default: false },
+  cut: { type: Boolean, default: false },
+  inherited: { type: Boolean, default: false },
 })
+
+const resolvedColor = () => props.appColor || '#2AC78F'
 
 const emit = defineEmits(['click', 'resize-start'])
 
@@ -32,12 +37,13 @@ const onHandleDown = (direction, e) => {
 <template>
   <div
     class="wb"
-    :class="[statusClass(), { 'wb--selected': selected }]"
+    :class="[statusClass(), { 'wb--selected': selected, 'wb--cut': cut }]"
     :style="{
       top: top() + 'px',
       height: height() + 'px',
       left: left(),
       width: width(),
+      '--app-color': resolvedColor(),
     }"
     @click="$emit('click', window)"
   >
@@ -57,7 +63,10 @@ const onHandleDown = (direction, e) => {
       @touchstart.stop.prevent="onHandleDown('left', $event)"
     ></div>
 
-    <span class="wb__name">{{ specialistName }}</span>
+    <span class="wb__name">
+      <i v-if="inherited" class='bx bx-link wb__inherit-icon'></i>
+      {{ specialistName }}
+    </span>
     <span v-if="height() > 42" class="wb__time">{{ window.timeRange }}</span>
     <span v-if="height() > 60" class="wb__app">{{ applicationName }}</span>
 
@@ -166,29 +175,27 @@ const onHandleDown = (direction, e) => {
   height: 24px;
 }
 
-/* Open — green/teal */
+/* Open — uses app color */
 .wb--open {
-  background: rgba(42, 199, 143, 0.22);
-  border-left-color: #2AC78F;
+  background: color-mix(in srgb, var(--app-color) 22%, transparent);
+  border-left-color: var(--app-color);
 }
-.wb--open .wb__name { color: #6ee7b7; }
-.wb--open .wb__time { color: #5dd9a8; }
-.wb--open .wb__app { color: #4ecf9a; }
-
-/* Closed — blue/purple */
-.wb--closed {
-  background: rgba(120, 130, 230, 0.2);
-  border-left-color: #8b8fea;
-}
-.wb--closed .wb__name { color: #b4b8f8; }
-.wb--closed .wb__time { color: #9ea2e8; }
-.wb--closed .wb__app { color: #8b90d8; }
+.wb--open .wb__name { color: color-mix(in srgb, var(--app-color) 70%, white); }
+.wb--open .wb__time { color: color-mix(in srgb, var(--app-color) 60%, white); }
+.wb--open .wb__app { color: color-mix(in srgb, var(--app-color) 55%, white); }
 
 /* Selected — highlighted */
 .wb--selected {
   outline: 2px solid #60a5fa;
   outline-offset: -1px;
   filter: brightness(1.1);
+}
+
+/* Cut — dashed border, tenue */
+.wb--cut {
+  opacity: 0.4;
+  border-left-style: dashed;
+  filter: grayscale(0.5);
 }
 
 /* Inactive — muted */
@@ -206,6 +213,15 @@ const onHandleDown = (direction, e) => {
   overflow: hidden;
   text-overflow: ellipsis;
   line-height: 1.3;
+  display: flex;
+  align-items: center;
+  gap: 0.15rem;
+}
+
+.wb__inherit-icon {
+  font-size: 0.72rem;
+  opacity: 0.85;
+  flex-shrink: 0;
 }
 
 .wb__time {

@@ -46,4 +46,14 @@ export const WorkWindowRepository = {
     const { data } = await client.post('/work-windows/toggle', { ids })
     return data
   },
+
+  async disinherit(ids) {
+    const { data } = await client.post('/work-windows/disinherit', { ids })
+    return data
+  },
+
+  async inherit(ids) {
+    const { data } = await client.post('/work-windows/inherit', { ids })
+    return data
+  },
 }

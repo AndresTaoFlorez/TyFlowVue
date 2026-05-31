@@ -16,6 +16,7 @@ const props = defineProps({
   currentMonth: { type: Number, default: 0 }, // 0-11 for month view
   activeTool: { type: String, default: 'default' }, // 'default' | 'eraser' | 'select'
   selectedWindowIds: { type: Object, default: () => new Set() }, // Set<string>
+  cutWindowIds: { type: Object, default: () => new Set() }, // Set<string>
 })
 
 const emit = defineEmits(['select', 'range-selected', 'group-select', 'reschedule', 'group-reschedule', 'batch-reschedule', 'next-day', 'prev-day', 'resize', 'group-resize', 'select-day', 'context-window', 'context-group', 'context-cell', 'horizontal-expand', 'erase', 'selection-change'])
@@ -960,6 +961,7 @@ const findSpecialist = (id) => props.specialists.find(u => u.specialistId === id
 const findApp = (id) => props.applications.find(a => a.id === id)
 const specName = (w) => findSpecialist(w.specialistId)?.fullName || w.specialistId
 const appName = (w) => findApp(w.applicationId)?.name || w.applicationId
+const appColor = (w) => { const a = findApp(w.applicationId); return a?.color || a?.theme?.color || null }
 
 const formatHour = (h) => {
   const suffix = h < 12 ? 'AM' : 'PM'
@@ -983,6 +985,12 @@ const monthWindowsByDate = computed(() => {
 
 const monthWeeks = computed(() => {
   if (props.viewMode !== 'month' || props.monthDates.length === 0) return []
+  // Find max windows in any day for heat scaling
+  let maxTotal = 0
+  for (const wins of monthWindowsByDate.value.values()) {
+    if (wins.length > maxTotal) maxTotal = wins.length
+  }
+
   const result = []
   for (let r = 0; r < 6; r++) {
     const row = []
@@ -993,9 +1001,59 @@ const monthWeeks = computed(() => {
       const month = parseInt(parts[1], 10) - 1
       const dayNum = parseInt(parts[2], 10)
       const wins = monthWindowsByDate.value.get(date) || []
-      let open = 0, closed = 0
-      for (const w of wins) { if (w.isActive) open++; else closed++ }
-      row.push({ date, dayNum, isCurrentMonth: month === props.currentMonth, isToday: date === todayStr.value, isWeekend: c >= 5, open, closed, total: wins.length })
+      let active = 0, inactive = 0
+      for (const w of wins) { if (w.isActive) active++; else inactive++ }
+
+      // Collect unique app colors (up to 5 strips)
+      const colorSet = new Set()
+      const colors = []
+      for (const w of wins) {
+        if (colors.length >= 5) break
+        const a = findApp(w.applicationId)
+        const color = a?.color || a?.theme?.color || null
+        if (color && !colorSet.has(color)) {
+          colorSet.add(color)
+          colors.push(color)
+        }
+      }
+
+      // Time coverage: what fraction of 8am-8pm is covered
+      let coveredSlots = 0
+      const slotCover = new Uint8Array(24) // each slot = 1 hour
+      for (const w of wins) {
+        if (!w.isActive) continue
+        const s = Math.max(0, Math.floor(w.startHour))
+        const e = Math.min(24, Math.ceil(w.endHour))
+        for (let h = s; h < e; h++) slotCover[h] = 1
+      }
+      for (let h = 0; h < 24; h++) coveredSlots += slotCover[h]
+      const coverage = coveredSlots / 12 // fraction of 12 working hours
+
+      // Heat intensity (0-1) based on window count relative to max
+      const heat = maxTotal > 0 ? wins.length / maxTotal : 0
+
+      // Specialist initials (up to 3)
+      const specSet = new Set()
+      const specs = []
+      for (const w of wins) {
+        if (specs.length >= 3) break
+        if (specSet.has(w.specialistId)) continue
+        specSet.add(w.specialistId)
+        const s = findSpecialist(w.specialistId)
+        const name = s?.fullName || ''
+        const initials = name.split(' ').map(p => p[0]).join('').slice(0, 2).toUpperCase() || '?'
+        specs.push({ id: w.specialistId, initials, name })
+      }
+      const extraSpecs = specSet.size < new Set(wins.map(w => w.specialistId)).size
+        ? new Set(wins.map(w => w.specialistId)).size - specSet.size
+        : 0
+
+      row.push({
+        date, dayNum, isCurrentMonth: month === props.currentMonth,
+        isToday: date === todayStr.value, isWeekend: c >= 5,
+        active, inactive, total: wins.length,
+        colors, coverage, heat, specs, extraSpecs,
+      })
     }
     result.push(row)
   }
@@ -1154,12 +1212,15 @@ const monthWeeks = computed(() => {
                 :window="item.window"
                 :specialist-name="specName(item.window)"
                 :application-name="appName(item.window)"
+                :app-color="appColor(item.window)"
                 :hour-height="HOUR_H"
                 :base-hour="BASE_HOUR"
                 :col="0"
                 :total-cols="1"
                 :selectable="selectable"
                 :selected="selectedWindowIds.has((item.window._originalWindow || item.window).id)"
+                :cut="cutWindowIds.has((item.window._originalWindow || item.window).id)"
+                :inherited="!!(item.window.inheritedFromWindowId || item.window.inheritsOnReopen)"
                 @click="onBlockClick(item.window, $event)"
                 @contextmenu.prevent="onWindowContext(item.window, $event)"
                 @touchstart.passive="onWindowLongPress(item.window, $event)"
@@ -1190,13 +1251,44 @@ const monthWeeks = computed(() => {
                 'mcal__cell--other': !cell.isCurrentMonth,
                 'mcal__cell--today': cell.isToday,
                 'mcal__cell--weekend': cell.isWeekend && !cell.isToday,
+                'mcal__cell--has-windows': cell.total > 0,
               }"
+              :style="cell.total > 0 ? { '--cell-heat': cell.heat } : {}"
               @click="$emit('select-day', cell.date)"
             >
+              <!-- Color strips at top -->
+              <div v-if="cell.colors.length > 0" class="mcal__colors">
+                <span
+                  v-for="(color, ci) in cell.colors"
+                  :key="ci"
+                  class="mcal__color-strip"
+                  :style="{ background: color }"
+                ></span>
+              </div>
+
+              <!-- Day number -->
               <span class="mcal__day">{{ cell.dayNum }}</span>
-              <div v-if="cell.total > 0" class="mcal__dots">
-                <span v-if="cell.open > 0" class="mcal__dot mcal__dot--open">{{ cell.open }}</span>
-                <span v-if="cell.closed > 0" class="mcal__dot mcal__dot--closed">{{ cell.closed }}</span>
+
+              <!-- Coverage bar -->
+              <div v-if="cell.total > 0" class="mcal__coverage">
+                <div class="mcal__coverage-fill" :style="{ width: Math.min(cell.coverage * 100, 100) + '%' }"></div>
+              </div>
+
+              <!-- Specialist avatars -->
+              <div v-if="cell.specs.length > 0" class="mcal__specs">
+                <span
+                  v-for="spec in cell.specs"
+                  :key="spec.id"
+                  class="mcal__spec"
+                  :title="spec.name"
+                >{{ spec.initials }}</span>
+                <span v-if="cell.extraSpecs > 0" class="mcal__spec mcal__spec--extra">+{{ cell.extraSpecs }}</span>
+              </div>
+
+              <!-- Window counts -->
+              <div v-if="cell.total > 0" class="mcal__counts">
+                <span v-if="cell.active > 0" class="mcal__count mcal__count--active">{{ cell.active }}</span>
+                <span v-if="cell.inactive > 0" class="mcal__count mcal__count--inactive">{{ cell.inactive }}</span>
               </div>
             </button>
           </div>
@@ -1319,12 +1411,15 @@ const monthWeeks = computed(() => {
                 :window="item.window"
                 :specialist-name="specName(item.window)"
                 :application-name="appName(item.window)"
+                :app-color="appColor(item.window)"
                 :hour-height="HOUR_H"
                 :base-hour="BASE_HOUR"
                 :col="item._col"
                 :total-cols="item._totalCols"
                 :selectable="selectable"
                 :selected="selectedWindowIds.has((item.window._originalWindow || item.window).id)"
+                :cut="cutWindowIds.has((item.window._originalWindow || item.window).id)"
+                :inherited="!!(item.window.inheritedFromWindowId || item.window.inheritsOnReopen)"
                 :data-window-id="item.window.id"
                 @click="onBlockClick(item.window, $event)"
                 @contextmenu.prevent="onWindowContext(item.window, $event)"
@@ -1857,18 +1952,20 @@ const monthWeeks = computed(() => {
 .mcal__cell {
   display: flex;
   flex-direction: column;
-  align-items: center;
+  align-items: stretch;
   justify-content: flex-start;
-  padding: 0.4rem 0.25rem;
-  gap: 0.25rem;
+  padding: 0;
+  gap: 0;
   border-right: 1px solid #33374a;
   background: #292d3e;
   cursor: pointer;
   border-top: none;
   border-bottom: none;
   border-left: none;
-  transition: background 0.12s;
-  min-height: 3.5rem;
+  transition: background 0.15s, box-shadow 0.15s;
+  min-height: 5.5rem;
+  position: relative;
+  overflow: hidden;
 }
 
 .mcal__cell:last-child {
@@ -1876,7 +1973,13 @@ const monthWeeks = computed(() => {
 }
 
 .mcal__cell:hover {
-  background: rgba(42, 199, 143, 0.06);
+  background: rgba(42, 199, 143, 0.08);
+  box-shadow: inset 0 0 0 1px rgba(42, 199, 143, 0.25);
+}
+
+/* Heat-based subtle tint for cells with windows */
+.mcal__cell--has-windows {
+  background: color-mix(in srgb, rgba(42, 199, 143, 0.06) calc(var(--cell-heat, 0) * 100%), #292d3e);
 }
 
 .mcal__cell--other {
@@ -1887,68 +1990,168 @@ const monthWeeks = computed(() => {
   color: #4a4e66;
 }
 
+.mcal__cell--other.mcal__cell--has-windows {
+  background: color-mix(in srgb, rgba(42, 199, 143, 0.04) calc(var(--cell-heat, 0) * 100%), #242736);
+}
+
 .mcal__cell--weekend:not(.mcal__cell--today) {
   background: #262938;
 }
 
 .mcal__cell--today {
-  background: rgba(42, 199, 143, 0.08);
+  background: rgba(42, 199, 143, 0.1);
+  box-shadow: inset 0 0 0 1.5px rgba(42, 199, 143, 0.35);
 }
 
 .mcal__cell--today .mcal__day {
-  color: var(--primary-500);
+  color: #1b1f2e;
+  background: var(--primary-500);
+  border-radius: 50%;
+  width: 1.4rem;
+  height: 1.4rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   font-weight: 700;
 }
 
+/* --- Color strips at top --- */
+.mcal__colors {
+  display: flex;
+  height: 3px;
+  width: 100%;
+  flex-shrink: 0;
+}
+
+.mcal__color-strip {
+  flex: 1;
+  min-width: 0;
+}
+
+/* When no color strips, add top padding */
+.mcal__cell:not(.mcal__cell--has-windows) {
+  padding-top: 3px;
+}
+
+/* --- Day number --- */
 .mcal__day {
-  font-size: 0.85rem;
+  font-size: 0.78rem;
   font-weight: 600;
   color: #c8cdd8;
   line-height: 1;
+  margin: 0.35rem 0 0.2rem;
+  align-self: center;
 }
 
-.mcal__dots {
+/* --- Coverage bar --- */
+.mcal__coverage {
+  height: 3px;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 2px;
+  margin: 0.15rem 0.4rem 0;
+  overflow: hidden;
+}
+
+.mcal__coverage-fill {
+  height: 100%;
+  background: var(--primary-500);
+  border-radius: 2px;
+  opacity: 0.65;
+  transition: width 0.3s ease;
+}
+
+/* --- Specialist avatars --- */
+.mcal__specs {
+  display: flex;
+  justify-content: center;
+  gap: 0.15rem;
+  margin: 0.25rem 0.2rem 0;
+  flex-wrap: wrap;
+}
+
+.mcal__spec {
+  font-size: 0.5rem;
+  font-weight: 700;
+  color: #c8cdd8;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 50%;
+  width: 1.25rem;
+  height: 1.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  letter-spacing: -0.02em;
+  flex-shrink: 0;
+}
+
+.mcal__spec--extra {
+  background: rgba(42, 199, 143, 0.15);
+  color: var(--primary-500);
+  font-size: 0.45rem;
+  border-radius: 3px;
+  width: auto;
+  padding: 0 0.2rem;
+}
+
+/* --- Window counts --- */
+.mcal__counts {
   display: flex;
   gap: 0.2rem;
   align-items: center;
+  justify-content: center;
+  margin: auto 0 0.3rem;
+  padding-top: 0.15rem;
 }
 
-.mcal__dot {
-  font-size: 0.55rem;
+.mcal__count {
+  font-size: 0.52rem;
   font-weight: 700;
   padding: 0.1rem 0.3rem;
   border-radius: 4px;
   line-height: 1;
 }
 
-.mcal__dot--open {
+.mcal__count--active {
   background: rgba(42, 199, 143, 0.18);
   color: var(--primary-500);
 }
 
-.mcal__dot--closed {
-  background: rgba(96, 125, 234, 0.15);
-  color: #607dea;
+.mcal__count--inactive {
+  background: rgba(239, 68, 68, 0.12);
+  color: #f87171;
 }
 
 @media (max-width: 768px) {
   .mcal__cell {
-    padding: 0.3rem 0.15rem;
-    min-height: 2.8rem;
+    min-height: 4rem;
   }
 
   .mcal__day {
-    font-size: 0.75rem;
+    font-size: 0.7rem;
   }
 
-  .mcal__dot {
-    font-size: 0.5rem;
+  .mcal__spec {
+    width: 1rem;
+    height: 1rem;
+    font-size: 0.42rem;
+  }
+
+  .mcal__count {
+    font-size: 0.45rem;
     padding: 0.08rem 0.2rem;
   }
 
   .mcal__header-cell {
     font-size: 0.55rem;
     padding: 0.35rem 0;
+  }
+
+  .mcal__coverage {
+    margin: 0.1rem 0.25rem 0;
+  }
+
+  .mcal__specs {
+    margin: 0.15rem 0.15rem 0;
   }
 }
 

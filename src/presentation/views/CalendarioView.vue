@@ -58,14 +58,50 @@ function onSelectionChange(ids) {
 // Context menu & clipboard
 const ctxMenu = ref({ visible: false, x: 0, y: 0, items: [], target: null, targetType: null })
 const clipboard = ref(null)
+const cutWindowIds = ref(new Set())
 
 function closeCtxMenu() { ctxMenu.value.visible = false }
 
+async function pasteOnSlot(date, startTime, endTime) {
+  if (!clipboard.value) return
+  const pasteWindows = clipboard.value.type === 'group' ? clipboard.value.data : [clipboard.value.data]
+  try {
+    const createData = pasteWindows.map(w => ({
+      specialistId: w.specialistId,
+      applicationId: w.applicationId,
+      startTime,
+      endTime,
+      scheduledDate: date,
+      inheritsOnReopen: w.inheritsOnReopen || false,
+    }))
+    await calStore.createWindows(createData)
+    if (clipboard.value.cut) {
+      const cutIds = pasteWindows.map(w => w.id).filter(Boolean)
+      if (cutIds.length > 0) await calStore.batchDelete(cutIds)
+      cutWindowIds.value = new Set()
+      clipboard.value = null
+    }
+    showToast(createData.length === 1 ? 'Ventana pegada.' : `${createData.length} ventanas pegadas.`)
+  } catch (e) {
+    showToast(e.userMessage || 'Error al pegar.', 'error')
+  }
+}
+
 function onWindowContext({ window: w, x, y }) {
+  const isFutureWindow = w.startsAt && new Date(w.startsAt) > new Date()
+  const hasInheritance = !!(w.inheritedFromWindowId || w.inheritsOnReopen)
+  const inheritItem = isFutureWindow
+    ? (hasInheritance
+      ? { label: 'Desactivar herencia', icon: 'bx-unlink', action: 'disinherit' }
+      : { label: 'Activar herencia', icon: 'bx-link', action: 'reinherit' })
+    : null
   const items = [
     { label: 'Editar', icon: 'bx-pencil', action: 'edit' },
     { label: w.isActive ? 'Inhabilitar' : 'Habilitar', icon: w.isActive ? 'bx-block' : 'bx-check-circle', action: 'toggle' },
+    ...(inheritItem ? [inheritItem] : []),
     { label: 'Copiar ventana', icon: 'bx-copy', action: 'copy' },
+    { label: 'Cortar ventana', icon: 'bx-cut', action: 'cut' },
+    ...(clipboard.value ? [{ label: 'Pegar aquí', icon: 'bx-paste', action: 'paste-on-window' }] : []),
     { label: 'Copiar ID', icon: 'bx-hash', action: 'copy-id' },
     { label: 'Eliminar', icon: 'bx-trash', action: 'delete', danger: true },
   ]
@@ -75,7 +111,10 @@ function onWindowContext({ window: w, x, y }) {
 function onGroupContext({ group, x, y }) {
   const items = [
     { label: 'Ver grupo', icon: 'bx-expand-alt', action: 'view-group' },
+    { label: 'Agregar especialista', icon: 'bx-user-plus', action: 'add-to-group' },
     { label: 'Copiar grupo', icon: 'bx-copy', action: 'copy-group' },
+    { label: 'Cortar grupo', icon: 'bx-cut', action: 'cut-group' },
+    ...(clipboard.value ? [{ label: 'Pegar aquí', icon: 'bx-paste', action: 'paste-on-group' }] : []),
     { label: 'Eliminar grupo', icon: 'bx-trash', action: 'delete-group', danger: true },
   ]
   ctxMenu.value = { visible: true, x, y, items, target: group, targetType: 'group' }
@@ -104,13 +143,24 @@ async function handleCtxAction(action) {
         selectedWindow.value = w
         break
       case 'copy':
-        clipboard.value = { type: 'window', data: w }
+        clipboard.value = { type: 'window', data: w, cut: false }
+        cutWindowIds.value = new Set()
         showToast('Ventana copiada.')
+        break
+      case 'cut':
+        clipboard.value = { type: 'window', data: w, cut: true }
+        cutWindowIds.value = new Set([w.id])
+        showToast('Ventana cortada.')
         break
       case 'copy-id':
         await navigator.clipboard.writeText(w.id)
         showToast('ID copiado: ' + w.id)
         break
+      case 'paste-on-window':
+        await pasteOnSlot(w.scheduledDate, w.startTime, w.endTime)
+        break
+      case 'disinherit': handleDisinherit(w); break
+      case 'reinherit': handleReinherit(w); break
       case 'toggle': handleToggle(w); break
       case 'delete': handleDelete(w); break
     }
@@ -118,10 +168,40 @@ async function handleCtxAction(action) {
     const group = target
     switch (action) {
       case 'view-group': selectedGroup.value = group; break
+      case 'add-to-group': {
+        const firstW = group.windows[0]
+        const startH = Math.floor(group.startHour)
+        const startM = Math.round((group.startHour % 1) * 60)
+        const endH = Math.floor(group.endHour)
+        const endM = Math.round((group.endHour % 1) * 60)
+        const fmt = (h, m) => `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
+        prefillData.value = {
+          dates: [firstW.scheduledDate],
+          startTime: fmt(startH, startM),
+          endTime: fmt(endH, endM),
+        }
+        mostrarCrear.value = true
+        break
+      }
       case 'copy-group':
-        clipboard.value = { type: 'group', data: group.windows }
+        clipboard.value = { type: 'group', data: group.windows, cut: false }
+        cutWindowIds.value = new Set()
         showToast(`${group.windows.length} ventanas copiadas.`)
         break
+      case 'cut-group':
+        clipboard.value = { type: 'group', data: group.windows, cut: true }
+        cutWindowIds.value = new Set(group.windows.map(w => w.id))
+        showToast(`${group.windows.length} ventanas cortadas.`)
+        break
+      case 'paste-on-group': {
+        const fmt = (h, m) => `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
+        const startH = Math.floor(group.startHour)
+        const startM = Math.round((group.startHour % 1) * 60)
+        const endH = Math.floor(group.endHour)
+        const endM = Math.round((group.endHour % 1) * 60)
+        await pasteOnSlot(group.windows[0].scheduledDate, fmt(startH, startM), fmt(endH, endM))
+        break
+      }
       case 'delete-group': handleDeleteGroup(group); break
     }
   } else if (targetType === 'cell') {
@@ -166,6 +246,12 @@ async function handleCtxAction(action) {
             }
           })
           await calStore.createWindows(createData)
+          if (clipboard.value.cut) {
+            const cutIds = pasteWindows.map(w => w.id).filter(Boolean)
+            if (cutIds.length > 0) await calStore.batchDelete(cutIds)
+            cutWindowIds.value = new Set()
+            clipboard.value = null
+          }
           showToast(createData.length === 1 ? 'Ventana pegada.' : `${createData.length} ventanas pegadas.`)
         } catch (e) {
           showToast(e.userMessage || 'Error al pegar.', 'error')
@@ -207,7 +293,6 @@ const handleCreate = async (data) => {
     const n = created.length
     showToast(n === 1 ? 'Ventana de trabajo creada.' : `${n} ventanas de trabajo creadas.`)
   } catch (e) {
-    console.error('[Calendario] Error creando ventana:', e)
     errorCrear.value = e.userMessage || 'Error al crear la ventana.'
   } finally {
     creando.value = false
@@ -245,7 +330,6 @@ const handleDelete = async (w) => {
     removeFromGroup(w.id)
     showToast('Ventana eliminada.')
   } catch (e) {
-    console.error('[Calendario] Error eliminando ventana:', e)
     showToast(e.userMessage || 'Error al eliminar ventana.', 'error')
   } finally {
     modalLoading.value = false
@@ -257,9 +341,33 @@ const handleToggle = async (w) => {
   try {
     const updated = await calStore.toggleWindow(w)
     if (selectedWindow.value?.id === w.id) selectedWindow.value = updated
+    syncGroupWindow(updated)
     showToast(updated.isActive ? 'Ventana habilitada.' : 'Ventana inhabilitada.')
   } catch (e) {
     showToast(e.userMessage || 'Error al cambiar estado.', 'error')
+  }
+}
+
+// ---- Herencia: desactivar / activar ----
+const handleDisinherit = async (w) => {
+  try {
+    const updated = await calStore.disinheritWindow(w)
+    if (selectedWindow.value?.id === w.id) selectedWindow.value = updated
+    syncGroupWindow(updated)
+    showToast('Herencia desactivada.')
+  } catch (e) {
+    showToast(e.userMessage || 'Error al desactivar herencia.', 'error')
+  }
+}
+
+const handleReinherit = async (w) => {
+  try {
+    const newWindow = await calStore.reinheritWindow(w)
+    if (selectedWindow.value?.id === w.id) selectedWindow.value = newWindow
+    syncGroupWindow(newWindow)
+    showToast('Herencia activada.')
+  } catch (e) {
+    showToast(e.userMessage || 'Error al activar herencia.', 'error')
   }
 }
 
@@ -271,7 +379,6 @@ const handleDeleteGroup = async (group) => {
     selectedGroup.value = null
     showToast(`${group.windows.length} ventanas eliminadas.`)
   } catch (e) {
-    console.error('[Calendario] Error eliminando grupo:', e)
     showToast(e.userMessage || 'Error al eliminar el grupo.', 'error')
   } finally {
     modalLoading.value = false
@@ -287,7 +394,6 @@ const handleUpdate = async (w, payload) => {
     openModalInEdit.value = false
     showToast('Horario actualizado.')
   } catch (e) {
-    console.error('[Calendario] Error actualizando ventana:', e)
     showToast(e.userMessage || 'Error al actualizar la ventana.', 'error')
   } finally {
     modalLoading.value = false
@@ -300,7 +406,6 @@ const handleErase = async ({ dates, startTime, endTime }) => {
     await calStore.eraseRange(dates, startTime, endTime)
     showToast('Rango borrado.')
   } catch (e) {
-    console.error('[Calendario] Error borrando rango:', e)
     showToast(e.userMessage || 'Error al borrar el rango.', 'error')
   }
 }
@@ -331,7 +436,7 @@ const handleBatchToggle = async () => {
 const handleBatchCopy = () => {
   if (selectedWindows.value.size === 0) return
   const wins = calStore.windows.filter(w => selectedWindows.value.has(w.id))
-  clipboard.value = { type: 'group', data: wins }
+  clipboard.value = { type: 'group', data: wins, cut: false }
   showToast(`${wins.length} ventana(s) copiada(s).`)
 }
 
@@ -339,8 +444,8 @@ const handleBatchCopy = () => {
 const handleResize = async (data) => {
   try {
     await calStore.resizeWindow(data)
+    showToast('Horario actualizado.')
   } catch (e) {
-    console.error('[Calendario] Error redimensionando ventana:', e)
     showToast(e.userMessage || 'Error al redimensionar la ventana.', 'error')
   }
 }
@@ -351,7 +456,6 @@ const handleHorizontalExpand = async ({ window: w, direction, dates }) => {
     await calStore.horizontalExpand(w, direction, dates)
     showToast(`${dates.length} ventana${dates.length > 1 ? 's' : ''} creada${dates.length > 1 ? 's' : ''}.`)
   } catch (e) {
-    console.error('[Calendario] Error expandiendo ventana:', e)
     showToast(e.userMessage || 'Error al expandir la ventana.', 'error')
   }
 }
@@ -360,8 +464,8 @@ const handleHorizontalExpand = async ({ window: w, direction, dates }) => {
 const handleReschedule = async (data) => {
   try {
     await calStore.rescheduleWindow(data)
+    showToast('Ventana movida.')
   } catch (e) {
-    console.error('[Calendario] Error moviendo ventana:', e)
     showToast(e.userMessage || 'Error al mover la ventana.', 'error')
   }
 }
@@ -372,7 +476,6 @@ const handleAddWindow = async (data) => {
     await calStore.addWindowToSlot(data)
     showToast('Ventana agregada al mismo horario.')
   } catch (e) {
-    console.error('[Calendario] Error agregando ventana:', e)
     showToast(e.userMessage || 'Error al agregar la ventana.', 'error')
   }
 }
@@ -381,8 +484,8 @@ const handleAddWindow = async (data) => {
 const handleGroupResize = async (data) => {
   try {
     await calStore.resizeGroup(data)
+    showToast('Grupo actualizado.')
   } catch (e) {
-    console.error('[Calendario] Error redimensionando grupo:', e)
     showToast(e.userMessage || 'Error al redimensionar el grupo.', 'error')
   }
 }
@@ -391,8 +494,8 @@ const handleGroupResize = async (data) => {
 const handleGroupReschedule = async (data) => {
   try {
     await calStore.rescheduleGroup(data)
+    showToast('Grupo movido.')
   } catch (e) {
-    console.error('[Calendario] Error moviendo grupo:', e)
     showToast(e.userMessage || 'Error al mover el grupo.', 'error')
   }
 }
@@ -401,24 +504,29 @@ const handleGroupReschedule = async (data) => {
 const handleBatchReschedule = async ({ ids, targetDate, deltaHours }) => {
   try {
     await calStore.batchReschedule(ids, targetDate, deltaHours)
+    showToast('Ventanas movidas.')
   } catch (e) {
-    console.error('[Calendario] Error moviendo ventanas:', e)
     showToast(e.userMessage || 'Error al mover las ventanas.', 'error')
   }
 }
 
 // ---- Group panel: select individual from group ----
+const returnToGroup = ref(null)
+
 const onGroupSelect = (w) => {
+  returnToGroup.value = selectedGroup.value
   selectedGroup.value = null
   openModalInEdit.value = false
   selectedWindow.value = w
 }
 
-// ---- Ungroup: open individual modal in edit mode ----
-const handleUngroup = (w) => {
-  selectedGroup.value = null
-  openModalInEdit.value = true
-  selectedWindow.value = w
+const closeWindowModal = () => {
+  selectedWindow.value = null
+  openModalInEdit.value = false
+  if (returnToGroup.value) {
+    selectedGroup.value = returnToGroup.value
+    returnToGroup.value = null
+  }
 }
 
 // ---- Resize listener ----
@@ -438,6 +546,7 @@ const onKeydown = (e) => {
   }
   // Escape
   if (e.key === 'Escape') {
+    if (cutWindowIds.value.size > 0) { cutWindowIds.value = new Set(); clipboard.value = null; return }
     if (selectedWindows.value.size > 0) { selectedWindows.value = new Set(); return }
     if (activeTool.value !== 'default') { setTool('default'); return }
     if (selectedWindow.value) selectedWindow.value = null
@@ -538,10 +647,7 @@ onUnmounted(() => {
       <div v-if="!isMobile" class="toolbar__row toolbar__row--secondary">
         <div class="toolbar__legend">
           <span class="toolbar__legend-item">
-            <span class="toolbar__dot toolbar__dot--open"></span>Abierta
-          </span>
-          <span class="toolbar__legend-item">
-            <span class="toolbar__dot toolbar__dot--closed"></span>Cerrada
+            <span class="toolbar__dot toolbar__dot--open"></span>Activa
           </span>
           <span class="toolbar__legend-item">
             <span class="toolbar__dot toolbar__dot--inactive"></span>Inactiva
@@ -587,7 +693,8 @@ onUnmounted(() => {
     <WeekCalendar v-else :windows="windowsFiltradas" :week-dates="weekDates" :specialists="userStore.users"
       :applications="userStore.applications" :selectable="authStore.isAdmin" :is-mobile="isMobile" :view-mode="calView"
       :month-dates="monthDates" :current-month="currentMonth" :active-tool="activeTool"
-      :selected-window-ids="selectedWindows" @select="selectedWindow = $event"
+      :selected-window-ids="selectedWindows" :cut-window-ids="cutWindowIds"
+      @select="selectedWindow = $event"
       @group-select="selectedGroup = $event" @range-selected="onRangeSelected" @reschedule="handleReschedule"
       @group-reschedule="handleGroupReschedule" @batch-reschedule="handleBatchReschedule" @group-resize="handleGroupResize"
       @next-day="calStore.nextDay" @prev-day="calStore.prevDay"
@@ -599,14 +706,20 @@ onUnmounted(() => {
     <WorkWindowModal v-if="selectedWindow" :window="selectedWindow" :specialist-name="calStore.specName(selectedWindow)"
       :application-name="calStore.appName(selectedWindow)" :loading="modalLoading" :specialists="specialistsConVentana"
       :applications="userStore.applications" :start-in-edit-mode="openModalInEdit"
-      @close="selectedWindow = null; openModalInEdit = false"
-      @delete="handleDelete" @update="handleUpdate" @add-window="handleAddWindow" @toggle="handleToggle" />
+      :show-back-button="!!returnToGroup"
+      @close="closeWindowModal" @back="closeWindowModal"
+      @delete="handleDelete" @update="handleUpdate" @add-window="handleAddWindow" @toggle="handleToggle"
+      @disinherit="handleDisinherit" @reinherit="handleReinherit" />
 
     <!-- Panel grupo -->
     <WindowGroupPanel v-if="selectedGroup" :group="selectedGroup" :specialists="userStore.users"
-      :applications="userStore.applications" :loading="modalLoading" @close="selectedGroup = null"
+      :applications="userStore.applications" :loading="modalLoading" :cut-window-ids="cutWindowIds"
+      @close="selectedGroup = null"
       @select="onGroupSelect" @delete="handleDelete"
-      @delete-group="handleDeleteGroup" @ungroup="handleUngroup" @toggle="handleToggle" />
+      @delete-group="handleDeleteGroup" @toggle="handleToggle"
+      @copy="(w) => { clipboard = { type: 'window', data: w, cut: false }; showToast('Ventana copiada.') }"
+      @cut="(w) => { clipboard = { type: 'window', data: w, cut: true }; cutWindowIds = new Set([w.id]); showToast('Ventana cortada.') }"
+      @disinherit="handleDisinherit" @reinherit="handleReinherit" />
 
     <!-- Modal crear -->
     <CreateWorkWindowModal :visible="mostrarCrear" :creating="creando" :error="errorCrear"
@@ -1045,11 +1158,6 @@ onUnmounted(() => {
 .toolbar__dot--open {
   background: rgba(42, 199, 143, 0.15);
   border-left-color: var(--primary-500);
-}
-
-.toolbar__dot--closed {
-  background: rgba(96, 125, 234, 0.12);
-  border-left-color: #607dea;
 }
 
 .toolbar__dot--inactive {

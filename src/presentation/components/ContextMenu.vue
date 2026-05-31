@@ -14,7 +14,7 @@ const menuRef = ref(null)
 const adjustedX = ref(0)
 const adjustedY = ref(0)
 
-watch(() => props.visible, async (val) => {
+watch([() => props.visible, () => props.x, () => props.y], async ([val]) => {
   if (val) {
     adjustedX.value = props.x
     adjustedY.value = props.y

@@ -1,22 +1,65 @@
 <script setup>
+import ContextMenu from '@/presentation/components/ContextMenu.vue'
+import { ref } from 'vue'
+
 const props = defineProps({
   group: { type: Object, default: null },
   specialists: { type: Array, default: () => [] },
   applications: { type: Array, default: () => [] },
   loading: { type: Boolean, default: false },
+  cutWindowIds: { type: Object, default: () => new Set() },
 })
 
-defineEmits(['close', 'select', 'toggle', 'delete', 'delete-group', 'ungroup'])
+const emit = defineEmits(['close', 'select', 'toggle', 'delete', 'delete-group', 'copy', 'cut', 'disinherit', 'reinherit'])
 
 const specName = (w) => props.specialists.find(s => s.specialistId === w.specialistId)?.fullName || w.specialistId
-const appName = (w) => props.applications.find(a => a.id === w.applicationId)?.name || w.applicationId
+const findApp = (w) => props.applications.find(a => a.id === w.applicationId)
+const appName = (w) => findApp(w)?.name || w.applicationId
+const appColor = (w) => { const a = findApp(w); return a?.color || a?.theme?.color || '#2AC78F' }
 
 const statusLabel = (w) => w.isActive ? 'Activa' : 'Inactiva'
-const statusClass = (w) => w.isActive ? 'item--open' : 'item--closed'
+const statusClass = (w) => w.isActive ? 'item--active' : 'item--inactive'
+
+// Context menu per item
+const ctx = ref({ visible: false, x: 0, y: 0, items: [], target: null })
+
+function onItemContext(w, e) {
+  e.preventDefault()
+  const isFutureWindow = w.startsAt && new Date(w.startsAt) > new Date()
+  const hasInheritance = !!(w.inheritedFromWindowId || w.inheritsOnReopen)
+  const inheritItem = isFutureWindow
+    ? (hasInheritance
+      ? { label: 'Desactivar herencia', icon: 'bx-unlink', action: 'disinherit' }
+      : { label: 'Activar herencia', icon: 'bx-link', action: 'reinherit' })
+    : null
+  const items = [
+    { label: 'Ver detalle', icon: 'bx-expand-alt', action: 'select' },
+    { label: w.isActive ? 'Inhabilitar' : 'Habilitar', icon: w.isActive ? 'bx-block' : 'bx-check-circle', action: 'toggle' },
+    ...(inheritItem ? [inheritItem] : []),
+    { label: 'Copiar ventana', icon: 'bx-copy', action: 'copy' },
+    { label: 'Cortar ventana', icon: 'bx-cut', action: 'cut' },
+    { label: 'Eliminar', icon: 'bx-trash', action: 'delete', danger: true },
+  ]
+  ctx.value = { visible: true, x: e.clientX, y: e.clientY, items, target: w }
+}
+
+function onCtxAction(action) {
+  const w = ctx.value.target
+  ctx.value.visible = false
+  switch (action) {
+    case 'select': emit('select', w); break
+    case 'toggle': emit('toggle', w); break
+    case 'copy': emit('copy', w); break
+    case 'cut': emit('cut', w); break
+    case 'disinherit': emit('disinherit', w); break
+    case 'reinherit': emit('reinherit', w); break
+    case 'delete': emit('delete', w); break
+  }
+}
 </script>
 
 <template>
-  <div v-if="group" class="panel-overlay" @click.self="$emit('close')">
+  <div v-if="group" class="panel-overlay" @click.self="$emit('close')" @click="ctx.visible = false">
     <div class="panel">
       <div class="panel__header">
         <h3>{{ group.windows.length }} ventanas</h3>
@@ -38,50 +81,62 @@ const statusClass = (w) => w.isActive ? 'item--open' : 'item--closed'
           v-for="w in group.windows"
           :key="w.id"
           class="item"
-          :class="statusClass(w)"
+          :class="[statusClass(w), { 'item--cut': cutWindowIds.has(w.id) }]"
+          :style="{ '--item-color': appColor(w) }"
+          @contextmenu="onItemContext(w, $event)"
         >
-          <div class="item__info">
-            <span class="item__name">{{ specName(w) }}</span>
+          <div class="item__color-dot" :style="{ background: appColor(w) }"></div>
+          <div class="item__info" @click="$emit('select', w)">
+            <span class="item__name">
+              <i v-if="w.inheritedFromWindowId || w.inheritsOnReopen" class='bx bx-link item__inherit-icon'></i>
+              {{ specName(w) }}
+            </span>
             <span class="item__app">{{ appName(w) }}</span>
-            <span class="item__time">{{ w.timeRange }} · {{ statusLabel(w) }}</span>
+            <span class="item__time">
+              {{ w.timeRange }}
+              <span class="item__status" :class="w.isActive ? 'item__status--active' : 'item__status--inactive'">
+                {{ statusLabel(w) }}
+              </span>
+            </span>
           </div>
           <div class="item__actions">
             <button
               class="item__btn"
               :class="w.isActive ? 'item__btn--close' : 'item__btn--open'"
               :disabled="loading"
-              @click="$emit('toggle', w)"
+              @click.stop="$emit('toggle', w)"
               :title="w.isActive ? 'Inhabilitar' : 'Habilitar'"
             >
               <i class='bx' :class="w.isActive ? 'bx-block' : 'bx-check-circle'"></i>
             </button>
             <button
-              class="item__btn item__btn--ungroup"
-              :disabled="loading"
-              @click="$emit('ungroup', w)"
-              title="Desagrupar"
-            >
-              <i class='bx bx-transfer-alt'></i>
-            </button>
-            <button
               class="item__btn item__btn--delete"
               :disabled="loading"
-              @click="$emit('delete', w)"
+              @click.stop="$emit('delete', w)"
               title="Eliminar"
             >
               <i class='bx bx-trash'></i>
             </button>
             <button
               class="item__btn"
-              @click="$emit('select', w)"
-              title="Ver detalle"
+              @click.stop="onItemContext(w, $event)"
+              title="Más opciones"
             >
-              <i class='bx bx-expand-alt'></i>
+              <i class='bx bx-dots-vertical-rounded'></i>
             </button>
           </div>
         </div>
       </div>
     </div>
+
+    <ContextMenu
+      :visible="ctx.visible"
+      :x="ctx.x"
+      :y="ctx.y"
+      :items="ctx.items"
+      @select="onCtxAction"
+      @close="ctx.visible = false"
+    />
   </div>
 </template>
 
@@ -179,14 +234,42 @@ const statusClass = (w) => w.isActive ? 'item--open' : 'item--closed'
   padding: 0.65rem 0.75rem;
   border-radius: var(--radius-md);
   margin-bottom: 0.25rem;
-  border-left: 3px solid;
-  transition: background 0.1s;
+  border-left: 3px solid var(--item-color, var(--primary-500));
+  transition: background 0.1s, opacity 0.15s;
 }
 
 .item:hover { background: var(--bg-card); }
 
-.item--open { border-left-color: var(--primary-500); }
-.item--closed { border-left-color: #8b8fea; }
+/* Inactive window styling */
+.item--inactive {
+  opacity: 0.5;
+  border-left-color: #9ca3af;
+  background: rgba(100, 110, 130, 0.06);
+}
+
+.item--inactive .item__name {
+  text-decoration: line-through;
+  color: var(--text-secondary);
+}
+
+.item--inactive .item__color-dot {
+  opacity: 0.35;
+}
+
+/* Cut — dashed, tenue */
+.item--cut {
+  opacity: 0.4;
+  border-left-style: dashed;
+  filter: grayscale(0.5);
+}
+
+.item__color-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  margin-right: 0.5rem;
+}
 
 .item__info {
   display: flex;
@@ -194,6 +277,7 @@ const statusClass = (w) => w.isActive ? 'item--open' : 'item--closed'
   gap: 0.1rem;
   min-width: 0;
   flex: 1;
+  cursor: pointer;
 }
 
 .item__name {
@@ -203,6 +287,15 @@ const statusClass = (w) => w.isActive ? 'item--open' : 'item--closed'
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  display: flex;
+  align-items: center;
+  gap: 0.2rem;
+}
+
+.item__inherit-icon {
+  font-size: 0.8rem;
+  opacity: 0.5;
+  flex-shrink: 0;
 }
 
 .item__app {
@@ -214,6 +307,26 @@ const statusClass = (w) => w.isActive ? 'item--open' : 'item--closed'
 .item__time {
   font-size: 0.68rem;
   color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.item__status {
+  font-size: 0.6rem;
+  font-weight: 600;
+  padding: 0.05rem 0.3rem;
+  border-radius: 3px;
+}
+
+.item__status--active {
+  color: var(--primary-500);
+  background: rgba(42, 199, 143, 0.1);
+}
+
+.item__status--inactive {
+  color: #ef4444;
+  background: rgba(239, 68, 68, 0.08);
 }
 
 .item__actions {
@@ -240,7 +353,6 @@ const statusClass = (w) => w.isActive ? 'item--open' : 'item--closed'
 .item__btn:hover:not(:disabled) { color: var(--text-primary); border-color: var(--text-secondary); }
 .item__btn--open:hover:not(:disabled) { color: var(--primary-500); border-color: var(--primary-500); }
 .item__btn--close:hover:not(:disabled) { color: #607dea; border-color: #607dea; }
-.item__btn--ungroup:hover:not(:disabled) { color: #f59e0b; border-color: #f59e0b; }
 .item__btn--delete:hover:not(:disabled) { color: var(--error-500); border-color: var(--error-500); }
 .item__btn:disabled { opacity: 0.4; cursor: not-allowed; }
 </style>

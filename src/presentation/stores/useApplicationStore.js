@@ -9,6 +9,7 @@ import { createFolderUseCase } from '@/application/use-cases/folders/CreateFolde
 import { updateFolderUseCase } from '@/application/use-cases/folders/UpdateFolderUseCase'
 import { deleteFolderUseCase } from '@/application/use-cases/folders/DeleteFolderUseCase'
 import { fetchApplicationSpecialistsUseCase } from '@/application/use-cases/applications/FetchApplicationSpecialistsUseCase'
+import { useUserStore } from '@/presentation/stores/useUserStore'
 
 export const useApplicationStore = defineStore('applications', () => {
   const applications = ref([])
@@ -53,6 +54,9 @@ export const useApplicationStore = defineStore('applications', () => {
     const updated = await updateApplicationUseCase(id, payload)
     const idx = applications.value.findIndex((a) => a.id === id)
     if (idx !== -1) applications.value[idx] = updated
+    // Sync with useUserStore so calendar picks up updated colors
+    const userStore = useUserStore()
+    userStore.updateApplicationInPlace(id, updated)
     return updated
   }
 

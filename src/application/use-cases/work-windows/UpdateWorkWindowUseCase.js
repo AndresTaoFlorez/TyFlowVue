@@ -10,8 +10,10 @@ export async function updateWorkWindowUseCase(window, data) {
   const startDate = data.targetDate || window.scheduledDate
   const endDate = data.endDate || (data.targetDate ? data.targetDate : (window.endDate || window.scheduledDate))
   const payload = {}
-  if (data.startTime != null) payload.startsAt = WorkWindow.toTimestampTz(startDate, data.startTime)
-  if (data.endTime != null) payload.endsAt = WorkWindow.toTimestampTz(endDate, data.endTime)
+  const startTime = data.startTime ?? window.startTime
+  const endTime = data.endTime ?? window.endTime
+  if (data.startTime != null || data.targetDate != null) payload.startsAt = WorkWindow.toTimestampTz(startDate, startTime)
+  if (data.endTime != null || data.targetDate != null || data.endDate != null) payload.endsAt = WorkWindow.toTimestampTz(endDate, endTime)
   if (data.note != null) payload.note = data.note
   if (data.inheritsOnReopen != null) payload.inheritsOnReopen = data.inheritsOnReopen
 

@@ -9,9 +9,18 @@ const props = defineProps({
   specialists: { type: Array, default: () => [] },
   applications: { type: Array, default: () => [] },
   startInEditMode: { type: Boolean, default: false },
+  showBackButton: { type: Boolean, default: false },
 })
 
-const emit = defineEmits(['close', 'toggle', 'delete', 'update', 'add-window'])
+const emit = defineEmits(['close', 'toggle', 'delete', 'update', 'add-window', 'back', 'disinherit', 'reinherit'])
+
+const isFuture = computed(() => {
+  if (!props.window?.startsAt) return false
+  return new Date(props.window.startsAt) > new Date()
+})
+
+const hasInheritance = computed(() => !!(props.window.inheritedFromWindowId || props.window.inheritsOnReopen))
+const canToggleInheritance = computed(() => isFuture.value)
 
 // ---- Add to same schedule ----
 const addSpecialistId = ref('')
@@ -141,6 +150,14 @@ const statusClass = computed(() => props.window.isActive ? 'open' : 'closed')
       <!-- Header -->
       <div class="wm__header">
         <div class="wm__header-left">
+          <button
+            v-if="showBackButton"
+            class="wm__icon-btn"
+            title="Volver al grupo"
+            @click="$emit('back')"
+          >
+            <i class='bx bx-arrow-back'></i>
+          </button>
           <span class="wm__status-dot" :class="'wm__status-dot--' + statusClass"></span>
           <span class="wm__status-label">{{ statusLabel }}</span>
         </div>
@@ -240,9 +257,15 @@ const statusClass = computed(() => props.window.isActive ? 'open' : 'closed')
         </div>
 
         <!-- Inheritance badge -->
-        <div v-if="window.inheritsOnReopen" class="wm__badge">
-          <i class='bx bx-transfer'></i> Hereda conteo al reabrir
+        <div v-if="hasInheritance" class="wm__badge wm__badge--active">
+          <i class='bx bx-link'></i> Hereda
+          <button v-if="canToggleInheritance" class="wm__badge-action" @click="$emit('disinherit', window)" :disabled="loading" title="Desactivar herencia">
+            <i class='bx bx-x'></i>
+          </button>
         </div>
+        <button v-else-if="canToggleInheritance" class="wm__badge wm__badge--toggle" @click="$emit('reinherit', window)" :disabled="loading">
+          <i class='bx bx-link'></i> Activar herencia
+        </button>
 
         <!-- Add to same schedule -->
         <div v-if="editing && specialists.length" class="wm__add-section">
@@ -554,11 +577,58 @@ const statusClass = computed(() => props.window.isActive ? 'open' : 'closed')
   gap: 4px;
   font-size: 11px;
   font-weight: 600;
-  color: #4F46E5;
-  background: #EEF2FF;
   padding: 4px 10px;
   border-radius: var(--radius-full);
   width: fit-content;
+  border: none;
+}
+
+.wm__badge--active {
+  color: #0891b2;
+  background: #ecfeff;
+}
+
+.wm__badge--toggle {
+  color: var(--text-secondary);
+  background: var(--bg-card, #f1f5f9);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.wm__badge--toggle:hover:not(:disabled) {
+  color: #0891b2;
+  background: #ecfeff;
+}
+
+.wm__badge--toggle:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.wm__badge-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.1);
+  color: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  margin-left: 2px;
+  transition: background 0.15s;
+}
+
+.wm__badge-action:hover:not(:disabled) {
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.wm__badge-action:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 /* ===== Add to same schedule ===== */

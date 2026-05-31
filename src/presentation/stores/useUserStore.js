@@ -8,9 +8,11 @@ import { deleteUserUseCase } from '@/application/use-cases/users/DeleteUserUseCa
 import { fetchRolesUseCase } from '@/application/use-cases/roles/FetchRolesUseCase'
 import { fetchSupportLevelsUseCase } from '@/application/use-cases/support-levels/FetchSupportLevelsUseCase'
 import { fetchApplicationsUseCase } from '@/application/use-cases/applications/FetchApplicationsUseCase'
+import { Application } from '@/domain/entities/Application'
+import { SyncEngine } from '@/infrastructure/sync/SyncEngine'
 
 const CACHE_VERSION = 'v2'
-const STORE_CACHE_KEYS = {
+const CACHE_KEYS = {
   roles: `tyflow_roles_${CACHE_VERSION}`,
   supportLevels: `tyflow_support_levels_${CACHE_VERSION}`,
   applications: `tyflow_applications_${CACHE_VERSION}`,
@@ -20,12 +22,17 @@ const STORE_CACHE_KEYS = {
 ;['tyflow_roles', 'tyflow_support_levels', 'tyflow_specialists',
   'tyflow_specialists_v2'].forEach(k => localStorage.removeItem(k))
 
+// ── SyncEngines por dataset ──
+const appSync = new SyncEngine({
+  cacheKey: CACHE_KEYS.applications,
+  hydrate: (raw) => new Application(raw),
+  fetchRemote: () => fetchApplicationsUseCase(),
+  getId: (item) => item.id,
+})
+
 function readCache(key) {
-  try {
-    return JSON.parse(localStorage.getItem(key)) || []
-  } catch {
-    return []
-  }
+  try { return JSON.parse(localStorage.getItem(key)) || [] }
+  catch { return [] }
 }
 
 function writeCache(key, data) {
@@ -34,9 +41,9 @@ function writeCache(key, data) {
 
 export const useUserStore = defineStore('users', () => {
   const users = ref([])
-  const roles = ref(readCache(STORE_CACHE_KEYS.roles))
-  const supportLevels = ref(readCache(STORE_CACHE_KEYS.supportLevels))
-  const applications = ref(readCache(STORE_CACHE_KEYS.applications))
+  const roles = ref(readCache(CACHE_KEYS.roles))
+  const supportLevels = ref(readCache(CACHE_KEYS.supportLevels))
+  const applications = ref(appSync.loadFromCache())
   const loading = ref(false)
   const loadingSelects = ref(false)
   const error = ref(null)
@@ -55,7 +62,14 @@ export const useUserStore = defineStore('users', () => {
   }
 
   async function loadSelects(force = false) {
-    if (!force && roles.value.length > 0 && supportLevels.value.length > 0 && applications.value.length > 0) return
+    const hasCached = roles.value.length > 0 && supportLevels.value.length > 0 && applications.value.length > 0
+
+    if (!force && hasCached) {
+      // Cache disponible → UI inmediata, sync en background
+      appSync.syncInBackground(applications)
+      return
+    }
+
     loadingSelects.value = true
     try {
       const [rolesData, supportLevelsData, applicationsData] = await Promise.all([
@@ -65,10 +79,9 @@ export const useUserStore = defineStore('users', () => {
       ])
       roles.value = rolesData
       supportLevels.value = supportLevelsData
-      applications.value = applicationsData
-      writeCache(STORE_CACHE_KEYS.roles, rolesData)
-      writeCache(STORE_CACHE_KEYS.supportLevels, supportLevelsData)
-      writeCache(STORE_CACHE_KEYS.applications, applicationsData)
+      writeCache(CACHE_KEYS.roles, rolesData)
+      writeCache(CACHE_KEYS.supportLevels, supportLevelsData)
+      appSync.replaceAll(applications, applicationsData)
     } finally {
       loadingSelects.value = false
     }
@@ -101,9 +114,13 @@ export const useUserStore = defineStore('users', () => {
     users.value = users.value.filter((u) => u.id !== userId)
   }
 
+  function updateApplicationInPlace(id, updated) {
+    appSync.updateLocal(applications, id, updated)
+  }
+
   function invalidateApplications() {
     applications.value = []
-    localStorage.removeItem(STORE_CACHE_KEYS.applications)
+    appSync.clearCache()
   }
 
   function clearAll() {
@@ -111,7 +128,9 @@ export const useUserStore = defineStore('users', () => {
     roles.value = []
     supportLevels.value = []
     applications.value = []
-    Object.values(STORE_CACHE_KEYS).forEach(key => localStorage.removeItem(key))
+    appSync.clearCache()
+    localStorage.removeItem(CACHE_KEYS.roles)
+    localStorage.removeItem(CACHE_KEYS.supportLevels)
   }
 
   return {
@@ -128,6 +147,7 @@ export const useUserStore = defineStore('users', () => {
     updateUser,
     toggleStatus,
     deleteUser,
+    updateApplicationInPlace,
     invalidateApplications,
     clearAll,
   }
