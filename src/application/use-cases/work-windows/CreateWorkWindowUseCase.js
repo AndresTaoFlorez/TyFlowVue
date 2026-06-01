@@ -46,6 +46,7 @@ export async function createWorkWindowUseCase(windowsData) {
       startsAt: WorkWindow.toTimestampTz(date, item.startTime),
       endsAt: WorkWindow.toTimestampTz(endDateVal, item.endTime),
       inheritsOnReopen: item.inheritsOnReopen ?? false,
+      affinityWeight: item.affinityWeight ?? null,
     }
   })
 

@@ -277,3 +277,46 @@
   transition: 0.2s;
 }
 .btn-secondary:hover { background-color: var(--bg-card); color: var(--text-primary); }
+
+/* Topbar action buttons (teleported from views) */
+.topbar__actions .btn-create,
+.topbar__actions .btn-edit {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.4rem 0.85rem;
+  background-color: var(--primary-500);
+  color: white;
+  font-weight: 600;
+  font-size: 0.82rem;
+  border-radius: var(--radius-md);
+  border: none;
+  cursor: pointer;
+  transition: background-color 0.15s, box-shadow 0.15s, transform 0.1s;
+  box-shadow: 0 1px 3px rgba(42, 199, 143, 0.25);
+}
+
+.topbar__actions .btn-create:hover,
+.topbar__actions .btn-edit:hover {
+  background-color: var(--primary-600);
+  box-shadow: 0 3px 8px rgba(42, 199, 143, 0.3);
+}
+
+.topbar__actions .btn-create:active,
+.topbar__actions .btn-edit:active {
+  transform: scale(0.97);
+}
+
+.topbar__actions .btn-create i,
+.topbar__actions .btn-edit i {
+  font-size: 1rem;
+}
+
+.topbar__actions .btn-create__short {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  .topbar__actions .btn-create__label { display: none; }
+  .topbar__actions .btn-create__short { display: inline; }
+}

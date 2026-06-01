@@ -16,6 +16,7 @@ export async function updateWorkWindowUseCase(window, data) {
   if (data.endTime != null || data.targetDate != null || data.endDate != null) payload.endsAt = WorkWindow.toTimestampTz(endDate, endTime)
   if (data.note != null) payload.note = data.note
   if (data.inheritsOnReopen != null) payload.inheritsOnReopen = data.inheritsOnReopen
+  if (data.affinityWeight !== undefined) payload.affinityWeight = data.affinityWeight
 
   try {
     return await WorkWindowRepository.update(window.id, payload)

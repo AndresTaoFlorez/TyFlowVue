@@ -22,18 +22,20 @@ export const WorkWindowRepository = {
         starts_at: w.startsAt,
         ends_at: w.endsAt,
         inherits_on_reopen: w.inheritsOnReopen ?? false,
+        affinity_weight: w.affinityWeight ?? null,
       })),
     })
     const items = Array.isArray(data) ? data : data.data ?? []
     return items.map((item) => new WorkWindow(item))
   },
 
-  async update(id, { startsAt = null, endsAt = null, note = null, inheritsOnReopen = null } = {}) {
+  async update(id, { startsAt = null, endsAt = null, note = null, inheritsOnReopen = null, affinityWeight = undefined } = {}) {
     const payload = {}
     if (startsAt != null) payload.starts_at = startsAt
     if (endsAt != null) payload.ends_at = endsAt
     if (note != null) payload.note = note
     if (inheritsOnReopen != null) payload.inherits_on_reopen = inheritsOnReopen
+    if (affinityWeight !== undefined) payload.affinity_weight = affinityWeight
     const { data } = await client.patch(`/work-windows/${id}`, payload)
     return new WorkWindow(data)
   },

@@ -1,13 +1,18 @@
 <script setup>
+import { computed } from 'vue'
+import { useRoute } from 'vue-router'
 import { useAuthStore } from '@/presentation/stores/useAuthStore'
 
 const authStore = useAuthStore()
+const route = useRoute()
 
 defineProps({
   collapsed: { type: Boolean, default: false }
 })
 
 defineEmits(['toggle-sidebar'])
+
+const pageTitle = computed(() => route.meta?.title || '')
 </script>
 
 <template>
@@ -16,6 +21,8 @@ defineEmits(['toggle-sidebar'])
       <button class="sidebar-toggle" @click="$emit('toggle-sidebar')" aria-label="Toggle sidebar">
         <i class='bx' :class="collapsed ? 'bx-menu' : 'bx-menu-alt-left'"></i>
       </button>
+      <h1 v-if="pageTitle" class="topbar__title">{{ pageTitle }}</h1>
     </div>
+    <div id="topbar-actions" class="topbar__actions"></div>
   </header>
 </template>

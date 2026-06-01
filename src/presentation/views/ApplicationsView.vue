@@ -50,6 +50,49 @@ const showToast = (message, type = 'success') => {
 const layout = computed(() => appStore.viewLayout)
 const showRightPanel = computed(() => layout.value !== 'tree-only')
 
+// ---- Collapsible sidebar ----
+const sidebarCollapsed = ref(localStorage.getItem('tyflow_app_sidebar_collapsed') === 'true')
+
+function toggleSidebar() {
+  sidebarCollapsed.value = !sidebarCollapsed.value
+  localStorage.setItem('tyflow_app_sidebar_collapsed', String(sidebarCollapsed.value))
+}
+
+// ---- Resizable sidebar ----
+const SIDEBAR_MIN = 220
+const SIDEBAR_MAX = 420
+const SIDEBAR_DEFAULT = 280
+const sidebarWidth = ref(parseInt(localStorage.getItem('tyflow_app_sidebar_width')) || SIDEBAR_DEFAULT)
+
+function onSidebarResizeStart(e) {
+  e.preventDefault()
+  const startX = e.clientX
+  const startW = sidebarWidth.value
+  document.body.style.cursor = 'col-resize'
+  document.body.style.userSelect = 'none'
+
+  const onMove = (ev) => {
+    const w = startW + (ev.clientX - startX)
+    sidebarWidth.value = Math.max(SIDEBAR_MIN, Math.min(SIDEBAR_MAX, w))
+  }
+
+  const onUp = () => {
+    document.body.style.cursor = ''
+    document.body.style.userSelect = ''
+    document.removeEventListener('mousemove', onMove)
+    document.removeEventListener('mouseup', onUp)
+    localStorage.setItem('tyflow_app_sidebar_width', String(sidebarWidth.value))
+  }
+
+  document.addEventListener('mousemove', onMove)
+  document.addEventListener('mouseup', onUp)
+}
+
+function onSidebarResizeDblClick() {
+  sidebarWidth.value = SIDEBAR_DEFAULT
+  localStorage.setItem('tyflow_app_sidebar_width', String(SIDEBAR_DEFAULT))
+}
+
 // ---- Mobile navigation (Outlook-style) ----
 const isMobile = ref(window.innerWidth < 768)
 const mobileShowConversations = ref(false)
@@ -362,14 +405,6 @@ function handleFolderContextMenu(event, node) {
         </button>
         <button
           class="app-toolbar__btn"
-          :class="{ 'app-toolbar__btn--active': layout === 'split-v' }"
-          @click="appStore.setViewLayout('split-v')"
-          title="Vista vertical"
-        >
-          <i class='bx bx-dock-bottom'></i>
-        </button>
-        <button
-          class="app-toolbar__btn"
           :class="{ 'app-toolbar__btn--active': layout === 'tree-only' }"
           @click="appStore.setViewLayout('tree-only')"
           title="Solo árbol"
@@ -389,31 +424,53 @@ function handleFolderContextMenu(event, node) {
       class="app-split"
       :class="{
         'app-split--h': layout === 'split-h',
-        'app-split--v': layout === 'split-v',
         'app-split--tree': layout === 'tree-only',
       }"
     >
       <!-- Left panel -->
-      <aside v-show="!isMobile || !mobileShowConversations" class="app-split__left">
+      <aside
+        v-show="!isMobile || !mobileShowConversations"
+        class="app-split__left"
+        :class="{ 'app-split__left--collapsed': sidebarCollapsed && !isMobile }"
+        :style="!sidebarCollapsed && !isMobile ? { width: sidebarWidth + 'px' } : {}"
+      >
         <!-- Header -->
         <div class="panel-header">
-          <h1 class="panel-header__title">Aplicaciones</h1>
-          <button @click="mostrarCrearApp = true" class="btn-icon" title="Nueva Aplicación">
-            <i class='bx bx-plus'></i>
-          </button>
+          <h1 v-if="!sidebarCollapsed || isMobile" class="panel-header__title">Aplicaciones</h1>
+          <div class="panel-header__actions">
+            <button v-if="!sidebarCollapsed || isMobile" @click="mostrarCrearApp = true" class="btn-icon" title="Nueva Aplicación">
+              <i class='bx bx-plus'></i>
+            </button>
+            <button v-if="!isMobile" @click="toggleSidebar" class="btn-icon-ghost" :title="sidebarCollapsed ? 'Expandir panel' : 'Colapsar panel'">
+              <i class='bx' :class="sidebarCollapsed ? 'bx-chevron-right' : 'bx-chevron-left'"></i>
+            </button>
+          </div>
         </div>
 
         <!-- Search -->
-        <div class="panel-search">
+        <div v-if="!sidebarCollapsed || isMobile" class="panel-search">
           <i class='bx bx-search panel-search__icon'></i>
           <input v-model="busqueda" type="text" class="panel-search__input" placeholder="Buscar aplicación...">
         </div>
 
         <!-- Loading -->
-        <SectionLoader v-if="appStore.loading" message="Cargando..." />
+        <SectionLoader v-if="(!sidebarCollapsed || isMobile) && appStore.loading" message="Cargando..." />
 
-        <!-- App list / tree -->
-        <div v-else class="app-tree">
+        <!-- Collapsed: icon-only app list -->
+        <div v-if="sidebarCollapsed && !isMobile" class="app-tree app-tree--collapsed">
+          <div
+            v-for="app in appsFiltradas"
+            :key="app.id"
+            class="app-collapsed-item"
+            :title="app.name"
+            @click="toggleApp(app.id)"
+          >
+            <span class="app-node__color" :style="{ backgroundColor: app.color || 'var(--primary-500)' }"></span>
+          </div>
+        </div>
+
+        <!-- App list / tree (expanded) -->
+        <div v-else-if="!appStore.loading" class="app-tree">
           <div v-if="appsFiltradas.length === 0" class="app-tree__empty">
             <p>{{ busqueda.trim() ? 'Sin resultados.' : 'No hay aplicaciones.' }}</p>
           </div>
@@ -466,6 +523,14 @@ function handleFolderContextMenu(event, node) {
           </div>
         </div>
       </aside>
+
+      <!-- Resize handle -->
+      <div
+        v-if="!isMobile && !sidebarCollapsed && showRightPanel"
+        class="app-resize-handle"
+        @mousedown="onSidebarResizeStart"
+        @dblclick="onSidebarResizeDblClick"
+      ></div>
 
       <!-- Right panel -->
       <main v-if="showRightPanel || (isMobile && mobileShowConversations)" v-show="!isMobile || mobileShowConversations" class="app-split__right">
@@ -698,10 +763,6 @@ function handleFolderContextMenu(event, node) {
   flex-direction: row;
 }
 
-/* Split vertical */
-.app-split--v {
-  flex-direction: column;
-}
 
 /* Tree only */
 .app-split--tree {
@@ -716,24 +777,39 @@ function handleFolderContextMenu(event, node) {
 
 /* ===== Left panel ===== */
 .app-split__left {
-  width: 280px;
   min-width: 220px;
-  max-width: 340px;
+  max-width: 420px;
   display: flex;
   flex-direction: column;
   background: var(--bg-main);
-  border-right: 1px solid var(--border-light);
   overflow: hidden;
   flex-shrink: 0;
+  transition: width 0.25s ease;
 }
 
-.app-split--v .app-split__left {
-  width: 100%;
-  max-width: none;
-  min-width: 0;
-  max-height: 40%;
-  border-right: none;
-  border-bottom: 1px solid var(--border-light);
+.app-split__left--collapsed {
+  width: 56px !important;
+  min-width: 56px !important;
+  max-width: 56px !important;
+}
+
+/* ===== Resize handle ===== */
+.app-resize-handle {
+  width: 6px;
+  margin-left: -3px;
+  margin-right: -3px;
+  cursor: col-resize;
+  flex-shrink: 0;
+  position: relative;
+  z-index: 5;
+  background: transparent;
+  transition: background 0.15s;
+  border-left: 1px solid var(--border-light);
+}
+
+.app-resize-handle:hover,
+.app-resize-handle:active {
+  background: rgba(42, 199, 143, 0.4);
 }
 
 /* ===== Right panel ===== */
@@ -748,10 +824,6 @@ function handleFolderContextMenu(event, node) {
   min-width: 0;
 }
 
-.app-split--v .app-split__right {
-  align-items: stretch;
-}
-
 /* ---- Panel header ---- */
 .panel-header {
   display: flex;
@@ -764,6 +836,63 @@ function handleFolderContextMenu(event, node) {
   font-size: 0.85rem;
   font-weight: 700;
   color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.panel-header__actions {
+  display: flex;
+  align-items: center;
+  gap: 0.2rem;
+  flex-shrink: 0;
+}
+
+.btn-icon-ghost {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 1rem;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.btn-icon-ghost:hover {
+  background: var(--bg-card);
+  color: var(--text-primary);
+}
+
+/* ---- Collapsed sidebar items ---- */
+.app-tree--collapsed {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0;
+}
+
+.app-collapsed-item {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background 0.1s;
+}
+
+.app-collapsed-item:hover { background: var(--bg-card); }
+
+.app-collapsed-item .app-node__color {
+  width: 12px;
+  height: 12px;
 }
 
 .btn-icon {
@@ -1020,22 +1149,6 @@ function handleFolderContextMenu(event, node) {
 }
 
 /* ---- Responsive ---- */
-
-/* Tablet: reduce left panel */
-@media (max-width: 1199px) {
-  .app-split--h .app-split__left {
-    width: 260px;
-    min-width: 200px;
-  }
-}
-
-/* Narrower: further reduce */
-@media (max-width: 899px) {
-  .app-split--h .app-split__left {
-    width: 240px;
-    min-width: 180px;
-  }
-}
 
 /* ── Mobile back header ── */
 .app-mobile-back {

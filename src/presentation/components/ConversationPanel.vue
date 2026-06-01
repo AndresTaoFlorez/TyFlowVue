@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { useConversationStore } from '@/presentation/stores/useConversationStore'
 import { useAuthStore } from '@/presentation/stores/useAuthStore'
 
@@ -22,18 +22,13 @@ watch(
     view.value = 'list'
     store.selectConversation(null)
     if (folderId) {
-      await store.loadConversations({ newPage: 1, newFilters: { folderId }, newPageSize: 50 })
+      await store.loadConversations({ newFilters: { folderId } })
     } else {
       store.clearAll()
     }
   },
   { immediate: true }
 )
-
-async function goToPage(p) {
-  if (p < 1 || p > store.totalPages) return
-  await store.loadConversations({ newPage: p })
-}
 
 // ---- Client-side search ----
 const filteredConversations = computed(() => {
@@ -46,6 +41,39 @@ const filteredConversations = computed(() => {
   )
 })
 
+// ---- Infinite scroll (IntersectionObserver) ----
+const sentinelRef = ref(null)
+let _observer = null
+
+function _setupObserver() {
+  _teardownObserver()
+  nextTick(() => {
+    if (!sentinelRef.value) return
+    _observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting && store.hasMore && !store.loadingMore) {
+          store.loadMore()
+        }
+      },
+      { rootMargin: '200px' }
+    )
+    _observer.observe(sentinelRef.value)
+  })
+}
+
+function _teardownObserver() {
+  if (_observer) {
+    _observer.disconnect()
+    _observer = null
+  }
+}
+
+// Re-setup observer when list changes
+watch(() => store.conversations.length, () => nextTick(_setupObserver))
+watch(() => props.splitView, () => nextTick(_setupObserver))
+onMounted(_setupObserver)
+onUnmounted(_teardownObserver)
+
 // ---- Detail / reading pane ----
 async function openReading(conv) {
   if (!props.splitView) view.value = 'reading'
@@ -55,6 +83,76 @@ async function openReading(conv) {
 function backToList() {
   view.value = 'list'
   store.selectConversation(null)
+}
+
+// ---- Resizable split panel ----
+const LIST_MIN = 240
+const LIST_MAX = 480
+const LIST_DEFAULT = 320
+const listWidth = ref(parseInt(localStorage.getItem('tyflow_conv_list_width')) || LIST_DEFAULT)
+let _resizing = false
+
+function onResizeStart(e) {
+  e.preventDefault()
+  _resizing = true
+  const startX = e.clientX
+  const startW = listWidth.value
+  document.body.style.cursor = 'col-resize'
+  document.body.style.userSelect = 'none'
+
+  const onMove = (ev) => {
+    const w = startW + (ev.clientX - startX)
+    listWidth.value = Math.max(LIST_MIN, Math.min(LIST_MAX, w))
+  }
+
+  const onUp = () => {
+    _resizing = false
+    document.body.style.cursor = ''
+    document.body.style.userSelect = ''
+    document.removeEventListener('mousemove', onMove)
+    document.removeEventListener('mouseup', onUp)
+    localStorage.setItem('tyflow_conv_list_width', String(listWidth.value))
+  }
+
+  document.addEventListener('mousemove', onMove)
+  document.addEventListener('mouseup', onUp)
+}
+
+function onResizeDblClick() {
+  listWidth.value = LIST_DEFAULT
+  localStorage.setItem('tyflow_conv_list_width', String(LIST_DEFAULT))
+}
+
+// ---- Reading pane: expand to full width ----
+const readingExpanded = ref(false)
+
+function toggleReadingExpand() {
+  readingExpanded.value = !readingExpanded.value
+}
+
+// ---- Reading pane: prev/next navigation ----
+const currentIndex = computed(() => {
+  if (!store.selectedConversation) return -1
+  return filteredConversations.value.findIndex(c => c.id === store.selectedConversation.id)
+})
+
+const hasPrev = computed(() => currentIndex.value > 0)
+const hasNext = computed(() => currentIndex.value >= 0 && currentIndex.value < filteredConversations.value.length - 1)
+
+async function goToPrev() {
+  if (!hasPrev.value) return
+  const prev = filteredConversations.value[currentIndex.value - 1]
+  await store.selectConversation(prev.id)
+}
+
+async function goToNext() {
+  if (!hasNext.value) return
+  const next = filteredConversations.value[currentIndex.value + 1]
+  await store.selectConversation(next.id)
+  // If near the end, trigger load more
+  if (currentIndex.value + 1 >= filteredConversations.value.length - 3 && store.hasMore) {
+    store.loadMore()
+  }
 }
 
 // ---- Ingest ----
@@ -98,7 +196,6 @@ async function submitIngest() {
       ingestSuccess.value = 'Conversacion creada.'
     }
     showIngest.value = false
-    await store.loadConversations({ newPage: 1, newFilters: { folderId: props.selectedFolder.id }, newPageSize: 50 })
   } catch (e) {
     ingestError.value = e.userMessage || e.message
   } finally {
@@ -151,7 +248,7 @@ function senderName(addr) {
          ============================================================ -->
     <template v-if="splitView">
       <!-- Left: mail list -->
-      <div class="conv-list-col">
+      <div v-show="!readingExpanded" class="conv-list-col" :style="{ width: listWidth + 'px' }">
         <!-- Toolbar -->
         <div class="toolbar">
           <div class="toolbar__left">
@@ -171,23 +268,23 @@ function senderName(addr) {
           <input v-model="filterSearch" type="text" placeholder="Buscar..." class="search-bar__input">
         </div>
 
-        <!-- Loading -->
-        <div v-if="store.loading" class="state">
+        <!-- Loading (initial) -->
+        <div v-if="store.loading && store.conversations.length === 0" class="state">
           <i class='bx bx-loader-alt bx-spin'></i> Cargando...
         </div>
 
         <!-- Error -->
-        <div v-else-if="store.error" class="state state--error">
+        <div v-else-if="store.error && store.conversations.length === 0" class="state state--error">
           <i class='bx bx-error-circle'></i> {{ store.error }}
         </div>
 
         <!-- Empty -->
-        <div v-else-if="filteredConversations.length === 0" class="state">
+        <div v-else-if="filteredConversations.length === 0 && !store.loading" class="state">
           <i class='bx bx-envelope'></i>
           {{ filterSearch.trim() ? 'Sin resultados.' : 'Carpeta vacía' }}
         </div>
 
-        <!-- Mail list -->
+        <!-- Mail list with infinite scroll -->
         <div v-else class="mail-list">
           <div
             v-for="conv in filteredConversations"
@@ -212,16 +309,18 @@ function senderName(addr) {
               <div class="mail-item__preview">{{ bodyPreview(conv.body) }}</div>
             </div>
           </div>
+
+          <!-- Sentinel for infinite scroll -->
+          <div ref="sentinelRef" class="scroll-sentinel">
+            <template v-if="store.loadingMore">
+              <i class='bx bx-loader-alt bx-spin'></i> Cargando más...
+            </template>
+          </div>
         </div>
 
-        <!-- Pagination -->
-        <div v-if="store.total > 0 && !store.loading" class="pag-bar">
-          <span class="pag-bar__info">{{ store.total }}</span>
-          <div class="pag-bar__btns">
-            <button :disabled="store.page <= 1" @click="goToPage(store.page - 1)" class="pag-bar__btn"><i class='bx bx-chevron-left'></i></button>
-            <span class="pag-bar__page">{{ store.page }}/{{ store.totalPages }}</span>
-            <button :disabled="store.page >= store.totalPages" @click="goToPage(store.page + 1)" class="pag-bar__btn"><i class='bx bx-chevron-right'></i></button>
-          </div>
+        <!-- Loaded count -->
+        <div v-if="store.total > 0 && !store.loading" class="loaded-bar">
+          <span class="loaded-bar__info">{{ store.conversations.length }} de {{ store.total }}</span>
         </div>
 
         <!-- Ingest success -->
@@ -230,8 +329,32 @@ function senderName(addr) {
         </div>
       </div>
 
+      <!-- Resize handle -->
+      <div
+        v-show="!readingExpanded"
+        class="conv-resize-handle"
+        @mousedown="onResizeStart"
+        @dblclick="onResizeDblClick"
+      ></div>
+
       <!-- Right: reading pane -->
       <div class="conv-reading-col">
+        <!-- Reading toolbar with nav arrows + expand -->
+        <div v-if="store.selectedConversation" class="reading-nav">
+          <div class="reading-nav__left">
+            <button class="reading-nav__btn" :disabled="!hasPrev" @click="goToPrev" title="Anterior">
+              <i class='bx bx-chevron-up'></i>
+            </button>
+            <button class="reading-nav__btn" :disabled="!hasNext" @click="goToNext" title="Siguiente">
+              <i class='bx bx-chevron-down'></i>
+            </button>
+            <span class="reading-nav__pos">{{ currentIndex + 1 }} / {{ filteredConversations.length }}</span>
+          </div>
+          <button class="reading-nav__btn" @click="toggleReadingExpand" :title="readingExpanded ? 'Mostrar lista' : 'Expandir lectura'">
+            <i class='bx' :class="readingExpanded ? 'bx-collapse' : 'bx-expand'"></i>
+          </button>
+        </div>
+
         <div v-if="store.loadingDetail" class="state">
           <i class='bx bx-loader-alt bx-spin'></i> Cargando...
         </div>
@@ -320,13 +443,13 @@ function senderName(addr) {
           <input v-model="filterSearch" type="text" placeholder="Buscar conversaciones..." class="search-bar__input">
         </div>
 
-        <div v-if="store.loading" class="state">
+        <div v-if="store.loading && store.conversations.length === 0" class="state">
           <i class='bx bx-loader-alt bx-spin'></i> Cargando...
         </div>
-        <div v-else-if="store.error" class="state state--error">
+        <div v-else-if="store.error && store.conversations.length === 0" class="state state--error">
           <i class='bx bx-error-circle'></i> {{ store.error }}
         </div>
-        <div v-else-if="filteredConversations.length === 0" class="state">
+        <div v-else-if="filteredConversations.length === 0 && !store.loading" class="state">
           <i class='bx bx-envelope'></i>
           {{ filterSearch.trim() ? 'Sin resultados.' : 'Carpeta vacía' }}
         </div>
@@ -355,15 +478,17 @@ function senderName(addr) {
               </div>
             </div>
           </div>
+
+          <!-- Sentinel for infinite scroll -->
+          <div ref="sentinelRef" class="scroll-sentinel">
+            <template v-if="store.loadingMore">
+              <i class='bx bx-loader-alt bx-spin'></i> Cargando más...
+            </template>
+          </div>
         </div>
 
-        <div v-if="store.total > 0 && !store.loading" class="pag-bar">
-          <span class="pag-bar__info">{{ store.total }} correo{{ store.total !== 1 ? 's' : '' }}</span>
-          <div class="pag-bar__btns">
-            <button :disabled="store.page <= 1" @click="goToPage(store.page - 1)" class="pag-bar__btn"><i class='bx bx-chevron-left'></i></button>
-            <span class="pag-bar__page">{{ store.page }}/{{ store.totalPages }}</span>
-            <button :disabled="store.page >= store.totalPages" @click="goToPage(store.page + 1)" class="pag-bar__btn"><i class='bx bx-chevron-right'></i></button>
-          </div>
+        <div v-if="store.total > 0 && !store.loading" class="loaded-bar">
+          <span class="loaded-bar__info">{{ store.conversations.length }} de {{ store.total }}</span>
         </div>
 
         <div v-if="ingestSuccess" class="toast-banner" @click="ingestSuccess = ''">
@@ -535,14 +660,31 @@ function senderName(addr) {
 }
 
 .conv-list-col {
-  width: 260px;
-  min-width: 200px;
-  max-width: 320px;
+  min-width: 240px;
+  max-width: 480px;
   display: flex;
   flex-direction: column;
-  border-right: 1px solid var(--border-light);
   overflow: hidden;
   flex-shrink: 0;
+}
+
+/* ===== Resize handle between list and reading ===== */
+.conv-resize-handle {
+  width: 6px;
+  margin-left: -3px;
+  margin-right: -3px;
+  cursor: col-resize;
+  flex-shrink: 0;
+  position: relative;
+  z-index: 5;
+  background: transparent;
+  transition: background 0.15s;
+  border-left: 1px solid var(--border-light);
+}
+
+.conv-resize-handle:hover,
+.conv-resize-handle:active {
+  background: rgba(42, 199, 143, 0.4);
 }
 
 .conv-reading-col {
@@ -551,6 +693,55 @@ function senderName(addr) {
   flex-direction: column;
   overflow: hidden;
   min-width: 0;
+}
+
+/* ===== Reading nav toolbar ===== */
+.reading-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.3rem 0.6rem;
+  border-bottom: 1px solid var(--border-light);
+  flex-shrink: 0;
+  background: var(--bg-main);
+}
+
+.reading-nav__left {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.reading-nav__btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  background: white;
+  color: var(--text-secondary);
+  font-size: 1rem;
+  cursor: pointer;
+  transition: all 0.12s;
+}
+
+.reading-nav__btn:hover:not(:disabled) {
+  border-color: var(--primary-500);
+  color: var(--primary-500);
+}
+
+.reading-nav__btn:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.reading-nav__pos {
+  font-size: 0.7rem;
+  color: var(--text-secondary);
+  margin-left: 0.3rem;
+  font-weight: 500;
 }
 
 /* ===== Reading placeholder (wide mode) ===== */
@@ -795,26 +986,28 @@ function senderName(addr) {
 }
 .tag-chip--lg { font-size: 0.72rem; padding: 2px 9px; }
 
-/* ===== Pagination ===== */
-.pag-bar {
+/* ===== Infinite scroll sentinel ===== */
+.scroll-sentinel {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 0.3rem 0.75rem;
+  justify-content: center;
+  gap: 0.4rem;
+  padding: 0.75rem;
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+  min-height: 1px;
+}
+
+/* ===== Loaded bar (replaces pagination) ===== */
+.loaded-bar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.25rem 0.75rem;
   border-top: 1px solid var(--border-light);
   flex-shrink: 0;
 }
-.pag-bar__info { font-size: 0.72rem; color: var(--text-secondary); }
-.pag-bar__btns { display: flex; align-items: center; gap: 0.3rem; }
-.pag-bar__page { font-size: 0.72rem; color: var(--text-secondary); min-width: 28px; text-align: center; }
-.pag-bar__btn {
-  display: flex; align-items: center; justify-content: center;
-  width: 24px; height: 24px; border: 1px solid var(--border-light);
-  border-radius: var(--radius-sm); background: white; color: var(--text-primary);
-  cursor: pointer; font-size: 0.95rem; transition: border-color 0.15s;
-}
-.pag-bar__btn:hover:not(:disabled) { border-color: var(--primary-500); color: var(--primary-500); }
-.pag-bar__btn:disabled { opacity: 0.3; cursor: default; }
+.loaded-bar__info { font-size: 0.7rem; color: var(--text-secondary); }
 
 /* ===== Toast ===== */
 .toast-banner {
@@ -1079,5 +1272,6 @@ function senderName(addr) {
   .modal-content { padding: 1rem; }
   .form-grid { grid-template-columns: 1fr; }
   .reading { padding: 0.5rem; }
+  .conv-resize-handle { display: none; }
 }
 </style>

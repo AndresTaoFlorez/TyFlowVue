@@ -23,9 +23,10 @@ export const useCalendarStore = defineStore('calendar', () => {
   const windows = ref([])
   const loading = ref(false)
 
-  // ---- Cache: keyed by "fromDate|toDate" ----
-  const _cache = new Map()
-  const CACHE_MAX = 12
+  // ---- Fetched range tracking (accumulative strategy) ----
+  const _fetchedRanges = []        // Array of { from, to } ISO date ranges already loaded
+  let _initialLoadDone = false
+  const _prefetchInFlight = new Set()
 
   // ---- Undo stack ----
   const _undoStack = ref([])
@@ -42,15 +43,15 @@ export const useCalendarStore = defineStore('calendar', () => {
     const entry = _undoStack.value.pop()
     // Optimistic: restore snapshot immediately
     windows.value = entry.snapshot
-    _invalidateCache()
+    // Clear all fetched ranges so next navigation re-fetches fresh data
+    _fetchedRanges.length = 0
     // Backend: reverse the operation
     try {
       await entry.undo()
     } catch {
       // errors handled silently
     }
-    // Delete cache so loadWindows fetches fresh from server
-    _deleteCurrentCache()
+    // Re-fetch current view (silent — windows.value has snapshot data)
     await loadWindows()
   }
 
@@ -172,7 +173,9 @@ export const useCalendarStore = defineStore('calendar', () => {
   })
 
   // ---- Sync offsets when switching views ----
+  let _skipViewSync = false
   watch(calView, (newView, oldView) => {
+    if (_skipViewSync) { _skipViewSync = false; return }
     if (newView === 'week') {
       if (oldView === 'day') {
         const target = new Date()
@@ -214,45 +217,115 @@ export const useCalendarStore = defineStore('calendar', () => {
     }
   })
 
-  // ---- Load windows (with cache) ----
+  // ---- Range helpers ----
+  function _fmtDate(d) {
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  }
+
+  function _isRangeCovered(from, to) {
+    return _fetchedRanges.some(r => r.from <= from && r.to >= to)
+  }
+
+  function _getInitialRange() {
+    const now = new Date()
+    const from = new Date(now.getFullYear(), now.getMonth() - 1, 1)
+    const to = new Date(now.getFullYear(), now.getMonth() + 2, 0)
+    return { from: _fmtDate(from), to: _fmtDate(to) }
+  }
+
+  async function _fetchRange(from, to) {
+    const tzOffset = WorkWindow.toTimestampTz(from, '00:00')?.slice(-6) || '-05:00'
+    return await fetchWorkWindowsUseCase({
+      date_from: `${from}T00:00:00${tzOffset}`,
+      date_to: `${to}T23:59:59${tzOffset}`,
+    })
+  }
+
+  function _mergeWindows(fetched, fromDate, toDate) {
+    // Replace all windows in [fromDate, toDate] with fetched data;
+    // keep windows outside that range untouched.
+    windows.value = [
+      ...windows.value.filter(w => w.scheduledDate < fromDate || w.scheduledDate > toDate),
+      ...fetched,
+    ]
+  }
+
+  function _prefetchAdjacent() {
+    const ranges = []
+    if (calView.value === 'week') {
+      const first = weekDates.value[0]
+      const last = weekDates.value[weekDates.value.length - 1]
+      ranges.push({ from: _addDays(first, -7), to: _addDays(first, -1) })
+      ranges.push({ from: _addDays(last, 1), to: _addDays(last, 7) })
+    } else if (calView.value === 'day') {
+      const day = weekDates.value[0]
+      ranges.push({ from: _addDays(day, -7), to: _addDays(day, -1) })
+      ranges.push({ from: _addDays(day, 1), to: _addDays(day, 7) })
+    } else if (calView.value === 'month') {
+      const now = new Date()
+      const prevFirst = new Date(now.getFullYear(), now.getMonth() + monthOffset.value - 1, 1)
+      const prevLast = new Date(now.getFullYear(), now.getMonth() + monthOffset.value, 0)
+      const nextFirst = new Date(now.getFullYear(), now.getMonth() + monthOffset.value + 1, 1)
+      const nextLast = new Date(now.getFullYear(), now.getMonth() + monthOffset.value + 2, 0)
+      ranges.push({ from: _fmtDate(prevFirst), to: _fmtDate(prevLast) })
+      ranges.push({ from: _fmtDate(nextFirst), to: _fmtDate(nextLast) })
+    }
+    for (const { from, to } of ranges) {
+      if (_isRangeCovered(from, to)) continue
+      const key = `${from}|${to}`
+      if (_prefetchInFlight.has(key)) continue
+      _prefetchInFlight.add(key)
+      _fetchRange(from, to)
+        .then(result => {
+          _mergeWindows(result, from, to)
+          _fetchedRanges.push({ from, to })
+        })
+        .catch(() => {})
+        .finally(() => _prefetchInFlight.delete(key))
+    }
+  }
+
+  // ---- Load windows (accumulative strategy) ----
   async function loadWindows() {
     const fromDate = weekDates.value[0]
     const toDate = weekDates.value[weekDates.value.length - 1]
-    const cacheKey = `${fromDate}|${toDate}`
+    if (!fromDate || !toDate) return
 
-    // Serve from cache if available
-    if (_cache.has(cacheKey)) {
-      windows.value = _cache.get(cacheKey)
+    // Already covered → instant, just prefetch neighbors
+    if (_isRangeCovered(fromDate, toDate)) {
+      _prefetchAdjacent()
       return
     }
 
-    const isFirstLoad = windows.value.length === 0 && _cache.size === 0
-    if (isFirstLoad) loading.value = true
+    let fetchFrom = fromDate
+    let fetchTo = toDate
+
+    // First load: wide 3-month range with spinner
+    if (!_initialLoadDone) {
+      const range = _getInitialRange()
+      fetchFrom = range.from < fromDate ? range.from : fromDate
+      fetchTo = range.to > toDate ? range.to : toDate
+      loading.value = true
+      _initialLoadDone = true
+    }
+    // Subsequent loads: silent (no spinner, no clearing windows)
 
     try {
-      const tzOffset = WorkWindow.toTimestampTz(fromDate, '00:00')?.slice(-6) || '-05:00'
-      const result = await fetchWorkWindowsUseCase({
-        date_from: `${fromDate}T00:00:00${tzOffset}`,
-        date_to: `${toDate}T23:59:59${tzOffset}`,
-      })
-      windows.value = result
-
-      // Store in cache, evict oldest if needed
-      if (_cache.size >= CACHE_MAX) {
-        const oldest = _cache.keys().next().value
-        _cache.delete(oldest)
-      }
-      _cache.set(cacheKey, result)
+      const result = await _fetchRange(fetchFrom, fetchTo)
+      _mergeWindows(result, fetchFrom, fetchTo)
+      _fetchedRanges.push({ from: fetchFrom, to: fetchTo })
     } catch (e) {
       throw e
     } finally {
       loading.value = false
     }
+
+    _prefetchAdjacent()
   }
 
   // ---- Watch date changes → load ----
   watch([weekDates, monthDates], () => {
-    loadWindows().catch(() => { /* already logged inside loadWindows */ })
+    loadWindows().catch(() => {})
   })
 
   // ---- Mutation helpers ----
@@ -275,24 +348,21 @@ export const useCalendarStore = defineStore('calendar', () => {
   }
 
   function _invalidateCache() {
-    const fromDate = weekDates.value[0]
-    const toDate = weekDates.value[weekDates.value.length - 1]
-    const cacheKey = `${fromDate}|${toDate}`
-    _cache.set(cacheKey, windows.value)
+    // No-op: with accumulative windows, mutations update windows.value directly
   }
 
   function _deleteCurrentCache() {
     const fromDate = weekDates.value[0]
     const toDate = weekDates.value[weekDates.value.length - 1]
-    _cache.delete(`${fromDate}|${toDate}`)
+    for (let i = _fetchedRanges.length - 1; i >= 0; i--) {
+      if (_fetchedRanges[i].from <= toDate && _fetchedRanges[i].to >= fromDate) {
+        _fetchedRanges.splice(i, 1)
+      }
+    }
   }
 
-  /** Remove specific window IDs from ALL cached weeks (for cross-week cut+paste). */
+  /** Remove specific window IDs — no-op, callers already update windows.value directly. */
   function _purgeFromAllCaches(idSet) {
-    for (const [key, cached] of _cache.entries()) {
-      const filtered = cached.filter(w => !idSet.has(w.id))
-      if (filtered.length !== cached.length) _cache.set(key, filtered)
-    }
   }
 
   function _addDays(dateStr, days) {
@@ -303,6 +373,23 @@ export const useCalendarStore = defineStore('calendar', () => {
 
   function _findOriginal(id) {
     return windows.value.find(x => x.id === id)
+  }
+
+  const _MESSAGE_MAP = [
+    [/no previous window found.*specialist.*application/i, 'No existe una ventana anterior del mismo especialista y aplicación para heredar.'],
+    [/no previous window found/i, 'No se encontró una ventana anterior para heredar.'],
+    [/Cannot activate inheritance.*already started/i, 'No se puede activar herencia en una ventana que ya inició.'],
+    [/Cannot disinherit.*already started/i, 'No se puede quitar la herencia de una ventana que ya inició.'],
+    [/does not inherit/i, 'Esta ventana no tiene herencia activa.'],
+    [/already inherits/i, 'Esta ventana ya tiene herencia activa.'],
+    [/not found.*already deleted/i, 'Ventana no encontrada o ya fue eliminada.'],
+    [/not found/i, 'Ventana de trabajo no encontrada.'],
+  ]
+
+  function _translateMessage(msg) {
+    if (!msg) return ''
+    const match = _MESSAGE_MAP.find(([pattern]) => pattern.test(msg))
+    return match ? match[1] : msg
   }
 
   function _buildOptimistic(original, { startTime, endTime, targetDate, endDate }) {
@@ -427,6 +514,7 @@ export const useCalendarStore = defineStore('calendar', () => {
         ends_at: WorkWindow.toTimestampTz(endDate, item.endTime),
         is_active: true,
         inherits_on_reopen: item.inheritsOnReopen ?? false,
+        affinity_weight: item.affinityWeight ?? null,
       }
       return new WorkWindow(raw)
     })
@@ -498,7 +586,7 @@ export const useCalendarStore = defineStore('calendar', () => {
     const results = await disinheritWorkWindowUseCase([w.id])
     const result = results[0]
     if (!result?.success) {
-      throw { userMessage: result?.message || 'No se pudo desactivar la herencia.' }
+      throw { userMessage: _translateMessage(result?.message) || 'No se pudo desactivar la herencia.' }
     }
     // Fetch fresh window from backend
     const fresh = await WorkWindowRepository.fetchById(w.id)
@@ -514,7 +602,7 @@ export const useCalendarStore = defineStore('calendar', () => {
     const results = await inheritWorkWindowUseCase([w.id])
     const result = results[0]
     if (!result?.success) {
-      throw { userMessage: result?.message || 'No se pudo activar la herencia.' }
+      throw { userMessage: _translateMessage(result?.message) || 'No se pudo activar la herencia.' }
     }
     const fresh = await WorkWindowRepository.fetchById(w.id)
     _replaceWindow(w.id, fresh)
@@ -1069,6 +1157,7 @@ export const useCalendarStore = defineStore('calendar', () => {
     const now = new Date()
     now.setHours(12, 0, 0, 0)
     dayOffset.value = Math.round((target.getTime() - now.getTime()) / (24 * 60 * 60 * 1000))
+    _skipViewSync = true
     calView.value = 'day'
   }
 

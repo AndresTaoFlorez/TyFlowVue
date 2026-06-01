@@ -18,6 +18,7 @@ const endTime = ref('17:00')
 const endDate = ref('')
 const selectedDates = ref([])
 const inheritsOnReopen = ref(false)
+const affinityWeight = ref('')
 
 // Rows: each row is { specialistId, applicationId }
 const rows = ref([{ specialistId: '', applicationId: '' }])
@@ -54,10 +55,23 @@ const filteredSpecs = computed(() => {
   return props.specialists.filter(s => s.fullName.toLowerCase().includes(q))
 })
 
+const appsForRow = (rowIdx) => {
+  const row = rows.value[rowIdx]
+  if (!row?.specialistId) return props.applications
+  const spec = props.specialists.find(s => s.specialistId === row.specialistId)
+  if (!spec?.applicationAssignments?.length) return props.applications
+  const allowedIds = new Set(spec.applicationAssignments.map(a => a.application_id || a.id || a))
+  return props.applications.filter(a => allowedIds.has(a.id))
+}
+
 const filteredApps = computed(() => {
   const q = dropdownSearch.value.toLowerCase().trim()
-  if (!q) return props.applications
-  return props.applications.filter(a => a.name.toLowerCase().includes(q))
+  // Find which row's app dropdown is open
+  const match = activeDropdown.value?.match(/^app-(\d+)$/)
+  const rowIdx = match ? parseInt(match[1]) : -1
+  const base = rowIdx >= 0 ? appsForRow(rowIdx) : props.applications
+  if (!q) return base
+  return base.filter(a => a.name.toLowerCase().includes(q))
 })
 
 const specName = (id) => props.specialists.find(s => s.specialistId === id)?.fullName || ''
@@ -65,6 +79,11 @@ const appName = (id) => props.applications.find(a => a.id === id)?.name || ''
 
 const selectSpec = (rowIdx, s) => {
   rows.value[rowIdx].specialistId = s.specialistId
+  // Clear app if not in this specialist's allowed list
+  const allowed = appsForRow(rowIdx)
+  if (rows.value[rowIdx].applicationId && !allowed.some(a => a.id === rows.value[rowIdx].applicationId)) {
+    rows.value[rowIdx].applicationId = ''
+  }
   activeDropdown.value = null
 }
 
@@ -111,6 +130,12 @@ const removeDate = (iso) => {
 }
 
 // ---- Time display ----
+const ampm = (time) => {
+  if (!time) return ''
+  const h = parseInt(time.split(':')[0])
+  return h < 12 ? 'AM' : 'PM'
+}
+
 const durationLabel = computed(() => {
   const [sh, sm] = (startTime.value || '08:00').split(':').map(Number)
   const [eh, em] = (endTime.value || '17:00').split(':').map(Number)
@@ -207,6 +232,7 @@ watch(() => props.visible, (val) => {
   }
   rows.value = [{ specialistId: '', applicationId: '' }]
   inheritsOnReopen.value = false
+  affinityWeight.value = ''
 })
 
 // ---- Submit ----
@@ -225,6 +251,7 @@ const handleSubmit = () => {
         scheduledDate: date,
         ...(useEndDate ? { endDate: endDate.value } : {}),
         inheritsOnReopen: inheritsOnReopen.value,
+        affinityWeight: affinityWeight.value ? parseFloat(affinityWeight.value) : null,
       })
     }
   }
@@ -263,8 +290,10 @@ const handleSubmit = () => {
               <i class='bx bx-time-five'></i>
               <div class="row__time">
                 <input v-model="startTime" type="time" class="time-input" :disabled="creating">
+                <span class="ampm-label">{{ ampm(startTime) }}</span>
                 <span class="time-dash">–</span>
                 <input v-model="endTime" type="time" class="time-input" :disabled="creating">
+                <span class="ampm-label">{{ ampm(endTime) }}</span>
                 <span v-if="durationLabel" class="time-badge">{{ durationLabel }}</span>
               </div>
               <span v-if="endTimeError" class="row__error">{{ endTimeError }}</span>
@@ -286,6 +315,7 @@ const handleSubmit = () => {
                       :disabled="creating"
                     >
                     <input v-model="startTime" type="time" class="time-input" :disabled="creating">
+                    <span class="ampm-label">{{ ampm(startTime) }}</span>
                   </div>
                 </div>
               </div>
@@ -302,6 +332,7 @@ const handleSubmit = () => {
                       :disabled="creating"
                     >
                     <input v-model="endTime" type="time" class="time-input" :disabled="creating">
+                    <span class="ampm-label">{{ ampm(endTime) }}</span>
                     <span v-if="durationLabel" class="time-badge">{{ durationLabel }}</span>
                   </div>
                 </div>
@@ -386,6 +417,24 @@ const handleSubmit = () => {
             <!-- Conflicts -->
             <div v-for="(warn, i) in conflicts" :key="i" class="modal__warn">
               <i class='bx bx-error'></i> {{ warn }}
+            </div>
+
+            <!-- Peso de afinidad -->
+            <div class="row" @click.stop="closeDropdowns">
+              <i class='bx bx-slider-alt'></i>
+              <div class="row__datetime">
+                <label class="row__datetime-label">Peso de afinidad</label>
+                <input
+                  v-model="affinityWeight"
+                  type="number"
+                  step="0.0001"
+                  min="0.0001"
+                  max="9.9999"
+                  class="weight-input"
+                  placeholder="Ej. 1.5"
+                  :disabled="creating"
+                >
+              </div>
             </div>
 
             <!-- Inherit toggle -->
@@ -628,6 +677,14 @@ const handleSubmit = () => {
   font-size: 0.8rem;
 }
 
+.ampm-label {
+  font-size: 0.6rem;
+  font-weight: 700;
+  color: var(--text-secondary);
+  letter-spacing: 0.02em;
+  flex-shrink: 0;
+}
+
 .time-badge {
   font-size: 0.68rem;
   font-weight: 600;
@@ -637,6 +694,25 @@ const handleSubmit = () => {
   border-radius: var(--radius-full);
   margin-left: auto;
 }
+
+.weight-input {
+  border: none;
+  background: var(--bg-card);
+  border-radius: var(--radius-sm);
+  padding: 0.3rem 0.45rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  width: 8rem;
+  outline: none;
+  transition: box-shadow 0.12s;
+}
+
+.weight-input:focus {
+  box-shadow: 0 0 0 2px rgba(42, 199, 143, 0.2);
+}
+
+.weight-input::placeholder { color: #94a3b8; font-weight: 500; }
 
 /* Section label */
 .section-label {

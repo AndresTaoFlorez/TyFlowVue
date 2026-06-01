@@ -304,13 +304,11 @@ onUnmounted(() => {
 <template>
   <section class="content">
 
-    <!-- Cabecera -->
-    <div class="page-header">
-      <h1 class="page-header__title">Registro de Usuarios</h1>
+    <Teleport to="#topbar-actions" defer>
       <button @click="abrirCrear" class="btn-create">
         <i class='bx bx-plus'></i> <span class="btn-create__label">Crear nuevo usuario</span><span class="btn-create__short">Nuevo</span>
       </button>
-    </div>
+    </Teleport>
 
     <!-- Buscador -->
     <div class="filter-bar">
@@ -496,18 +494,6 @@ onUnmounted(() => {
   gap: 1.5rem;
 }
 
-.page-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.page-header__title {
-  font-size: 1.5rem;
-  font-weight: 700;
-  color: var(--text-primary);
-}
-
 .btn-create {
   display: flex;
   align-items: center;
@@ -563,7 +549,6 @@ onUnmounted(() => {
 }
 
 @media (max-width: 480px) {
-  .page-header__title { font-size: 1.2rem; }
   .modal-content {
     padding: 1rem;
     border-radius: var(--radius-md);

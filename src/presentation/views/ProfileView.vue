@@ -204,13 +204,12 @@ onUnmounted(() => {
 
 <template>
   <section class="content">
-    <div class="page-header">
-      <h1 class="page-header__title">Mi Perfil</h1>
+    <Teleport to="#topbar-actions" defer>
       <button v-if="profile && !editando" @click="abrirEditar" class="btn-edit" :disabled="cargandoSelects">
         <i :class="cargandoSelects ? 'bx bx-loader-alt bx-spin' : 'bx bx-edit-alt'"></i>
         <span>{{ cargandoSelects ? 'Cargando...' : 'Editar' }}</span>
       </button>
-    </div>
+    </Teleport>
 
     <div class="profile-layout" v-if="profile">
       <!-- Columna izquierda: identidad -->
@@ -420,18 +419,8 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   gap: 1.5rem;
-}
-
-.page-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.page-header__title {
-  font-size: 1.5rem;
-  font-weight: 700;
-  color: var(--text-primary);
+  overflow-y: auto;
+  padding-bottom: 2rem;
 }
 
 .btn-edit {
@@ -838,7 +827,6 @@ onUnmounted(() => {
   .detail-card__grid {
     grid-template-columns: 1fr;
   }
-  .page-header__title { font-size: 1.2rem; }
   .modal-overlay {
     padding: 1rem 0.5rem;
     align-items: flex-start;

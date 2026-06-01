@@ -4,7 +4,7 @@ export class WorkWindow {
     opening_count = 0, current_count = 0, inherits_on_reopen = false,
     is_active = true, created_at = null, opened_at = null, closed_at = null,
     closing_count = null, inherited_from_window_id = null,
-    deleted_at = null,
+    affinity_weight = null, deleted_at = null,
   }) {
     this.id = id
     this.specialistId = specialist_id
@@ -20,6 +20,7 @@ export class WorkWindow {
     this.closedAt = closed_at
     this.closingCount = closing_count
     this.inheritedFromWindowId = inherited_from_window_id
+    this.affinityWeight = affinity_weight
     this.deletedAt = deleted_at
   }
 
@@ -88,6 +89,7 @@ export class WorkWindow {
       closed_at: this.closedAt,
       closing_count: this.closingCount,
       inherited_from_window_id: this.inheritedFromWindowId,
+      affinity_weight: this.affinityWeight,
       deleted_at: this.deletedAt,
     }
   }

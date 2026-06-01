@@ -48,6 +48,7 @@ const editStartTime = ref('')
 const editEndDate = ref('')
 const editEndTime = ref('')
 const editNote = ref('')
+const editAffinityWeight = ref('')
 
 function dateFromTimestamp(ts) {
   if (!ts) return ''
@@ -61,6 +62,7 @@ function enterEdit() {
   editEndDate.value = dateFromTimestamp(props.window.endsAt) || props.window.scheduledDate || ''
   editEndTime.value = fmtForInput(props.window.endTime)
   editNote.value = ''
+  editAffinityWeight.value = props.window.affinityWeight != null ? String(props.window.affinityWeight) : ''
   editing.value = true
 }
 
@@ -86,6 +88,11 @@ function saveEdit() {
   if (endTimeChanged || endDateChanged) payload.endTime = editEndTime.value
   if (editNote.value.trim()) payload.note = editNote.value.trim()
 
+  const origWeight = props.window.affinityWeight != null ? String(props.window.affinityWeight) : ''
+  if (editAffinityWeight.value !== origWeight) {
+    payload.affinityWeight = editAffinityWeight.value ? parseFloat(editAffinityWeight.value) : null
+  }
+
   if (Object.keys(payload).length === 0) {
     editing.value = false
     return
@@ -107,11 +114,13 @@ const hasChanged = computed(() => {
   if (!editing.value) return false
   const origStartDate = dateFromTimestamp(props.window.startsAt) || props.window.scheduledDate || ''
   const origEndDate = dateFromTimestamp(props.window.endsAt) || props.window.scheduledDate || ''
+  const origWeight = props.window.affinityWeight != null ? String(props.window.affinityWeight) : ''
   return editStartDate.value !== origStartDate ||
          editEndDate.value !== origEndDate ||
          editStartTime.value !== fmtForInput(props.window.startTime) ||
          editEndTime.value !== fmtForInput(props.window.endTime) ||
-         editNote.value.trim() !== ''
+         editNote.value.trim() !== '' ||
+         editAffinityWeight.value !== origWeight
 })
 
 // ---- Formatting helpers ----
@@ -225,6 +234,20 @@ const statusClass = computed(() => props.window.isActive ? 'open' : 'closed')
           >
         </div>
 
+        <!-- Peso de afinidad (edit mode) -->
+        <div v-if="editing" class="wm__edit-note">
+          <i class='bx bx-slider-alt wm__edit-icon'></i>
+          <input
+            v-model="editAffinityWeight"
+            type="number"
+            step="0.0001"
+            min="0.0001"
+            max="9.9999"
+            class="wm__note-input wm__weight-input"
+            placeholder="Peso de afinidad (ej. 1.5)"
+          >
+        </div>
+
         <!-- Specialist -->
         <div class="wm__row">
           <i class='bx bx-user'></i>
@@ -254,6 +277,12 @@ const statusClass = computed(() => props.window.isActive ? 'open' : 'closed')
             <span class="wm__ctr-val">{{ window.closingCount }}</span>
             <span class="wm__ctr-lbl">Cierre</span>
           </div>
+        </div>
+
+        <!-- Peso de afinidad (view mode) -->
+        <div v-if="!editing && window.affinityWeight != null" class="wm__row">
+          <i class='bx bx-slider-alt'></i>
+          <span>Peso de afinidad: <strong>{{ window.affinityWeight }}</strong></span>
         </div>
 
         <!-- Inheritance badge -->
@@ -524,6 +553,8 @@ const statusClass = computed(() => props.window.isActive ? 'open' : 'closed')
 .wm__note-input:focus { border-color: var(--primary-500); }
 
 .wm__note-input::placeholder { color: #94a3b8; }
+
+.wm__weight-input { max-width: 180px; }
 
 /* ===== Divider ===== */
 .wm__divider {

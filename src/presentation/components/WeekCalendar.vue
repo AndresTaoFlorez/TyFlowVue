@@ -24,21 +24,36 @@ const emit = defineEmits(['select', 'range-selected', 'group-select', 'reschedul
 
 const SLOT_H = 30               // px per half-hour slot
 const HOUR_H = SLOT_H * 2       // px per hour (used by WindowBlock)
+const COMPACT_SLOT_H = 18       // px per half-hour slot (compact mobile week)
+const COMPACT_HOUR_H = COMPACT_SLOT_H * 2 // px per hour (compact)
 const BASE_HOUR = 0
 const SLOTS = Array.from({ length: 48 }, (_, i) => i)  // 0..47 → 00:00, 00:30, …, 23:30
 const DAY_LABELS = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom']
 
-const scrollContainer = ref(null)
+const scrollContainerDay = ref(null)
+const scrollContainerCompact = ref(null)
+const scrollContainerWeek = ref(null)
 
-// ---- Single day view (mobile or day viewMode) ----
+const scrollContainer = computed(() =>
+  scrollContainerDay.value ||
+  scrollContainerCompact.value ||
+  scrollContainerWeek.value ||
+  null
+)
+
+// ---- View mode computeds ----
 const showSingleDay = computed(() => {
-  if (props.viewMode === 'month') return false
-  return props.isMobile || props.viewMode === 'day'
+  return props.viewMode === 'day'
+})
+
+const showCompactWeek = computed(() => {
+  return props.isMobile && props.viewMode === 'week'
 })
 const activeMobileDay = ref(0)
 
 let swipeStartX = 0
 let swipeStartY = 0
+let touchOnBlock = false // true when touch started on a window/group block
 
 const onCalSwipeStart = (e) => {
   swipeStartX = e.touches[0].clientX
@@ -46,9 +61,10 @@ const onCalSwipeStart = (e) => {
 }
 
 const onCalSwipeEnd = (e) => {
+  if (touchOnBlock) return // don't navigate when tapping a window/group
   const dx = e.changedTouches[0].clientX - swipeStartX
   const dy = e.changedTouches[0].clientY - swipeStartY
-  if (Math.abs(dx) < Math.abs(dy) * 0.8 || Math.abs(dx) < 50) return
+  if (Math.abs(dx) < Math.abs(dy) * 0.8 || Math.abs(dx) < 80) return
   // Day mode — navigate days
   if (props.viewMode === 'day') {
     emit(dx < 0 ? 'next-day' : 'prev-day')
@@ -67,7 +83,7 @@ const onCalSwipeEnd = (e) => {
 const onHeaderSwipeEnd = (e) => {
   const dx = e.changedTouches[0].clientX - swipeStartX
   const dy = e.changedTouches[0].clientY - swipeStartY
-  if (Math.abs(dx) < Math.abs(dy) * 0.8 || Math.abs(dx) < 50) return
+  if (Math.abs(dx) < Math.abs(dy) * 0.8 || Math.abs(dx) < 80) return
   emit(dx < 0 ? 'next-week' : 'prev-week')
 }
 
@@ -119,28 +135,31 @@ const currentTimeTop = computed(() => {
 })
 
 const onScrollContainer = () => {
-  if (scrollContainer.value) {
-    dayScrolled.value = scrollContainer.value.scrollTop > 60
-  }
+  const el = scrollContainer.value
+  if (!el) return
+  dayScrolled.value = el.scrollTop > 60
 }
 
-onMounted(() => {
-  nextTick(() => {
-    if (scrollContainer.value) {
-      scrollContainer.value.scrollTop = 7 * HOUR_H
-      scrollContainer.value.addEventListener('scroll', onScrollContainer, { passive: true })
-    }
-  })
-  timeInterval = setInterval(() => { now.value = new Date() }, 30000)
-  if (showSingleDay.value) {
-    activeMobileDay.value = props.weekDates.length === 1 ? 0 : (todayIndex.value >= 0 ? todayIndex.value : 0)
+const scrollToWorkHour = () => {
+  if (!scrollContainer.value) return
+  const targetHour = 7
+  const px = targetHour * (showCompactWeek.value ? COMPACT_HOUR_H : HOUR_H)
+  scrollContainer.value.scrollTop = Math.max(0, px - 32)
+}
+
+// Watch the active scroll container — re-attach listener and auto-scroll on view change
+watch(scrollContainer, (newEl, oldEl) => {
+  if (oldEl) oldEl.removeEventListener('scroll', onScrollContainer)
+  if (newEl) {
+    newEl.addEventListener('scroll', onScrollContainer, { passive: true })
+    nextTick(scrollToWorkHour)
   }
 })
 
-onUnmounted(() => {
-  if (timeInterval) clearInterval(timeInterval)
-  if (scrollContainer.value) {
-    scrollContainer.value.removeEventListener('scroll', onScrollContainer)
+onMounted(() => {
+  timeInterval = setInterval(() => { now.value = new Date() }, 30000)
+  if (showSingleDay.value) {
+    activeMobileDay.value = props.weekDates.length === 1 ? 0 : (todayIndex.value >= 0 ? todayIndex.value : 0)
   }
 })
 
@@ -303,8 +322,21 @@ const mobilePreselectionStyle = computed(() => {
 
 const onCellTouchstart = (dayIdx, slot, e) => {
   if (!props.selectable) return
+  // Eraser and select tools work on mobile too — handle before isMobile guard
+  if (props.activeTool === 'eraser') {
+    onEraserStart(dayIdx, slot)
+    return
+  }
+  if (props.activeTool === 'select') {
+    dragging.value = true
+    dragStartDay.value = dayIdx
+    dragStartSlot.value = slot
+    dragEndDay.value = dayIdx
+    dragEndSlot.value = slot
+    return
+  }
   if (props.isMobile) {
-    // On mobile, use tap-based creation (handled in onCellTouchendTap)
+    // On mobile with default tool, use tap-based creation (handled in onCellTouchendTap)
     return
   }
   // Desktop touch: long-press to start drag
@@ -316,22 +348,35 @@ const onCellTouchstart = (dayIdx, slot, e) => {
 
 const onCellTouchendTap = (dayIdx, slot, e) => {
   if (!props.selectable || !props.isMobile) return
+  if (props.activeTool === 'eraser' || props.activeTool === 'select') return
   onCellTap(dayIdx, slot)
 }
 
 const onTouchmove = (e) => {
   // If the long-press hasn't activated yet, user is scrolling — cancel and don't interfere
-  if (!touchActive.value && !blockDragging.value && !resizing.value && !hExpanding.value) {
+  if (!touchActive.value && !blockDragging.value && !resizing.value && !hExpanding.value && !erasing.value) {
     if (touchTimer) {
       clearTimeout(touchTimer)
       touchTimer = null
     }
     return // Don't call preventDefault — let native scroll work
   }
-  if (!dragging.value && !blockDragging.value && !resizing.value && !hExpanding.value) return
+  if (!dragging.value && !blockDragging.value && !resizing.value && !hExpanding.value && !erasing.value) return
   // Only prevent scroll when drag is confirmed
   e.preventDefault()
   if (hExpanding.value) { onHExpandMove(e); return }
+  if (erasing.value) {
+    const clientX = e.touches[0]?.clientX
+    const clientY = e.touches[0]?.clientY
+    if (clientX != null && clientY != null) {
+      const elements = document.elementsFromPoint(clientX, clientY)
+      const cell = elements.find(el => el.dataset.slot !== undefined)
+      if (cell) {
+        onEraserMove(parseInt(cell.dataset.day), parseInt(cell.dataset.slot))
+      }
+    }
+    return
+  }
   const clientX = e.touches[0]?.clientX
   const clientY = e.touches[0]?.clientY
   if (clientX == null || clientY == null) return
@@ -346,6 +391,7 @@ const onTouchmove = (e) => {
 const onTouchend = () => {
   if (touchTimer) { clearTimeout(touchTimer); touchTimer = null }
   touchActive.value = false
+  touchOnBlock = false
   onMouseup()
   onBlockDragEnd()
   onResizeEnd()
@@ -783,6 +829,25 @@ const eraseGhostStyle = computed(() => {
   }
 })
 
+// ---- Compact ghost styles (use COMPACT_SLOT_H) ----
+const compactSelectionStyle = computed(() => {
+  if (!dragging.value) return null
+  return {
+    top: selSlotMin.value * COMPACT_SLOT_H + 'px',
+    height: (selSlotMax.value - selSlotMin.value) * COMPACT_SLOT_H + 'px',
+  }
+})
+
+const compactEraseGhostStyle = computed(() => {
+  if (!erasing.value) return null
+  const minSlot = Math.min(eraseStartSlot.value, eraseEndSlot.value)
+  const maxSlot = Math.max(eraseStartSlot.value, eraseEndSlot.value) + 1
+  return {
+    top: minSlot * COMPACT_SLOT_H + 'px',
+    height: (maxSlot - minSlot) * COMPACT_SLOT_H + 'px',
+  }
+})
+
 // ---- Selection tool ----
 let lastSelectedId = null
 
@@ -875,6 +940,9 @@ const onColResizeDblclick = () => {
 }
 
 onUnmounted(() => {
+  if (timeInterval) clearInterval(timeInterval)
+  const el = scrollContainer.value
+  if (el) el.removeEventListener('scroll', onScrollContainer)
   document.removeEventListener('mousemove', onColResizeMove)
   document.removeEventListener('mouseup', onColResizeEnd)
 })
@@ -993,12 +1061,14 @@ const onCellLongPress = (dayIdx, slot, e) => {
 }
 
 const onWindowLongPress = (w, e) => {
+  touchOnBlock = true
   onLongPressStart((x, y) => {
     emit('context-window', { window: w._originalWindow || w, x, y })
   }, e)
 }
 
 const onGroupLongPress = (group, e) => {
+  touchOnBlock = true
   onLongPressStart((x, y) => {
     emit('context-group', { group, x, y })
   }, e)
@@ -1042,6 +1112,19 @@ const formatHour = (h) => {
   const display = h === 0 ? 12 : h > 12 ? h - 12 : h
   return `${display} ${suffix}`
 }
+
+const formatHourCompact = (h) => {
+  const hour = Math.floor(h)
+  if (!Number.isInteger(h)) return ''
+  if (hour === 0) return '12a'
+  if (hour === 12) return '12p'
+  return hour < 12 ? `${hour}a` : `${hour - 12}p`
+}
+
+const compactTimeTop = computed(() => {
+  const d = now.value
+  return (d.getHours() + d.getMinutes() / 60) * COMPACT_HOUR_H
+})
 
 const isWeekend = (dayIdx) => dayIdx >= 5
 const isHourTop = (slot) => slot % 2 === 0
@@ -1187,7 +1270,7 @@ const periodKey = computed(() => {
       </div>
 
       <!-- Grid de 1 día -->
-      <div ref="scrollContainer" class="cal-scroll cal-scroll--day-wrap"
+      <div ref="scrollContainerDay" class="cal-scroll cal-scroll--day-wrap"
            @touchend.passive="showSingleDay && onCalSwipeEnd($event)">
         <!-- Sticky date pill -->
         <div class="cal-day-pill" :class="{ 'cal-day-pill--visible': dayScrolled }">
@@ -1321,6 +1404,132 @@ const periodKey = computed(() => {
       </div>
     </template>
 
+    <!-- ── MOBILE: vista compacta 7 columnas ── -->
+    <template v-else-if="showCompactWeek">
+      <div ref="scrollContainerCompact" class="cal-scroll cal-scroll--compact"
+        @touchstart.passive="onCalSwipeStart"
+        @touchend.passive="onHeaderSwipeEnd"
+      >
+        <!-- Compact header -->
+        <div class="cal-header cal-header--compact">
+          <div class="cal-header__gutter cal-header__gutter--compact"></div>
+          <div
+            v-for="(date, i) in weekDates"
+            :key="date"
+            class="cal-header__day cal-header__day--compact-cell"
+            :class="{
+              'cal-header__day--today': i === todayIndex,
+              'cal-header__day--weekend': isWeekend(i),
+            }"
+          >
+            <span class="cal-header__label">{{ DAY_LABELS[i] }}</span>
+            <span class="cal-header__num cal-header__num--compact">{{ parseInt(date.split('-')[2]) }}</span>
+          </div>
+        </div>
+
+        <!-- Compact body -->
+        <div class="cal-body cal-body--compact">
+          <!-- Gutter -->
+          <div class="cal-gutter cal-gutter--compact">
+            <div v-for="slot in SLOTS" :key="slot" class="cal-gutter__cell" :class="{ 'cal-gutter__cell--top': isHourTop(slot) }" :style="{ height: COMPACT_SLOT_H + 'px' }">
+              <span v-if="isHourTop(slot)" class="cal-gutter__label cal-gutter__label--compact">{{ formatHourCompact(slot / 2) }}</span>
+            </div>
+          </div>
+
+          <!-- 7 day columns -->
+          <div
+            v-for="(date, dayIdx) in weekDates"
+            :key="date"
+            class="cal-col cal-col--compact"
+            :class="{
+              'cal-col--today': dayIdx === todayIndex,
+              'cal-col--weekend': isWeekend(dayIdx),
+              'cal-col--dragging': dragging && isDayInSelection(dayIdx),
+            }"
+          >
+            <div
+              v-for="slot in SLOTS"
+              :key="slot"
+              class="cal-col__cell"
+              :class="{
+                'cal-col__cell--top': isHourTop(slot),
+                'cal-col__cell--bottom': !isHourTop(slot),
+                'cal-col__cell--preselected': mobileTapSlot && mobileTapSlot.dayIdx === dayIdx && mobileTapSlot.slot === slot,
+              }"
+              :style="{ height: COMPACT_SLOT_H + 'px' }"
+              :data-day="dayIdx"
+              :data-slot="slot"
+              @touchstart.passive="onCellTouchstart(dayIdx, slot, $event); onCellLongPress(dayIdx, slot, $event)"
+              @touchend="onCellTouchendTap(dayIdx, slot, $event); onLongPressEnd()"
+              @touchmove="onLongPressMove()"
+            ></div>
+
+            <!-- Current time -->
+            <div v-if="dayIdx === todayIndex" class="cal-now" :style="{ top: compactTimeTop + 'px' }">
+              <span class="cal-now__dot cal-now__dot--compact"></span>
+              <span class="cal-now__line"></span>
+            </div>
+
+            <!-- Eraser ghost -->
+            <div
+              v-if="erasing && dayIdx >= eraseDayMin && dayIdx <= eraseDayMax && compactEraseGhostStyle"
+              class="cal-erase-ghost"
+              :style="compactEraseGhostStyle"
+            ></div>
+
+            <!-- Drag/select preview -->
+            <div
+              v-if="dragging && isDayInSelection(dayIdx)"
+              class="cal-drag"
+              :style="compactSelectionStyle"
+            >
+              <span v-if="dayIdx === selDayMin" class="cal-drag__label cal-drag__label--compact">{{ selectionLabel }}</span>
+            </div>
+
+            <!-- Window blocks (compact) -->
+            <template v-for="item in groupedByDay[dayIdx]" :key="item.type === 'group' ? item.id : `${item.window.id}-${dayIdx}`">
+              <WindowGroupBlock
+                v-if="item.type === 'group'"
+                :group="item"
+                :hour-height="COMPACT_HOUR_H"
+                :base-hour="BASE_HOUR"
+                :col="item._col"
+                :total-cols="item._totalCols"
+                :specialists="specialists"
+                :applications="applications"
+                :selectable="selectable"
+                :compact="true"
+                @click="onGroupClick(item)"
+                @touchstart.passive="onGroupLongPress(item, $event)"
+                @touchend="onLongPressEnd()"
+                @touchmove.passive="onLongPressMove()"
+              />
+              <WindowBlock
+                v-else
+                :window="item.window"
+                :specialist-name="specName(item.window)"
+                :application-name="appName(item.window)"
+                :app-color="appColor(item.window)"
+                :hour-height="COMPACT_HOUR_H"
+                :base-hour="BASE_HOUR"
+                :col="item._col"
+                :total-cols="item._totalCols"
+                :selectable="selectable"
+                :compact="true"
+                :selected="selectedWindowIds.has((item.window._originalWindow || item.window).id)"
+                :cut="cutWindowIds.has((item.window._originalWindow || item.window).id)"
+                :inherited="!!(item.window.inheritedFromWindowId || item.window.inheritsOnReopen)"
+                @click="onBlockClick(item.window, $event)"
+                @touchstart.passive="onWindowLongPress(item.window, $event)"
+                @touchend="onLongPressEnd()"
+                @touchmove.passive="onLongPressMove()"
+              />
+            </template>
+          </div>
+        </div>
+      </div>
+    </template>
+
     <!-- ── MES: grid mensual ── -->
     <template v-else-if="viewMode === 'month'">
       <div class="mcal"
@@ -1389,7 +1598,7 @@ const periodKey = computed(() => {
 
     <!-- ── DESKTOP: grid de 7 días ── -->
     <template v-else>
-      <div ref="scrollContainer" class="cal-scroll">
+      <div ref="scrollContainerWeek" class="cal-scroll">
 
         <!-- Sticky header -->
         <div class="cal-header" :style="gridColumns && { gridTemplateColumns: gridColumns }"
@@ -1984,8 +2193,8 @@ const periodKey = computed(() => {
 
 /* ========== Responsive (desktop fallback) ========== */
 @media (max-width: 768px) {
-  .cal-header,
-  .cal-body:not(.cal-body--mobile) {
+  .cal-header:not(.cal-header--compact),
+  .cal-body:not(.cal-body--mobile):not(.cal-body--compact) {
     grid-template-columns: 2.5rem repeat(7, 1fr);
   }
 
@@ -2252,8 +2461,8 @@ const periodKey = computed(() => {
 }
 
 @media (max-width: 480px) {
-  .cal-header,
-  .cal-body:not(.cal-body--mobile) {
+  .cal-header:not(.cal-header--compact),
+  .cal-body:not(.cal-body--mobile):not(.cal-body--compact) {
     grid-template-columns: 2rem repeat(7, 1fr);
   }
 
@@ -2265,6 +2474,64 @@ const periodKey = computed(() => {
 
   .cal-header__label { font-size: 0.45rem; letter-spacing: -0.02em; }
   .cal-gutter__label { font-size: 0.42rem; }
+}
+
+/* ========== Compact week (mobile 7-col) ========== */
+.cal-scroll--compact {
+  position: relative;
+}
+
+.cal-header--compact {
+  grid-template-columns: 1.8rem repeat(7, 1fr);
+  padding: 0;
+}
+
+.cal-header__gutter--compact {
+  width: 1.8rem;
+}
+
+.cal-header__day--compact-cell {
+  padding: 0.3rem 0 0.25rem;
+  gap: 0;
+}
+
+.cal-header__num--compact {
+  font-size: 0.85rem;
+}
+
+.cal-body--compact {
+  display: grid;
+  grid-template-columns: 1.8rem repeat(7, 1fr);
+  padding-top: 8px;
+  padding-bottom: 8px;
+}
+
+.cal-gutter--compact {
+  width: 1.8rem;
+}
+
+.cal-gutter--compact .cal-gutter__cell {
+  padding-right: 0.15rem;
+}
+
+.cal-gutter__label--compact {
+  font-size: 0.4rem;
+  white-space: nowrap;
+}
+
+.cal-col--compact {
+  min-width: 0;
+}
+
+.cal-now__dot--compact {
+  width: 6px;
+  height: 6px;
+  margin-left: -3px;
+}
+
+.cal-drag__label--compact {
+  font-size: 0.5rem;
+  padding: 0.05rem 0.3rem;
 }
 
 /* ========== Day scroll wrapper ========== */

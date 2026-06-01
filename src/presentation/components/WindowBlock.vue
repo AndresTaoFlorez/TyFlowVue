@@ -1,4 +1,6 @@
 <script setup>
+import { computed } from 'vue'
+
 const props = defineProps({
   window: { type: Object, required: true },
   specialistName: { type: String, default: '—' },
@@ -13,11 +15,30 @@ const props = defineProps({
   cut: { type: Boolean, default: false },
   inherited: { type: Boolean, default: false },
   inheritLabel: { type: String, default: '' },
+  compact: { type: Boolean, default: false },
 })
 
 const resolvedColor = () => props.appColor || '#2AC78F'
 
 const emit = defineEmits(['click', 'resize-start'])
+
+const initials = computed(() => {
+  if (!props.specialistName) return '?'
+  return props.specialistName
+    .split(' ')
+    .map(p => p[0])
+    .join('')
+    .slice(0, 2)
+    .toUpperCase()
+})
+
+const shortTime = computed(() => {
+  if (!props.window?.startTime) return ''
+  const [h] = props.window.startTime.split(':').map(Number)
+  if (h === 0) return '12a'
+  if (h === 12) return '12p'
+  return h < 12 ? `${h}a` : `${h - 12}p`
+})
 
 const top = () => Math.max(0, (props.window.startHour - props.baseHour) * props.hourHeight + 2)
 const height = () => Math.max(props.hourHeight / 2, (props.window.endHour - props.window.startHour) * props.hourHeight - 4)
@@ -38,7 +59,7 @@ const onHandleDown = (direction, e) => {
 <template>
   <div
     class="wb"
-    :class="[statusClass(), { 'wb--selected': selected, 'wb--cut': cut }]"
+    :class="[statusClass(), { 'wb--selected': selected, 'wb--cut': cut, 'wb--compact': compact }]"
     :style="{
       top: top() + 'px',
       height: height() + 'px',
@@ -64,13 +85,20 @@ const onHandleDown = (direction, e) => {
       @touchstart.stop.prevent="onHandleDown('left', $event)"
     ></div>
 
-    <span class="wb__name">
-      <i v-if="inherited" class='bx bx-link wb__inherit-icon'></i>
-      {{ specialistName }}
-    </span>
-    <span v-if="height() > 42" class="wb__time">{{ window.timeRange }}</span>
-    <span v-if="height() > 60" class="wb__app">{{ applicationName }}</span>
-    <span v-if="inheritLabel && height() > 48" class="wb__inherit-label" :title="inheritLabel">{{ inheritLabel }}</span>
+    <template v-if="!compact">
+      <span class="wb__name">
+        <i v-if="inherited" class='bx bx-link wb__inherit-icon'></i>
+        {{ specialistName }}
+      </span>
+      <span v-if="height() > 42" class="wb__time">{{ window.timeRange }}</span>
+      <span v-if="height() > 60" class="wb__app">{{ applicationName }}</span>
+      <span v-if="inheritLabel && height() > 48" class="wb__inherit-label" :title="inheritLabel">{{ inheritLabel }}</span>
+    </template>
+
+    <template v-if="compact && height() >= 16">
+      <span class="wb__compact-initials">{{ initials }}</span>
+      <span v-if="height() >= 30" class="wb__compact-time">{{ shortTime }}</span>
+    </template>
 
     <!-- Resize handle bottom -->
     <div
@@ -200,6 +228,43 @@ const onHandleDown = (direction, e) => {
   filter: grayscale(0.5);
 }
 
+/* Compact — minimal info for mobile week */
+.wb--compact {
+  padding: 2px 1px;
+  border-left-width: 0;
+  border-radius: 2px;
+  gap: 0;
+  align-items: center;
+  justify-content: center;
+}
+
+.wb__compact-initials {
+  font-size: 0.45rem;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.9);
+  text-align: center;
+  line-height: 1.2;
+  overflow: hidden;
+}
+
+.wb__compact-time {
+  font-size: 0.4rem;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.7);
+  text-align: center;
+  line-height: 1.2;
+  overflow: hidden;
+}
+
+.wb--compact.wb--open {
+  background: color-mix(in srgb, var(--app-color) 45%, transparent);
+}
+
+.wb--compact:hover {
+  transform: none;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
 /* Inactive — muted */
 .wb--inactive {
   background: rgba(100, 110, 130, 0.15);
@@ -207,6 +272,11 @@ const onHandleDown = (direction, e) => {
   opacity: 0.5;
 }
 .wb--inactive .wb__name { color: #8890a4; }
+
+.wb--compact.wb--inactive {
+  background: rgba(100, 110, 130, 0.25);
+  border-left-width: 0;
+}
 
 .wb__name {
   font-size: 0.68rem;

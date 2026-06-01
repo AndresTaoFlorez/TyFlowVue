@@ -8,6 +8,7 @@ const props = defineProps({
   specialists: { type: Array, default: () => [] },
   applications: { type: Array, default: () => [] },
   selectable: { type: Boolean, default: false },
+  compact: { type: Boolean, default: false },
 })
 
 const emit = defineEmits(['click', 'resize-start'])
@@ -61,6 +62,7 @@ const onHandleDown = (direction, e) => {
 <template>
   <div
     class="wgb"
+    :class="{ 'wgb--compact': compact }"
     :style="{
       top: groupTop() + 'px',
       height: groupHeight() + 'px',
@@ -92,7 +94,8 @@ const onHandleDown = (direction, e) => {
           '--bar-color': bar.color,
         }"
       >
-        <span class="wgb__bar-initials">{{ bar.initials }}</span>
+        <span v-if="!compact" class="wgb__bar-initials">{{ bar.initials }}</span>
+        <span v-if="compact && bar.barHeight >= 16" class="wgb__bar-initials wgb__bar-initials--compact">{{ bar.initials }}</span>
       </div>
     </div>
 
@@ -217,5 +220,29 @@ const onHandleDown = (direction, e) => {
 
 .wgb__handle--bottom {
   bottom: 0;
+}
+
+/* Compact mode */
+.wgb--compact {
+  border-radius: 2px;
+}
+
+.wgb--compact .wgb__badge {
+  font-size: 0.4rem;
+  width: 0.7rem;
+  height: 0.7rem;
+  top: 1px;
+  right: 1px;
+}
+
+.wgb--compact .wgb__bar {
+  border-left-width: 2px;
+  padding-top: 0;
+  align-items: center;
+}
+
+.wgb__bar-initials--compact {
+  font-size: 0.4rem;
+  color: rgba(255, 255, 255, 0.9);
 }
 </style>

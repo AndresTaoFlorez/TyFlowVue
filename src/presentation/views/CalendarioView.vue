@@ -85,6 +85,7 @@ async function pasteOnSlot(date, startTime, endTime) {
       endTime,
       scheduledDate: date,
       inheritsOnReopen: w.inheritsOnReopen || false,
+      affinityWeight: w.affinityWeight ?? null,
     }))
     await calStore.createWindows(createData)
     if (clipboard.value.cut) {
@@ -255,6 +256,7 @@ async function handleCtxAction(action) {
               endTime: fmtTime(newEnd),
               scheduledDate: date,
               inheritsOnReopen: w.inheritsOnReopen || false,
+              affinityWeight: w.affinityWeight ?? null,
             }
           })
           await calStore.createWindows(createData)
@@ -594,18 +596,13 @@ onUnmounted(() => {
 
 <template>
   <section class="content">
-    <!-- Header -->
-    <div class="page-header">
-      <div>
-        <h1 class="page-header__title">Calendario</h1>
-        <p class="page-header__subtitle">Programador de <strong>ventanas de trabajo</strong></p>
-      </div>
+    <Teleport to="#topbar-actions" defer>
       <button v-if="authStore.isAdmin && !isMobile" @click="openCreatePanel" class="btn-create">
         <i class='bx bx-plus'></i>
         <span class="btn-create__label">Nueva Ventana</span>
         <span class="btn-create__short">Nueva</span>
       </button>
-    </div>
+    </Teleport>
 
     <!-- Toolbar -->
     <div class="toolbar">
@@ -634,8 +631,8 @@ onUnmounted(() => {
             @click="calView = 'month'">Mes</button>
         </div>
 
-        <!-- Tool toggle (admin only, desktop) -->
-        <div v-if="authStore.isAdmin && !isMobile" class="toolbar__tools">
+        <!-- Tool toggle (admin only, hidden on mobile via CSS) -->
+        <div v-if="authStore.isAdmin" class="toolbar__tools">
           <button class="toolbar__tool-btn" :class="{ 'toolbar__tool-btn--active': activeTool === 'default' }"
             @click="setTool('default')" title="Modo normal">
             <i class='bx bx-pointer'></i>
@@ -650,8 +647,8 @@ onUnmounted(() => {
           </button>
         </div>
 
-        <!-- Undo button (desktop only) -->
-        <button v-if="authStore.isAdmin && !isMobile" class="toolbar__undo-btn" :disabled="!canUndo"
+        <!-- Undo button (hidden on mobile via CSS) -->
+        <button v-if="authStore.isAdmin" class="toolbar__undo-btn" :disabled="!canUndo"
           @click="calStore.undo().then(() => showToast('Acción deshecha.')).catch(() => showToast('Error al deshacer.', 'error'))"
           title="Deshacer (Ctrl+Z)">
           <i class='bx bx-undo'></i>
@@ -719,23 +716,26 @@ onUnmounted(() => {
       >{{ m.label }}</button>
     </div>
 
-    <!-- Loading -->
-    <SectionLoader v-if="loading" message="Cargando ventanas de trabajo..." />
+    <!-- Calendar area (isolated block to prevent vnode patching conflicts) -->
+    <div class="cal-area">
+      <!-- Loading -->
+      <SectionLoader v-if="loading" message="Cargando ventanas de trabajo..." />
 
-    <!-- Calendario -->
-    <WeekCalendar v-else :windows="windowsFiltradas" :week-dates="weekDates" :specialists="userStore.users"
-      :applications="userStore.applications" :selectable="authStore.isAdmin" :is-mobile="isMobile" :view-mode="calView"
-      :month-dates="monthDates" :current-month="currentMonth" :active-tool="activeTool"
-      :selected-window-ids="selectedWindows" :cut-window-ids="cutWindowIds" :slide-dir="slideDir"
-      @select="selectedWindow = $event"
-      @group-select="selectedGroup = $event" @range-selected="onRangeSelected" @reschedule="handleReschedule"
-      @group-reschedule="handleGroupReschedule" @batch-reschedule="handleBatchReschedule" @group-resize="handleGroupResize"
-      @next-day="slideDir = 'slide-left'; calStore.nextDay()" @prev-day="slideDir = 'slide-right'; calStore.prevDay()"
-      @next-week="slideDir = 'slide-left'; calStore.nextNav()" @prev-week="slideDir = 'slide-right'; calStore.prevNav()"
-      @next-month="slideDir = 'slide-left'; calStore.nextNav()" @prev-month="slideDir = 'slide-right'; calStore.prevNav()"
-      @resize="handleResize" @batch-resize="handleBatchResize" @horizontal-expand="handleHorizontalExpand" @select-day="calStore.selectDay"
-      @erase="handleErase" @selection-change="onSelectionChange"
-      @context-window="onWindowContext" @context-group="onGroupContext" @context-cell="onCellContext" />
+      <!-- Calendario -->
+      <WeekCalendar v-else :windows="windowsFiltradas" :week-dates="weekDates" :specialists="userStore.users"
+        :applications="userStore.applications" :selectable="authStore.isAdmin" :is-mobile="isMobile" :view-mode="calView"
+        :month-dates="monthDates" :current-month="currentMonth" :active-tool="activeTool"
+        :selected-window-ids="selectedWindows" :cut-window-ids="cutWindowIds" :slide-dir="slideDir"
+        @select="selectedWindow = $event"
+        @group-select="selectedGroup = $event" @range-selected="onRangeSelected" @reschedule="handleReschedule"
+        @group-reschedule="handleGroupReschedule" @batch-reschedule="handleBatchReschedule" @group-resize="handleGroupResize"
+        @next-day="slideDir = 'slide-left'; calStore.nextDay()" @prev-day="slideDir = 'slide-right'; calStore.prevDay()"
+        @next-week="slideDir = 'slide-left'; calStore.nextNav()" @prev-week="slideDir = 'slide-right'; calStore.prevNav()"
+        @next-month="slideDir = 'slide-left'; calStore.nextNav()" @prev-month="slideDir = 'slide-right'; calStore.prevNav()"
+        @resize="handleResize" @batch-resize="handleBatchResize" @horizontal-expand="handleHorizontalExpand" @select-day="calStore.selectDay"
+        @erase="handleErase" @selection-change="onSelectionChange"
+        @context-window="onWindowContext" @context-group="onGroupContext" @context-cell="onCellContext" />
+    </div>
 
     <!-- Modal detalle -->
     <WorkWindowModal v-if="selectedWindow" :window="selectedWindow" :specialist-name="calStore.specName(selectedWindow)"
@@ -768,7 +768,7 @@ onUnmounted(() => {
 
     <!-- Selection action bar -->
     <Teleport to="body">
-      <div v-if="selectedWindows.size > 0" class="sel-bar">
+      <div v-if="selectedWindows.size > 0 && !isMobile" class="sel-bar">
         <span class="sel-bar__count">{{ selectedWindows.size }} seleccionada{{ selectedWindows.size > 1 ? 's' : '' }}</span>
         <button class="sel-bar__btn" @click="handleBatchCopy" title="Copiar">
           <i class='bx bx-copy'></i>
@@ -803,24 +803,11 @@ onUnmounted(() => {
   overflow: hidden;
 }
 
-/* ---- Header ---- */
-.page-header {
+.cal-area {
+  flex: 1;
+  min-height: 0;
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0.75rem 1.2rem 0.6rem;
-}
-
-.page-header__title {
-  font-size: 1.5rem;
-  font-weight: 700;
-  color: var(--text-primary);
-}
-
-.page-header__subtitle {
-  font-size: 0.82rem;
-  color: var(--text-secondary);
-  margin-top: 0.15rem;
+  flex-direction: column;
 }
 
 .btn-create {
@@ -1308,14 +1295,6 @@ onUnmounted(() => {
     gap: 0.4rem;
   }
 
-  .page-header__title {
-    font-size: 1.05rem;
-  }
-
-  .page-header__subtitle {
-    display: none;
-  }
-
   .toolbar {
     padding: 0.35rem 0.4rem;
   }
@@ -1335,14 +1314,15 @@ onUnmounted(() => {
     padding: 0.2rem 0.4rem;
     gap: 0.3rem;
   }
+
+  .toolbar__tools,
+  .toolbar__undo-btn {
+    display: none !important;
+  }
 }
 
 /* Small phone (375px and below) */
 @media (max-width: 390px) {
-  .page-header__title {
-    font-size: 0.95rem;
-  }
-
   .toolbar {
     padding: 0.3rem;
   }

@@ -52,33 +52,78 @@ export function useWindowGroups(windowsByDay) {
         }
       }
 
-      // Assign columns
+      // Sort by start time
       const sorted = groups.sort((a, b) => {
         const aStart = a.type === 'group' ? a.startHour : a.window.startHour
         const bStart = b.type === 'group' ? b.startHour : b.window.startHour
         return aStart - bStart
       })
 
-      const colEndTimes = []
-      for (const block of sorted) {
-        const bStart = block.type === 'group' ? block.startHour : block.window.startHour
-        const bEnd = block.type === 'group' ? block.endHour : block.window.endHour
-        let assignedCol = colEndTimes.findIndex(endTime => endTime <= bStart)
-        if (assignedCol === -1) {
-          assignedCol = colEndTimes.length
-          colEndTimes.push(bEnd)
-        } else {
-          colEndTimes[assignedCol] = bEnd
-        }
-        block._col = assignedCol
-      }
+      // Build overlap clusters — blocks that overlap transitively share a cluster
+      const clusters = buildClusters(sorted)
 
-      const totalCols = colEndTimes.length || 1
-      for (const block of sorted) block._totalCols = totalCols
+      // Assign columns within each cluster independently
+      for (const cluster of clusters) {
+        const colEndTimes = []
+        for (const block of cluster) {
+          const bStart = block.type === 'group' ? block.startHour : block.window.startHour
+          const bEnd = block.type === 'group' ? block.endHour : block.window.endHour
+          let assignedCol = colEndTimes.findIndex(endTime => endTime <= bStart)
+          if (assignedCol === -1) {
+            assignedCol = colEndTimes.length
+            colEndTimes.push(bEnd)
+          } else {
+            colEndTimes[assignedCol] = bEnd
+          }
+          block._col = assignedCol
+        }
+        const totalCols = colEndTimes.length || 1
+        for (const block of cluster) block._totalCols = totalCols
+      }
 
       return sorted
     })
   })
+}
+
+/**
+ * Build overlap clusters: groups of blocks that overlap transitively.
+ * Blocks A and B are in the same cluster if their time ranges overlap,
+ * or if they both overlap with some block C.
+ */
+function buildClusters(sorted) {
+  if (sorted.length === 0) return []
+
+  const clusters = []
+  let currentCluster = [sorted[0]]
+  let clusterEnd = blockEnd(sorted[0])
+
+  for (let i = 1; i < sorted.length; i++) {
+    const block = sorted[i]
+    const bStart = blockStart(block)
+
+    if (bStart < clusterEnd) {
+      // Overlaps with current cluster
+      currentCluster.push(block)
+      clusterEnd = Math.max(clusterEnd, blockEnd(block))
+    } else {
+      // No overlap — start new cluster
+      clusters.push(currentCluster)
+      currentCluster = [block]
+      clusterEnd = blockEnd(block)
+    }
+  }
+  clusters.push(currentCluster)
+
+  return clusters
+}
+
+function blockStart(block) {
+  return block.type === 'group' ? block.startHour : block.window.startHour
+}
+
+function blockEnd(block) {
+  return block.type === 'group' ? block.endHour : block.window.endHour
 }
 
 function shouldGroup(a, b) {
