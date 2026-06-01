@@ -140,7 +140,14 @@ export const useCalendarStore = defineStore('calendar', () => {
 
   // ---- Filtered windows ----
   const windowsFiltradas = computed(() => {
+    const from = weekDates.value[0]
+    const to = weekDates.value[weekDates.value.length - 1]
+
     return windows.value.filter(w => {
+      // Filter by current view date range to avoid stale cross-view data
+      if (from && to && w.scheduledDate) {
+        if (w.scheduledDate < from || w.scheduledDate > to) return false
+      }
       if (filtroSpecialist.value !== 'all' && w.specialistId !== filtroSpecialist.value) return false
       if (filtroApp.value !== 'all' && w.applicationId !== filtroApp.value) return false
       return true

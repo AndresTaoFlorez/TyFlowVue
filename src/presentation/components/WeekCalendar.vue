@@ -17,9 +17,10 @@ const props = defineProps({
   activeTool: { type: String, default: 'default' }, // 'default' | 'eraser' | 'select'
   selectedWindowIds: { type: Object, default: () => new Set() }, // Set<string>
   cutWindowIds: { type: Object, default: () => new Set() }, // Set<string>
+  slideDir: { type: String, default: '' }, // 'slide-left' | 'slide-right' | ''
 })
 
-const emit = defineEmits(['select', 'range-selected', 'group-select', 'reschedule', 'group-reschedule', 'batch-reschedule', 'next-day', 'prev-day', 'resize', 'group-resize', 'select-day', 'context-window', 'context-group', 'context-cell', 'horizontal-expand', 'erase', 'selection-change'])
+const emit = defineEmits(['select', 'range-selected', 'group-select', 'reschedule', 'group-reschedule', 'batch-reschedule', 'next-day', 'prev-day', 'next-week', 'prev-week', 'next-month', 'prev-month', 'resize', 'group-resize', 'select-day', 'context-window', 'context-group', 'context-cell', 'horizontal-expand', 'erase', 'selection-change'])
 
 const SLOT_H = 30               // px per half-hour slot
 const HOUR_H = SLOT_H * 2       // px per hour (used by WindowBlock)
@@ -47,16 +48,43 @@ const onCalSwipeStart = (e) => {
 const onCalSwipeEnd = (e) => {
   const dx = e.changedTouches[0].clientX - swipeStartX
   const dy = e.changedTouches[0].clientY - swipeStartY
-  if (Math.abs(dx) < Math.abs(dy) || Math.abs(dx) < 40) return
-  // In day mode (1 date from parent), emit to parent for navigation
+  if (Math.abs(dx) < Math.abs(dy) * 0.8 || Math.abs(dx) < 50) return
+  // Day mode — navigate days
   if (props.viewMode === 'day') {
     emit(dx < 0 ? 'next-day' : 'prev-day')
     return
   }
-  // In mobile week mode, navigate within the 7 days
+  // Month mode — navigate months
+  if (props.viewMode === 'month') {
+    emit(dx < 0 ? 'next-month' : 'prev-month')
+    return
+  }
+  // Mobile week mode — navigate within the 7 days
   if (dx < 0 && activeMobileDay.value < props.weekDates.length - 1) activeMobileDay.value++
   if (dx > 0 && activeMobileDay.value > 0) activeMobileDay.value--
 }
+
+const onHeaderSwipeEnd = (e) => {
+  const dx = e.changedTouches[0].clientX - swipeStartX
+  const dy = e.changedTouches[0].clientY - swipeStartY
+  if (Math.abs(dx) < Math.abs(dy) * 0.8 || Math.abs(dx) < 50) return
+  emit(dx < 0 ? 'next-week' : 'prev-week')
+}
+
+// ---- Sticky date pill for day scroll ----
+const dayScrolled = ref(false)
+
+const activeDayLabel = computed(() => {
+  const dateStr = props.weekDates.length === 1
+    ? props.weekDates[0]
+    : props.weekDates[activeMobileDay.value]
+  if (!dateStr) return ''
+  const [y, m, d] = dateStr.split('-').map(Number)
+  const date = new Date(y, m - 1, d)
+  return date.toLocaleDateString('es-CO', {
+    weekday: 'long', day: 'numeric', month: 'long'
+  })
+})
 
 // ---- Today & current time ----
 const now = ref(new Date())
@@ -90,10 +118,17 @@ const currentTimeTop = computed(() => {
   return (d.getHours() + d.getMinutes() / 60) * HOUR_H
 })
 
+const onScrollContainer = () => {
+  if (scrollContainer.value) {
+    dayScrolled.value = scrollContainer.value.scrollTop > 60
+  }
+}
+
 onMounted(() => {
   nextTick(() => {
     if (scrollContainer.value) {
       scrollContainer.value.scrollTop = 7 * HOUR_H
+      scrollContainer.value.addEventListener('scroll', onScrollContainer, { passive: true })
     }
   })
   timeInterval = setInterval(() => { now.value = new Date() }, 30000)
@@ -104,6 +139,9 @@ onMounted(() => {
 
 onUnmounted(() => {
   if (timeInterval) clearInterval(timeInterval)
+  if (scrollContainer.value) {
+    scrollContainer.value.removeEventListener('scroll', onScrollContainer)
+  }
 })
 
 // ---- Drag selection (multi-column) ----
@@ -1081,6 +1119,12 @@ const monthWeeks = computed(() => {
   }
   return result
 })
+
+// ---- Transition key for slide animation ----
+const periodKey = computed(() => {
+  if (props.viewMode === 'month') return props.monthDates[0] || ''
+  return props.weekDates[0] || ''
+})
 </script>
 
 <template>
@@ -1129,8 +1173,13 @@ const monthWeeks = computed(() => {
       </div>
 
       <!-- Grid de 1 día -->
-      <div ref="scrollContainer" class="cal-scroll"
+      <div ref="scrollContainer" class="cal-scroll cal-scroll--day-wrap"
            @touchend.passive="showSingleDay && onCalSwipeEnd($event)">
+        <!-- Sticky date pill -->
+        <div class="cal-day-pill" :class="{ 'cal-day-pill--visible': dayScrolled }">
+          <i class='bx bx-calendar-event'></i>
+          <span>{{ activeDayLabel }}</span>
+        </div>
         <div class="cal-body cal-body--mobile">
 
           <!-- Gutter de horas -->
@@ -1260,62 +1309,67 @@ const monthWeeks = computed(() => {
 
     <!-- ── MES: grid mensual ── -->
     <template v-else-if="viewMode === 'month'">
-      <div class="mcal">
+      <div class="mcal"
+        @touchstart.passive="onCalSwipeStart"
+        @touchend.passive="onCalSwipeEnd"
+      >
         <div class="mcal__header">
           <div v-for="label in DAY_LABELS" :key="label" class="mcal__header-cell">{{ label }}</div>
         </div>
-        <div class="mcal__body">
-          <div v-for="(week, ri) in monthWeeks" :key="ri" class="mcal__row">
-            <button
-              v-for="cell in week"
-              :key="cell.date"
-              class="mcal__cell"
-              :class="{
-                'mcal__cell--other': !cell.isCurrentMonth,
-                'mcal__cell--today': cell.isToday,
-                'mcal__cell--weekend': cell.isWeekend && !cell.isToday,
-                'mcal__cell--has-windows': cell.total > 0,
-              }"
-              :style="cell.total > 0 ? { '--cell-heat': cell.heat } : {}"
-              @click="$emit('select-day', cell.date)"
-            >
-              <!-- Color strips at top -->
-              <div v-if="cell.colors.length > 0" class="mcal__colors">
-                <span
-                  v-for="(color, ci) in cell.colors"
-                  :key="ci"
-                  class="mcal__color-strip"
-                  :style="{ background: color }"
-                ></span>
-              </div>
+        <Transition :name="slideDir" mode="out-in">
+          <div class="mcal__body" :key="periodKey">
+            <div v-for="(week, ri) in monthWeeks" :key="ri" class="mcal__row">
+              <button
+                v-for="cell in week"
+                :key="cell.date"
+                class="mcal__cell"
+                :class="{
+                  'mcal__cell--other': !cell.isCurrentMonth,
+                  'mcal__cell--today': cell.isToday,
+                  'mcal__cell--weekend': cell.isWeekend && !cell.isToday,
+                  'mcal__cell--has-windows': cell.total > 0,
+                }"
+                :style="cell.total > 0 ? { '--cell-heat': cell.heat } : {}"
+                @click="$emit('select-day', cell.date)"
+              >
+                <!-- Color strips at top -->
+                <div v-if="cell.colors.length > 0" class="mcal__colors">
+                  <span
+                    v-for="(color, ci) in cell.colors"
+                    :key="ci"
+                    class="mcal__color-strip"
+                    :style="{ background: color }"
+                  ></span>
+                </div>
 
-              <!-- Day number -->
-              <span class="mcal__day">{{ cell.dayNum }}</span>
+                <!-- Day number -->
+                <span class="mcal__day">{{ cell.dayNum }}</span>
 
-              <!-- Coverage bar -->
-              <div v-if="cell.total > 0" class="mcal__coverage">
-                <div class="mcal__coverage-fill" :style="{ width: Math.min(cell.coverage * 100, 100) + '%' }"></div>
-              </div>
+                <!-- Coverage bar -->
+                <div v-if="cell.total > 0" class="mcal__coverage">
+                  <div class="mcal__coverage-fill" :style="{ width: Math.min(cell.coverage * 100, 100) + '%' }"></div>
+                </div>
 
-              <!-- Specialist avatars -->
-              <div v-if="cell.specs.length > 0" class="mcal__specs">
-                <span
-                  v-for="spec in cell.specs"
-                  :key="spec.id"
-                  class="mcal__spec"
-                  :title="spec.name"
-                >{{ spec.initials }}</span>
-                <span v-if="cell.extraSpecs > 0" class="mcal__spec mcal__spec--extra">+{{ cell.extraSpecs }}</span>
-              </div>
+                <!-- Specialist avatars -->
+                <div v-if="cell.specs.length > 0" class="mcal__specs">
+                  <span
+                    v-for="spec in cell.specs"
+                    :key="spec.id"
+                    class="mcal__spec"
+                    :title="spec.name"
+                  >{{ spec.initials }}</span>
+                  <span v-if="cell.extraSpecs > 0" class="mcal__spec mcal__spec--extra">+{{ cell.extraSpecs }}</span>
+                </div>
 
-              <!-- Window counts -->
-              <div v-if="cell.total > 0" class="mcal__counts">
-                <span v-if="cell.active > 0" class="mcal__count mcal__count--active">{{ cell.active }}</span>
-                <span v-if="cell.inactive > 0" class="mcal__count mcal__count--inactive">{{ cell.inactive }}</span>
-              </div>
-            </button>
+                <!-- Window counts -->
+                <div v-if="cell.total > 0" class="mcal__counts">
+                  <span v-if="cell.active > 0" class="mcal__count mcal__count--active">{{ cell.active }}</span>
+                  <span v-if="cell.inactive > 0" class="mcal__count mcal__count--inactive">{{ cell.inactive }}</span>
+                </div>
+              </button>
+            </div>
           </div>
-        </div>
+        </Transition>
       </div>
     </template>
 
@@ -1324,7 +1378,10 @@ const monthWeeks = computed(() => {
       <div ref="scrollContainer" class="cal-scroll">
 
         <!-- Sticky header -->
-        <div class="cal-header" :style="gridColumns && { gridTemplateColumns: gridColumns }">
+        <div class="cal-header" :style="gridColumns && { gridTemplateColumns: gridColumns }"
+          @touchstart.passive="onCalSwipeStart"
+          @touchend.passive="onHeaderSwipeEnd"
+        >
           <div class="cal-header__gutter"></div>
           <div
             v-for="(date, i) in weekDates"
@@ -1955,18 +2012,19 @@ const monthWeeks = computed(() => {
 }
 
 .mcal__body {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-rows: repeat(6, 1fr);
   flex: 1;
   min-height: 0;
+  overflow: hidden;
 }
 
 .mcal__row {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
-  flex: 1;
   min-height: 0;
   border-bottom: 1px solid #33374a;
+  overflow: hidden;
 }
 
 .mcal__row:last-child {
@@ -1987,7 +2045,7 @@ const monthWeeks = computed(() => {
   border-bottom: none;
   border-left: none;
   transition: background 0.15s, box-shadow 0.15s;
-  min-height: 5.5rem;
+  min-height: 0;
   position: relative;
   overflow: hidden;
 }
@@ -2147,7 +2205,7 @@ const monthWeeks = computed(() => {
 
 @media (max-width: 768px) {
   .mcal__cell {
-    min-height: 4rem;
+    min-height: 0;
   }
 
   .mcal__day {
@@ -2194,4 +2252,60 @@ const monthWeeks = computed(() => {
   .cal-header__label { font-size: 0.45rem; letter-spacing: -0.02em; }
   .cal-gutter__label { font-size: 0.42rem; }
 }
+
+/* ========== Day scroll wrapper ========== */
+.cal-scroll--day-wrap {
+  position: relative;
+}
+
+/* ========== Sticky date pill ========== */
+.cal-day-pill {
+  position: sticky;
+  top: 0.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  padding: 0.3rem 0.75rem;
+  background: rgba(37, 40, 57, 0.92);
+  border: 1px solid #3b3f54;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #c8cdd8;
+  backdrop-filter: blur(8px);
+  z-index: 30;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.2s ease, margin-top 0.2s ease;
+  width: fit-content;
+  margin: -2rem auto 0;
+  text-transform: capitalize;
+}
+
+.cal-day-pill--visible {
+  opacity: 1;
+  margin-top: 0;
+}
+
+.cal-day-pill i {
+  color: var(--primary-500);
+  font-size: 0.9rem;
+}
+
+/* ========== Slide transitions ========== */
+.slide-left-enter-active,
+.slide-right-enter-active {
+  transition: transform 0.2s ease-out, opacity 0.2s ease-out;
+}
+
+.slide-left-leave-active,
+.slide-right-leave-active {
+  transition: transform 0.12s ease-in, opacity 0.12s ease-in;
+}
+
+.slide-left-enter-from { transform: translateX(20px); opacity: 0; }
+.slide-left-leave-to { transform: translateX(-20px); opacity: 0; }
+.slide-right-enter-from { transform: translateX(-20px); opacity: 0; }
+.slide-right-leave-to { transform: translateX(20px); opacity: 0; }
 </style>

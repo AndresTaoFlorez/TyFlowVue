@@ -1,5 +1,5 @@
 <script setup>
-import { ref, nextTick, onMounted, onUnmounted } from 'vue'
+import { ref, computed, nextTick, onMounted, onUnmounted } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useAuthStore } from '@/presentation/stores/useAuthStore'
 import { useUserStore } from '@/presentation/stores/useUserStore'
@@ -18,7 +18,7 @@ const calStore = useCalendarStore()
 
 const {
   calView, weekDates, monthDates, currentMonth, weekLabel,
-  loading, windowsFiltradas,
+  loading, windowsFiltradas, monthOffset,
   filtroSpecialist, filtroApp, specOptions, appOptions, specialistsConVentana,
   isMobile, canUndo,
 } = storeToRefs(calStore)
@@ -41,6 +41,18 @@ const prefillData = ref(null)
 const modalLoading = ref(false)
 const selectedGroup = ref(null)
 const showMobileFilters = ref(false)
+const slideDir = ref('') // 'slide-left' | 'slide-right'
+
+// Month strip for mobile month view
+const monthStripItems = computed(() => {
+  const meses = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic']
+  const now = new Date()
+  return Array.from({ length: 7 }, (_, i) => {
+    const off = monthOffset.value + (i - 3)
+    const d = new Date(now.getFullYear(), now.getMonth() + off, 1)
+    return { offset: off, label: meses[d.getMonth()] }
+  })
+})
 
 // Tool mode & selection
 const activeTool = ref('default') // 'default' | 'eraser' | 'select'
@@ -589,11 +601,11 @@ onUnmounted(() => {
     <div class="toolbar">
       <!-- Row 1: nav + label -->
       <div class="toolbar__row">
-        <button class="toolbar__arrow" @click="calStore.prevNav">
+        <button class="toolbar__arrow" @click="slideDir = 'slide-right'; calStore.prevNav()">
           <i class='bx bx-chevron-left'></i>
         </button>
-        <button class="toolbar__today" @click="calStore.goToday">Hoy</button>
-        <button class="toolbar__arrow" @click="calStore.nextNav">
+        <button class="toolbar__today" @click="slideDir = ''; calStore.goToday()" :class="{ 'toolbar__today--hidden-mobile': isMobile }">Hoy</button>
+        <button class="toolbar__arrow" @click="slideDir = 'slide-left'; calStore.nextNav()">
           <i class='bx bx-chevron-right'></i>
         </button>
         <button class="toolbar__date-btn" @click="openDatePicker">
@@ -607,13 +619,13 @@ onUnmounted(() => {
           <button class="toolbar__view-btn" :class="{ 'toolbar__view-btn--active': calView === 'day' }"
             @click="calView = 'day'">Día</button>
           <button class="toolbar__view-btn" :class="{ 'toolbar__view-btn--active': calView === 'week' }"
-            @click="calView = 'week'">Semana</button>
+            @click="calView = 'week'"><span class="toolbar__view-full">Semana</span><span class="toolbar__view-short">Sem</span></button>
           <button class="toolbar__view-btn" :class="{ 'toolbar__view-btn--active': calView === 'month' }"
             @click="calView = 'month'">Mes</button>
         </div>
 
-        <!-- Tool toggle (admin only) -->
-        <div v-if="authStore.isAdmin" class="toolbar__tools">
+        <!-- Tool toggle (admin only, desktop) -->
+        <div v-if="authStore.isAdmin && !isMobile" class="toolbar__tools">
           <button class="toolbar__tool-btn" :class="{ 'toolbar__tool-btn--active': activeTool === 'default' }"
             @click="setTool('default')" title="Modo normal">
             <i class='bx bx-pointer'></i>
@@ -628,8 +640,8 @@ onUnmounted(() => {
           </button>
         </div>
 
-        <!-- Undo button -->
-        <button v-if="authStore.isAdmin" class="toolbar__undo-btn" :disabled="!canUndo"
+        <!-- Undo button (desktop only) -->
+        <button v-if="authStore.isAdmin && !isMobile" class="toolbar__undo-btn" :disabled="!canUndo"
           @click="calStore.undo().then(() => showToast('Acción deshecha.')).catch(() => showToast('Error al deshacer.', 'error'))"
           title="Deshacer (Ctrl+Z)">
           <i class='bx bx-undo'></i>
@@ -686,6 +698,17 @@ onUnmounted(() => {
       </div>
     </div>
 
+    <!-- Month strip (mobile only, month view) -->
+    <div v-if="isMobile && calView === 'month'" class="month-strip">
+      <button
+        v-for="m in monthStripItems"
+        :key="m.offset"
+        class="month-strip__item"
+        :class="{ 'month-strip__item--active': m.offset === monthOffset }"
+        @click="slideDir = m.offset > monthOffset ? 'slide-left' : 'slide-right'; monthOffset = m.offset"
+      >{{ m.label }}</button>
+    </div>
+
     <!-- Loading -->
     <SectionLoader v-if="loading" message="Cargando ventanas de trabajo..." />
 
@@ -693,11 +716,13 @@ onUnmounted(() => {
     <WeekCalendar v-else :windows="windowsFiltradas" :week-dates="weekDates" :specialists="userStore.users"
       :applications="userStore.applications" :selectable="authStore.isAdmin" :is-mobile="isMobile" :view-mode="calView"
       :month-dates="monthDates" :current-month="currentMonth" :active-tool="activeTool"
-      :selected-window-ids="selectedWindows" :cut-window-ids="cutWindowIds"
+      :selected-window-ids="selectedWindows" :cut-window-ids="cutWindowIds" :slide-dir="slideDir"
       @select="selectedWindow = $event"
       @group-select="selectedGroup = $event" @range-selected="onRangeSelected" @reschedule="handleReschedule"
       @group-reschedule="handleGroupReschedule" @batch-reschedule="handleBatchReschedule" @group-resize="handleGroupResize"
-      @next-day="calStore.nextDay" @prev-day="calStore.prevDay"
+      @next-day="slideDir = 'slide-left'; calStore.nextDay()" @prev-day="slideDir = 'slide-right'; calStore.prevDay()"
+      @next-week="slideDir = 'slide-left'; calStore.nextNav()" @prev-week="slideDir = 'slide-right'; calStore.prevNav()"
+      @next-month="slideDir = 'slide-left'; calStore.nextNav()" @prev-month="slideDir = 'slide-right'; calStore.prevNav()"
       @resize="handleResize" @horizontal-expand="handleHorizontalExpand" @select-day="calStore.selectDay"
       @erase="handleErase" @selection-change="onSelectionChange"
       @context-window="onWindowContext" @context-group="onGroupContext" @context-cell="onCellContext" />
@@ -765,6 +790,7 @@ onUnmounted(() => {
   gap: 0.75rem;
   height: 100%;
   min-height: 0;
+  overflow: hidden;
 }
 
 /* ---- Header ---- */
@@ -998,6 +1024,9 @@ onUnmounted(() => {
   transition: all 0.15s;
 }
 
+.toolbar__view-short { display: none; }
+.toolbar__view-full { display: inline; }
+
 .toolbar__view-btn+.toolbar__view-btn {
   border-left: 1px solid var(--border-light);
 }
@@ -1207,6 +1236,53 @@ onUnmounted(() => {
   gap: 0.3rem;
 }
 
+/* ---- Month strip ---- */
+.month-strip {
+  display: flex;
+  gap: 0.25rem;
+  padding: 0.3rem 0.5rem;
+  overflow-x: auto;
+  scrollbar-width: none;
+  background: var(--bg-main);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  scroll-snap-type: x mandatory;
+  flex-shrink: 0;
+}
+
+.month-strip::-webkit-scrollbar { display: none; }
+
+.month-strip__item {
+  flex: 1;
+  flex-shrink: 0;
+  padding: 0.3rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  background: none;
+  border: 1px solid transparent;
+  cursor: pointer;
+  scroll-snap-align: center;
+  transition: all 0.15s;
+  text-align: center;
+}
+
+.month-strip__item:hover {
+  color: var(--text-primary);
+  background: var(--bg-card);
+}
+
+.month-strip__item--active {
+  background: var(--primary-500);
+  color: white;
+  border-color: var(--primary-500);
+}
+
+.month-strip__item--active:hover {
+  background: var(--primary-600);
+}
+
 /* ---- Responsive ---- */
 
 /* Tablet & small desktop */
@@ -1233,6 +1309,13 @@ onUnmounted(() => {
   .toolbar {
     padding: 0.35rem 0.4rem;
   }
+
+  .toolbar__today--hidden-mobile {
+    display: none;
+  }
+
+  .toolbar__view-short { display: inline; }
+  .toolbar__view-full { display: none; }
 
   .toolbar__date-text {
     font-size: 0.72rem;
