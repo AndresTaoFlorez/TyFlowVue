@@ -230,9 +230,9 @@ watch(() => props.visible, (val) => {
     selectedDates.value = [todayISO()]
     endDate.value = todayISO()
   }
-  rows.value = [{ specialistId: '', applicationId: '' }]
+  rows.value = [{ specialistId: '', applicationId: props.prefill?.applicationId || '' }]
   inheritsOnReopen.value = false
-  affinityWeight.value = ''
+  affinityWeight.value = '1'
 })
 
 // ---- Submit ----
@@ -427,9 +427,9 @@ const handleSubmit = () => {
                 <input
                   v-model="affinityWeight"
                   type="number"
-                  step="0.0001"
-                  min="0.0001"
-                  max="9.9999"
+                  step="0.01"
+                  min="0.01"
+                  max="9.99"
                   class="weight-input"
                   placeholder="Ej. 1.5"
                   :disabled="creating"

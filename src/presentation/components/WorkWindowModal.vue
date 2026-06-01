@@ -6,13 +6,11 @@ const props = defineProps({
   specialistName: { type: String, default: '—' },
   applicationName: { type: String, default: '—' },
   loading: { type: Boolean, default: false },
-  specialists: { type: Array, default: () => [] },
-  applications: { type: Array, default: () => [] },
   startInEditMode: { type: Boolean, default: false },
   showBackButton: { type: Boolean, default: false },
 })
 
-const emit = defineEmits(['close', 'toggle', 'delete', 'update', 'add-window', 'back', 'disinherit', 'reinherit'])
+const emit = defineEmits(['close', 'toggle', 'delete', 'update', 'back', 'disinherit', 'reinherit'])
 
 const isFuture = computed(() => {
   if (!props.window?.startsAt) return false
@@ -21,25 +19,6 @@ const isFuture = computed(() => {
 
 const hasInheritance = computed(() => !!(props.window.inheritedFromWindowId || props.window.inheritsOnReopen))
 const canToggleInheritance = computed(() => isFuture.value)
-
-// ---- Add to same schedule ----
-const addSpecialistId = ref('')
-const addApplicationId = ref('')
-
-const canAdd = computed(() => addSpecialistId.value && addApplicationId.value)
-
-function submitAdd() {
-  if (!canAdd.value) return
-  emit('add-window', {
-    scheduledDate: props.window.scheduledDate,
-    startTime: props.window.startTime,
-    endTime: props.window.endTime,
-    specialistId: addSpecialistId.value,
-    applicationId: addApplicationId.value,
-  })
-  addSpecialistId.value = ''
-  addApplicationId.value = ''
-}
 
 // ---- Edit mode ----
 const editing = ref(false)
@@ -62,7 +41,7 @@ function enterEdit() {
   editEndDate.value = dateFromTimestamp(props.window.endsAt) || props.window.scheduledDate || ''
   editEndTime.value = fmtForInput(props.window.endTime)
   editNote.value = ''
-  editAffinityWeight.value = props.window.affinityWeight != null ? String(props.window.affinityWeight) : ''
+  editAffinityWeight.value = props.window.affinityWeight != null ? String(parseFloat(props.window.affinityWeight.toFixed(2))) : '1'
   editing.value = true
 }
 
@@ -88,7 +67,7 @@ function saveEdit() {
   if (endTimeChanged || endDateChanged) payload.endTime = editEndTime.value
   if (editNote.value.trim()) payload.note = editNote.value.trim()
 
-  const origWeight = props.window.affinityWeight != null ? String(props.window.affinityWeight) : ''
+  const origWeight = props.window.affinityWeight != null ? String(parseFloat(props.window.affinityWeight.toFixed(2))) : '1'
   if (editAffinityWeight.value !== origWeight) {
     payload.affinityWeight = editAffinityWeight.value ? parseFloat(editAffinityWeight.value) : null
   }
@@ -105,8 +84,6 @@ onMounted(() => {
 })
 
 watch(() => props.window?.id, () => {
-  addSpecialistId.value = ''
-  addApplicationId.value = ''
   if (props.startInEditMode) { enterEdit() } else { editing.value = false }
 })
 
@@ -114,7 +91,7 @@ const hasChanged = computed(() => {
   if (!editing.value) return false
   const origStartDate = dateFromTimestamp(props.window.startsAt) || props.window.scheduledDate || ''
   const origEndDate = dateFromTimestamp(props.window.endsAt) || props.window.scheduledDate || ''
-  const origWeight = props.window.affinityWeight != null ? String(props.window.affinityWeight) : ''
+  const origWeight = props.window.affinityWeight != null ? String(parseFloat(props.window.affinityWeight.toFixed(2))) : '1'
   return editStartDate.value !== origStartDate ||
          editEndDate.value !== origEndDate ||
          editStartTime.value !== fmtForInput(props.window.startTime) ||
@@ -240,11 +217,11 @@ const statusClass = computed(() => props.window.isActive ? 'open' : 'closed')
           <input
             v-model="editAffinityWeight"
             type="number"
-            step="0.0001"
-            min="0.0001"
-            max="9.9999"
+            step="0.01"
+            min="0.01"
+            max="9.99"
             class="wm__note-input wm__weight-input"
-            placeholder="Peso de afinidad (ej. 1.5)"
+            placeholder="Ej. 1.5"
           >
         </div>
 
@@ -282,7 +259,7 @@ const statusClass = computed(() => props.window.isActive ? 'open' : 'closed')
         <!-- Peso de afinidad (view mode) -->
         <div v-if="!editing && window.affinityWeight != null" class="wm__row">
           <i class='bx bx-slider-alt'></i>
-          <span>Peso de afinidad: <strong>{{ window.affinityWeight }}</strong></span>
+          <span>Peso de afinidad: <strong>{{ parseFloat(window.affinityWeight.toFixed(2)) }}</strong></span>
         </div>
 
         <!-- Inheritance badge -->
@@ -296,28 +273,6 @@ const statusClass = computed(() => props.window.isActive ? 'open' : 'closed')
           <i class='bx bx-link'></i> Activar herencia
         </button>
 
-        <!-- Add to same schedule -->
-        <div v-if="editing && specialists.length" class="wm__add-section">
-          <div class="wm__divider"></div>
-          <span class="wm__add-title">Agregar al mismo horario</span>
-          <div class="wm__add-row">
-            <select v-model="addSpecialistId" class="wm__add-select" :disabled="loading">
-              <option value="">Especialista</option>
-              <option v-for="s in specialists" :key="s.specialistId" :value="s.specialistId">
-                {{ s.fullName }}
-              </option>
-            </select>
-            <select v-model="addApplicationId" class="wm__add-select" :disabled="loading">
-              <option value="">Aplicación</option>
-              <option v-for="a in applications" :key="a.id" :value="a.id">
-                {{ a.name }}
-              </option>
-            </select>
-            <button class="wm__btn wm__btn--primary wm__btn--sm" :disabled="!canAdd || loading" @click="submitAdd">
-              <i class='bx bx-plus'></i>
-            </button>
-          </div>
-        </div>
       </div>
 
       <!-- Footer -->
@@ -660,48 +615,6 @@ const statusClass = computed(() => props.window.isActive ? 'open' : 'closed')
 .wm__badge-action:disabled {
   opacity: 0.4;
   cursor: not-allowed;
-}
-
-/* ===== Add to same schedule ===== */
-.wm__add-section {
-  margin-top: 4px;
-}
-
-.wm__add-title {
-  display: block;
-  font-size: 11px;
-  font-weight: 700;
-  color: var(--text-secondary);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  margin-bottom: 8px;
-}
-
-.wm__add-row {
-  display: flex;
-  gap: 6px;
-  align-items: center;
-}
-
-.wm__add-select {
-  flex: 1;
-  padding: 6px 8px;
-  font-size: 12px;
-  border: 1px solid var(--border-light);
-  border-radius: var(--radius-sm);
-  background: white;
-  color: var(--text-primary);
-  cursor: pointer;
-}
-
-.wm__add-select:focus {
-  outline: none;
-  border-color: var(--primary-500);
-}
-
-.wm__btn--sm {
-  padding: 6px 10px;
-  font-size: 14px;
 }
 
 /* ===== Footer ===== */

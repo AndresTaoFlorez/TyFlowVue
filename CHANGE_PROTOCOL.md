@@ -1,8 +1,8 @@
 Before touching any code:
 
 1. Connect to both databases and verify the current state:
-   - Production: postgresql://postgres.iryiobhmmvdnvwfovuye:...@aws-1-us-west-2.pooler.supabase.com:6543/postgres
-   - Test: postgresql://postgres.ebxmitfsjbarknigcdsp:...@aws-1-us-west-2.pooler.supabase.com:6543/postgres
+   - Production: postgresql://postgres.iryiobhmmvdnvwfovuye:...@aws-1-us-west-2.pooler.supabase.com:6543/postgres // instead of this search the corresponding keys into .env file -- you've authorization
+   - Test: postgresql://postgres.ebxmitfsjbarknigcdsp:...@aws-1-us-west-2.pooler.supabase.com:6543/postgres // instead of this search the corresponding keys into .env file -- you've authorization
 
 2. Apply changes to BOTH databases. Never touch only one.
 

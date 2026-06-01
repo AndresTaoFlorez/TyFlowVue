@@ -110,6 +110,7 @@ function onWindowContext({ window: w, x, y }) {
     : null
   const items = [
     { label: 'Editar', icon: 'bx-pencil', action: 'edit' },
+    { label: 'Agregar especialista', icon: 'bx-user-plus', action: 'add-specialist' },
     { label: w.isActive ? 'Inhabilitar' : 'Habilitar', icon: w.isActive ? 'bx-block' : 'bx-check-circle', action: 'toggle' },
     ...(inheritItem ? [inheritItem] : []),
     { label: 'Copiar ventana', icon: 'bx-copy', action: 'copy' },
@@ -154,6 +155,15 @@ async function handleCtxAction(action) {
         await nextTick()
         openModalInEdit.value = true
         selectedWindow.value = w
+        break
+      case 'add-specialist':
+        prefillData.value = {
+          dates: [w.scheduledDate],
+          startTime: w.startTime,
+          endTime: w.endTime,
+          applicationId: w.applicationId,
+        }
+        mostrarCrear.value = true
         break
       case 'copy':
         clipboard.value = { type: 'window', data: w, cut: false }
@@ -454,6 +464,15 @@ const handleBatchCopy = () => {
   showToast(`${wins.length} ventana(s) copiada(s).`)
 }
 
+const handleBatchGroup = () => {
+  if (selectedWindows.value.size < 2) {
+    showToast('Selecciona al menos 2 ventanas para agrupar.', 'error')
+    return
+  }
+  // TODO: Enviar al backend para crear agrupación de carga de trabajo
+  showToast(`Agrupación de ${selectedWindows.value.size} ventanas (módulo en desarrollo).`)
+}
+
 // ---- Resize (drag edge to stretch) ----
 const handleResize = async (data) => {
   try {
@@ -484,15 +503,6 @@ const handleReschedule = async (data) => {
   }
 }
 
-// ---- Agregar ventana al mismo horario ----
-const handleAddWindow = async (data) => {
-  try {
-    await calStore.addWindowToSlot(data)
-    showToast('Ventana agregada al mismo horario.')
-  } catch (e) {
-    showToast(e.userMessage || 'Error al agregar la ventana.', 'error')
-  }
-}
 
 // ---- Batch resize (selection mode) ----
 const handleBatchResize = async ({ ids, direction, deltaSlots }) => {
@@ -739,11 +749,11 @@ onUnmounted(() => {
 
     <!-- Modal detalle -->
     <WorkWindowModal v-if="selectedWindow" :window="selectedWindow" :specialist-name="calStore.specName(selectedWindow)"
-      :application-name="calStore.appName(selectedWindow)" :loading="modalLoading" :specialists="specialistsConVentana"
-      :applications="userStore.applications" :start-in-edit-mode="openModalInEdit"
+      :application-name="calStore.appName(selectedWindow)" :loading="modalLoading"
+      :start-in-edit-mode="openModalInEdit"
       :show-back-button="!!returnToGroup"
       @close="closeWindowModal" @back="closeWindowModal"
-      @delete="handleDelete" @update="handleUpdate" @add-window="handleAddWindow" @toggle="handleToggle"
+      @delete="handleDelete" @update="handleUpdate" @toggle="handleToggle"
       @disinherit="handleDisinherit" @reinherit="handleReinherit" />
 
     <!-- Panel grupo -->
@@ -775,6 +785,9 @@ onUnmounted(() => {
         </button>
         <button class="sel-bar__btn" @click="handleBatchToggle" title="Habilitar/Inhabilitar">
           <i class='bx bx-toggle-left'></i>
+        </button>
+        <button class="sel-bar__btn sel-bar__btn--group" @click="handleBatchGroup" title="Agrupar (en desarrollo)">
+          <i class='bx bx-group'></i>
         </button>
         <button class="sel-bar__btn sel-bar__btn--danger" @click="handleBatchDelete" title="Eliminar">
           <i class='bx bx-trash'></i>
@@ -1155,6 +1168,11 @@ onUnmounted(() => {
 .sel-bar__btn--danger:hover {
   color: #ef4444;
   border-color: #ef4444;
+}
+
+.sel-bar__btn--group:hover {
+  color: #8b5cf6;
+  border-color: #8b5cf6;
 }
 
 /* Legend */
