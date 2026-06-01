@@ -20,7 +20,7 @@ const props = defineProps({
   slideDir: { type: String, default: '' }, // 'slide-left' | 'slide-right' | ''
 })
 
-const emit = defineEmits(['select', 'range-selected', 'group-select', 'reschedule', 'group-reschedule', 'batch-reschedule', 'next-day', 'prev-day', 'next-week', 'prev-week', 'next-month', 'prev-month', 'resize', 'group-resize', 'select-day', 'context-window', 'context-group', 'context-cell', 'horizontal-expand', 'erase', 'selection-change'])
+const emit = defineEmits(['select', 'range-selected', 'group-select', 'reschedule', 'group-reschedule', 'batch-reschedule', 'batch-resize', 'next-day', 'prev-day', 'next-week', 'prev-week', 'next-month', 'prev-month', 'resize', 'group-resize', 'select-day', 'context-window', 'context-group', 'context-cell', 'horizontal-expand', 'erase', 'selection-change'])
 
 const SLOT_H = 30               // px per half-hour slot
 const HOUR_H = SLOT_H * 2       // px per hour (used by WindowBlock)
@@ -629,13 +629,27 @@ const onResizeEnd = () => {
     })
   } else {
     const original = w._originalWindow || w
-    const payload = { window: original }
-    if (dir === 'top') {
-      payload.startTime = fmt(sH, sM)
+    const wId = original.id
+
+    // If this window is part of a multi-selection, batch resize all selected
+    if (props.selectedWindowIds.size > 1 && props.selectedWindowIds.has(wId)) {
+      const deltaSlots = dir === 'top'
+        ? startSlot - Math.round(startHour * 2)
+        : endSlot - Math.round(endHour * 2)
+      emit('batch-resize', {
+        ids: [...props.selectedWindowIds],
+        direction: dir,
+        deltaSlots,
+      })
     } else {
-      payload.endTime = fmt(eH, eM)
+      const payload = { window: original }
+      if (dir === 'top') {
+        payload.startTime = fmt(sH, sM)
+      } else {
+        payload.endTime = fmt(eH, eM)
+      }
+      emit('resize', payload)
     }
-    emit('resize', payload)
   }
 }
 

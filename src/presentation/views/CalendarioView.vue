@@ -492,6 +492,16 @@ const handleAddWindow = async (data) => {
   }
 }
 
+// ---- Batch resize (selection mode) ----
+const handleBatchResize = async ({ ids, direction, deltaSlots }) => {
+  try {
+    await calStore.batchResize(ids, direction, deltaSlots)
+    showToast(`${ids.length} ventanas redimensionadas.`)
+  } catch (e) {
+    showToast(e.userMessage || 'Error al redimensionar.', 'error')
+  }
+}
+
 // ---- Group resize ----
 const handleGroupResize = async (data) => {
   try {
@@ -723,7 +733,7 @@ onUnmounted(() => {
       @next-day="slideDir = 'slide-left'; calStore.nextDay()" @prev-day="slideDir = 'slide-right'; calStore.prevDay()"
       @next-week="slideDir = 'slide-left'; calStore.nextNav()" @prev-week="slideDir = 'slide-right'; calStore.prevNav()"
       @next-month="slideDir = 'slide-left'; calStore.nextNav()" @prev-month="slideDir = 'slide-right'; calStore.prevNav()"
-      @resize="handleResize" @horizontal-expand="handleHorizontalExpand" @select-day="calStore.selectDay"
+      @resize="handleResize" @batch-resize="handleBatchResize" @horizontal-expand="handleHorizontalExpand" @select-day="calStore.selectDay"
       @erase="handleErase" @selection-change="onSelectionChange"
       @context-window="onWindowContext" @context-group="onGroupContext" @context-cell="onCellContext" />
 

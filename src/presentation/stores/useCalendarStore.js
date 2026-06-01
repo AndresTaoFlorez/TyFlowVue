@@ -670,6 +670,59 @@ export const useCalendarStore = defineStore('calendar', () => {
     }
   }
 
+  async function batchResize(ids, direction, deltaSlots) {
+    const snapshot = [...windows.value]
+    const originals = new Map()
+    const optimisticMap = new Map()
+    const batchIds = new Set(ids)
+    const deltaHours = deltaSlots / 2
+
+    for (const id of ids) {
+      const orig = _findOriginal(id)
+      if (!orig) continue
+      originals.set(id, orig)
+      const newStart = direction === 'top' ? _toHM(orig.startHour + deltaHours) : orig.startTime
+      const newEnd = direction === 'bottom' ? _toHM(orig.endHour + deltaHours) : orig.endTime
+      optimisticMap.set(id, _buildOptimistic(orig, { startTime: newStart, endTime: newEnd }))
+    }
+
+    // Validate overlap & inheritance
+    for (const orig of originals.values()) {
+      const st = direction === 'top' ? _toHM(orig.startHour + deltaHours) : orig.startTime
+      const et = direction === 'bottom' ? _toHM(orig.endHour + deltaHours) : orig.endTime
+      const conflict = _checkOverlap(orig.specialistId, orig.scheduledDate, st, et, batchIds)
+      if (conflict) {
+        throw { userMessage: 'El horario se superpone con otra ventana del mismo especialista.' }
+      }
+      const inheritErr = _checkInheritance(orig.id, orig.scheduledDate, st, et)
+      if (inheritErr) throw { userMessage: inheritErr }
+    }
+
+    windows.value = windows.value.map(w => optimisticMap.get(w.id) || w)
+    _invalidateCache()
+
+    try {
+      for (const orig of originals.values()) {
+        const data = {}
+        if (direction === 'top') data.startTime = _toHM(orig.startHour + deltaHours)
+        if (direction === 'bottom') data.endTime = _toHM(orig.endHour + deltaHours)
+        await updateWorkWindowUseCase(orig, data)
+      }
+      _pushUndo(snapshot, async () => {
+        for (const orig of originals.values()) {
+          await updateWorkWindowUseCase(orig, {
+            startTime: orig.startTime,
+            endTime: orig.endTime,
+          })
+        }
+      })
+    } catch (e) {
+      windows.value = windows.value.map(w => originals.get(w.id) || w)
+      _invalidateCache()
+      throw e
+    }
+  }
+
   async function batchToggle(ids) {
     const snapshot = [...windows.value]
     const results = await WorkWindowRepository.toggleWindows([...ids])
@@ -1099,6 +1152,7 @@ export const useCalendarStore = defineStore('calendar', () => {
     horizontalExpand,
     batchDelete,
     batchReschedule,
+    batchResize,
     batchToggle,
     eraseRange,
     updateWindow,
