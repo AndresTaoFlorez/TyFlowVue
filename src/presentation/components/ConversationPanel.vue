@@ -256,7 +256,7 @@ function senderName(addr) {
             <span class="toolbar__count" v-if="store.total > 0">{{ store.total }}</span>
           </div>
           <div class="toolbar__right">
-            <button v-if="authStore.isAdmin" @click="openIngest" class="toolbar__btn" title="Ingestar">
+            <button v-if="authStore.isAdmin" @click="openIngest" class="toolbar__btn" title="Ingresar">
               <i class='bx bx-plus'></i>
             </button>
           </div>
@@ -432,7 +432,7 @@ function senderName(addr) {
             <span class="toolbar__count" v-if="store.total > 0">{{ store.total }}</span>
           </div>
           <div class="toolbar__right">
-            <button v-if="authStore.isAdmin" @click="openIngest" class="toolbar__btn" title="Ingestar">
+            <button v-if="authStore.isAdmin" @click="openIngest" class="toolbar__btn" title="Ingresar">
               <i class='bx bx-plus'></i>
             </button>
           </div>
@@ -572,7 +572,7 @@ function senderName(addr) {
       <div v-if="showIngest" class="modal-overlay" @click.self="showIngest = false">
         <div class="modal-content">
           <div class="modal-header">
-            <h2>Ingestar en "{{ selectedFolder.name }}"</h2>
+            <h2>Ingresar en "{{ selectedFolder.name }}"</h2>
             <button @click="showIngest = false" class="btn-close"><i class='bx bx-x'></i></button>
           </div>
           <form @submit.prevent="submitIngest" class="modal-form" autocomplete="off">
@@ -619,7 +619,7 @@ function senderName(addr) {
               <button type="button" @click="showIngest = false" class="btn-secondary" :disabled="ingestLoading">Cancelar</button>
               <button type="submit" class="btn-primary" :disabled="ingestLoading">
                 <i v-if="ingestLoading" class='bx bx-loader-alt bx-spin'></i>
-                {{ ingestLoading ? 'Enviando...' : 'Ingestar' }}
+                {{ ingestLoading ? 'Enviando...' : 'Ingresar' }}
               </button>
             </div>
           </form>

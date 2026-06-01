@@ -133,7 +133,7 @@ GET /conversations?application_id=!e3d341          # excluir una aplicacion
 
 ---
 
-### POST `/conversations` — Ingestar conversaciones (batch)
+### POST `/conversations` — Ingresar conversaciones (batch)
 
 Crea una o mas conversaciones. Opcionalmente dispara el algoritmo WDD para asignarlas automaticamente.
 
@@ -272,7 +272,7 @@ Todos los filtros de texto en el endpoint `GET /conversations` soportan el prefi
 
 ## Constraints y validaciones
 
-1. **`external_id` es unico globalmente** — si intentas ingestar una conversacion con un `external_id` que ya existe, obtendras un error de duplicado.
+1. **`external_id` es unico globalmente** — si intentas ingresar una conversacion con un `external_id` que ya existe, obtendras un error de duplicado.
 2. **`folder_id` debe existir** — FK con `ON DELETE RESTRICT`, no puedes borrar un folder que tiene conversaciones.
 3. **Batch maximo: 500 conversaciones** por request de ingesta.
 4. **Escritura solo para admins** — RLS bloquea INSERT/UPDATE/DELETE para usuarios no-admin. Lectura es publica para cualquier usuario autenticado.
@@ -314,7 +314,7 @@ const response = await fetch(`/conversations/${conversationId}`, {
 const conversation = await response.json()
 ```
 
-### Ingestar conversaciones con asignacion automatica
+### Ingresar conversaciones con asignacion automatica
 
 ```typescript
 const response = await fetch('/conversations', {
