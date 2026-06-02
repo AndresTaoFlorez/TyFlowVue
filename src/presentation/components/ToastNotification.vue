@@ -51,14 +51,14 @@ watch(() => props.visible, (val) => {
 }
 
 .toast--success {
-  background-color: #ECFDF5;
-  color: #065F46;
+  background-color: var(--success-bg);
+  color: var(--success-text);
   border-left: 3px solid var(--primary-500);
 }
 
 .toast--error {
-  background-color: #FEF2F2;
-  color: #991B1B;
+  background-color: var(--error-bg);
+  color: var(--error-text);
   border-left: 3px solid var(--error-500);
 }
 

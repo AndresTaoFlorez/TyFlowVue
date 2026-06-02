@@ -119,7 +119,7 @@ const isLocked = (id) => props.lockedIds.includes(id)
   padding: 0.5rem;
   border: 1.5px solid var(--error-500);
   border-radius: var(--radius-md);
-  background: #FEF2F2;
+  background: var(--input-error-bg);
 }
 
 /* ---- Chip base ---- */
@@ -134,7 +134,7 @@ const isLocked = (id) => props.lockedIds.includes(id)
   cursor: pointer;
   transition: all 0.15s ease;
   border: 1.5px solid var(--border-light);
-  background: white;
+  background: var(--bg-main);
   color: var(--text-secondary);
 }
 

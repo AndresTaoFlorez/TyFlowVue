@@ -23,6 +23,11 @@ const ERROR_MAP = [
   [/already open/i, 'Esta ventana ya tiene una sesión abierta.'],
   [/already closed|already deactivated/i, 'Esta ventana ya está cerrada.'],
   [/already deleted/i, 'Esta ventana ya fue eliminada.'],
+  // Merge
+  [/merge requires at least/i, 'Se necesitan al menos 2 ventanas para agrupar.'],
+  [/has already ended.*cannot merge/i, 'No se pueden agrupar ventanas que ya finalizaron.'],
+  [/has already ended/i, 'Una de las ventanas ya finalizó.'],
+  [/not found.*deleted/i, 'Una o más ventanas no fueron encontradas o están eliminadas.'],
   // General
   [/not found/i, 'Ventana de trabajo no encontrada.'],
   [/unauthorized|forbidden|row-level security/i, 'No tienes permisos para esta acción.'],

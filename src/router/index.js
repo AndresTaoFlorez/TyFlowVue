@@ -6,6 +6,8 @@ import UsersView from '@/presentation/views/UsersView.vue'
 import ProfileView from '@/presentation/views/ProfileView.vue'
 import ApplicationsView from '@/presentation/views/ApplicationsView.vue'
 import CalendarioView from '@/presentation/views/CalendarioView.vue'
+import CasosView from '@/presentation/views/CasosView.vue'
+import SettingsView from '@/presentation/views/SettingsView.vue'
 
 const LoginView = () => import('@/presentation/views/LoginView.vue')
 const ForgotPasswordView = () => import('@/presentation/views/ForgotPasswordView.vue')
@@ -57,6 +59,18 @@ const router = createRouter({
           name: 'calendario',
           component: CalendarioView,
           meta: { title: 'Calendario' },
+        },
+        {
+          path: 'casos',
+          name: 'casos',
+          component: CasosView,
+          meta: { requiresAdmin: true, title: 'Casos' },
+        },
+        {
+          path: 'settings',
+          name: 'settings',
+          component: SettingsView,
+          meta: { title: 'Configuración' },
         },
         {
           path: 'profile',

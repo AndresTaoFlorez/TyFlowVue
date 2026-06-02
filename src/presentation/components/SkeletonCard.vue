@@ -34,7 +34,7 @@ defineProps({
 }
 
 .skeleton-card {
-  background: white;
+  background: var(--bg-main);
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-sm);
   padding: 1.25rem;
@@ -64,7 +64,7 @@ defineProps({
 }
 
 .skeleton {
-  background: linear-gradient(90deg, #e5e7eb 25%, #f3f4f6 50%, #e5e7eb 75%);
+  background: linear-gradient(90deg, var(--skeleton-base) 25%, var(--skeleton-shine) 50%, var(--skeleton-base) 75%);
   background-size: 200% 100%;
   animation: shimmer 1.5s infinite ease-in-out;
   border-radius: var(--radius-sm);

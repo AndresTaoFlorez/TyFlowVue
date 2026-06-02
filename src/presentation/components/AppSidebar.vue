@@ -40,6 +40,18 @@ const handleLogout = () => {
           <span class="sidebar__label">Calendario</span>
         </RouterLink>
       </li>
+      <li v-if="authStore.isAdmin" class="sidebar__item">
+        <RouterLink :to="{ name: 'casos' }" class="sidebar__link" active-class="sidebar__link--active" @click="$emit('navigate')">
+          <i class='bx bx-task sidebar__icon'></i>
+          <span class="sidebar__label">Casos</span>
+        </RouterLink>
+      </li>
+      <li class="sidebar__item">
+        <RouterLink :to="{ name: 'settings' }" class="sidebar__link" active-class="sidebar__link--active" @click="$emit('navigate')">
+          <i class='bx bx-cog sidebar__icon'></i>
+          <span class="sidebar__label">Configuración</span>
+        </RouterLink>
+      </li>
       <li class="sidebar__item">
         <RouterLink :to="{ name: 'profile' }" class="sidebar__link" active-class="sidebar__link--active" @click="$emit('navigate')">
           <i class='bx bx-user sidebar__icon'></i>

@@ -4,6 +4,7 @@ import { useRoute } from 'vue-router'
 import AppTopbar from '@/presentation/components/AppTopbar.vue'
 import AppSidebar from '@/presentation/components/AppSidebar.vue'
 import ChangePasswordModal from '@/presentation/components/ChangePasswordModal.vue'
+import { BP_MOBILE } from '@/presentation/utils/breakpoints'
 
 const route = useRoute()
 const mostrarCambiarClave = ref(false)
@@ -19,7 +20,7 @@ const sidebarWidth = ref(parseInt(localStorage.getItem('tyflow_sidebar_width') |
 const sidebarResizing = ref(false)
 
 const layoutStyle = computed(() => {
-  if (viewportWidth.value <= 768) return {}
+  if (viewportWidth.value <= BP_MOBILE) return {}
   const width = sidebarCollapsed.value ? 72 : sidebarWidth.value
   const style = { gridTemplateColumns: `${width}px 1fr` }
   if (sidebarResizing.value) style.transition = 'none'
@@ -57,11 +58,11 @@ const onSidebarResizeDblclick = () => {
   localStorage.setItem('tyflow_sidebar_width', String(SIDEBAR_DEFAULT))
 }
 
-const flushRoutes = ['/app/applications', '/app/calendario']
+const flushRoutes = ['/app/applications', '/app/calendario', '/app/casos']
 const isFlush = computed(() => flushRoutes.some(r => route.path.startsWith(r)))
 
 // Auto-collapse sidebar on dense views when viewport is narrow
-const denseRoutes = ['/app/applications', '/app/calendario']
+const denseRoutes = ['/app/applications', '/app/calendario', '/app/casos']
 let userExpandedSidebar = false
 
 watch([() => route.path, viewportWidth], ([path, width]) => {
@@ -72,7 +73,7 @@ watch([() => route.path, viewportWidth], ([path, width]) => {
 }, { immediate: true })
 
 const toggleSidebar = () => {
-  if (window.innerWidth <= 768) {
+  if (window.innerWidth <= BP_MOBILE) {
     sidebarMobileOpen.value = !sidebarMobileOpen.value
   } else {
     sidebarCollapsed.value = !sidebarCollapsed.value

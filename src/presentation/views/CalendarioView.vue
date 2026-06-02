@@ -8,9 +8,11 @@ import WeekCalendar from '@/presentation/components/WeekCalendar.vue'
 import WorkWindowModal from '@/presentation/components/WorkWindowModal.vue'
 import CreateWorkWindowModal from '@/presentation/components/CreateWorkWindowModal.vue'
 import WindowGroupPanel from '@/presentation/components/WindowGroupPanel.vue'
+import { fmtHM, fmtTimeFromMins } from '@/presentation/helpers/formatTime'
 import SectionLoader from '@/presentation/components/SectionLoader.vue'
 import ToastNotification from '@/presentation/components/ToastNotification.vue'
 import ContextMenu from '@/presentation/components/ContextMenu.vue'
+import { BP_MOBILE } from '@/presentation/utils/breakpoints'
 
 const authStore = useAuthStore()
 const userStore = useUserStore()
@@ -197,11 +199,10 @@ async function handleCtxAction(action) {
         const startM = Math.round((group.startHour % 1) * 60)
         const endH = Math.floor(group.endHour)
         const endM = Math.round((group.endHour % 1) * 60)
-        const fmt = (h, m) => `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
         prefillData.value = {
           dates: [firstW.scheduledDate],
-          startTime: fmt(startH, startM),
-          endTime: fmt(endH, endM),
+          startTime: fmtHM(startH, startM),
+          endTime: fmtHM(endH, endM),
         }
         mostrarCrear.value = true
         break
@@ -217,12 +218,11 @@ async function handleCtxAction(action) {
         showToast(`${group.windows.length} ventanas cortadas.`)
         break
       case 'paste-on-group': {
-        const fmt = (h, m) => `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
         const startH = Math.floor(group.startHour)
         const startM = Math.round((group.startHour % 1) * 60)
         const endH = Math.floor(group.endHour)
         const endM = Math.round((group.endHour % 1) * 60)
-        await pasteOnSlot(group.windows[0].scheduledDate, fmt(startH, startM), fmt(endH, endM))
+        await pasteOnSlot(group.windows[0].scheduledDate, fmtHM(startH, startM), fmtHM(endH, endM))
         break
       }
       case 'delete-group': handleDeleteGroup(group); break
@@ -230,9 +230,7 @@ async function handleCtxAction(action) {
   } else if (targetType === 'cell') {
     const { date, time } = target
     const endSlot = parseInt(time.split(':')[0]) * 2 + (parseInt(time.split(':')[1]) >= 30 ? 1 : 0) + 2
-    const endH = Math.floor(endSlot / 2)
-    const endM = (endSlot % 2) * 30
-    const endTime = `${String(endH).padStart(2, '0')}:${String(endM).padStart(2, '0')}`
+    const endTime = fmtHM(Math.floor(endSlot / 2), (endSlot % 2) * 30)
     switch (action) {
       case 'create':
         prefillData.value = { dates: [date], startTime: time, endTime }
@@ -248,12 +246,6 @@ async function handleCtxAction(action) {
           const firstMins = parseInt(firstW.startTime.split(':')[0]) * 60 + parseInt(firstW.startTime.split(':')[1])
           const offsetMins = cellMins - firstMins
 
-          const fmtTime = (totalMins) => {
-            const h = Math.floor(totalMins / 60)
-            const m = totalMins % 60
-            return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
-          }
-
           const createData = pasteWindows.map(w => {
             const wStartMins = parseInt(w.startTime.split(':')[0]) * 60 + parseInt(w.startTime.split(':')[1])
             const wEndMins = parseInt(w.endTime.split(':')[0]) * 60 + parseInt(w.endTime.split(':')[1])
@@ -262,8 +254,8 @@ async function handleCtxAction(action) {
             return {
               specialistId: w.specialistId,
               applicationId: w.applicationId,
-              startTime: fmtTime(newStart),
-              endTime: fmtTime(newEnd),
+              startTime: fmtTimeFromMins(newStart),
+              endTime: fmtTimeFromMins(newEnd),
               scheduledDate: date,
               inheritsOnReopen: w.inheritsOnReopen || false,
               affinityWeight: w.affinityWeight ?? null,
@@ -464,13 +456,21 @@ const handleBatchCopy = () => {
   showToast(`${wins.length} ventana(s) copiada(s).`)
 }
 
-const handleBatchGroup = () => {
+const handleBatchGroup = async () => {
   if (selectedWindows.value.size < 2) {
     showToast('Selecciona al menos 2 ventanas para agrupar.', 'error')
     return
   }
-  // TODO: Enviar al backend para crear agrupación de carga de trabajo
-  showToast(`Agrupación de ${selectedWindows.value.size} ventanas (módulo en desarrollo).`)
+  try {
+    const result = await calStore.batchMerge(selectedWindows.value)
+    const label = result.mode === 'homogeneous'
+      ? `${result.deletedIds.length + 1} ventanas fusionadas en 1.`
+      : `${result.windows.length} ventanas sincronizadas.`
+    showToast(label)
+    selectedWindows.value = new Set()
+  } catch (e) {
+    showToast(e.userMessage || 'Error al agrupar las ventanas.', 'error')
+  }
 }
 
 // ---- Resize (drag edge to stretch) ----
@@ -564,7 +564,7 @@ const closeWindowModal = () => {
 }
 
 // ---- Resize listener ----
-function onResize() { calStore.updateMobile(window.innerWidth < 768) }
+function onResize() { calStore.updateMobile(window.innerWidth < BP_MOBILE) }
 
 // ---- Keyboard shortcuts ----
 const onKeydown = (e) => {
@@ -586,6 +586,11 @@ const onKeydown = (e) => {
     if (selectedWindow.value) selectedWindow.value = null
     else if (mostrarCrear.value) { mostrarCrear.value = false; prefillData.value = null; errorCrear.value = '' }
   }
+  // Delete/Supr: eliminar ventanas seleccionadas o la ventana activa
+  if (e.key === 'Delete') {
+    if (selectedWindows.value.size > 0) { handleBatchDelete(); return }
+    if (selectedWindow.value) { handleDelete(selectedWindow.value); return }
+  }
 }
 
 onMounted(() => {
@@ -605,7 +610,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <section class="content">
+  <section class="content" :class="{ 'content--with-fab': authStore.isAdmin && isMobile }">
     <Teleport to="#topbar-actions" defer>
       <button v-if="authStore.isAdmin && !isMobile" @click="openCreatePanel" class="btn-create">
         <i class='bx bx-plus'></i>
@@ -712,6 +717,20 @@ onUnmounted(() => {
             {{ a.name }}
           </option>
         </select>
+        <div v-if="authStore.isAdmin" class="toolbar__tools toolbar__tools--mobile">
+          <button class="toolbar__tool-btn" :class="{ 'toolbar__tool-btn--active': activeTool === 'default' }"
+            @click="setTool('default')" title="Modo normal">
+            <i class='bx bx-pointer'></i>
+          </button>
+          <button class="toolbar__tool-btn" :class="{ 'toolbar__tool-btn--active': activeTool === 'eraser' }"
+            @click="setTool('eraser')" title="Borrador">
+            <i class='bx bx-eraser'></i>
+          </button>
+          <button class="toolbar__tool-btn" :class="{ 'toolbar__tool-btn--active': activeTool === 'select' }"
+            @click="setTool('select')" title="Seleccionar">
+            <i class='bx bx-select-multiple'></i>
+          </button>
+        </div>
       </div>
     </div>
 
@@ -778,7 +797,7 @@ onUnmounted(() => {
 
     <!-- Selection action bar -->
     <Teleport to="body">
-      <div v-if="selectedWindows.size > 0 && !isMobile" class="sel-bar">
+      <div v-if="selectedWindows.size > 0" class="sel-bar">
         <span class="sel-bar__count">{{ selectedWindows.size }} seleccionada{{ selectedWindows.size > 1 ? 's' : '' }}</span>
         <button class="sel-bar__btn" @click="handleBatchCopy" title="Copiar">
           <i class='bx bx-copy'></i>
@@ -786,7 +805,7 @@ onUnmounted(() => {
         <button class="sel-bar__btn" @click="handleBatchToggle" title="Habilitar/Inhabilitar">
           <i class='bx bx-toggle-left'></i>
         </button>
-        <button class="sel-bar__btn sel-bar__btn--group" @click="handleBatchGroup" title="Agrupar (en desarrollo)">
+        <button class="sel-bar__btn sel-bar__btn--group" @click="handleBatchGroup" title="Agrupar ventanas">
           <i class='bx bx-group'></i>
         </button>
         <button class="sel-bar__btn sel-bar__btn--danger" @click="handleBatchDelete" title="Eliminar">
@@ -1251,6 +1270,10 @@ onUnmounted(() => {
   gap: 0.3rem;
 }
 
+.toolbar__tools--mobile {
+  align-self: flex-start;
+}
+
 /* ---- Month strip ---- */
 .month-strip {
   display: flex;
@@ -1333,9 +1356,15 @@ onUnmounted(() => {
     gap: 0.3rem;
   }
 
-  .toolbar__tools,
+  .toolbar__tools:not(.toolbar__tools--mobile) {
+    display: none;
+  }
   .toolbar__undo-btn {
-    display: none !important;
+    display: none;
+  }
+
+  .content--with-fab .cal-area {
+    padding-bottom: 5rem;
   }
 }
 
@@ -1347,6 +1376,12 @@ onUnmounted(() => {
 
   .toolbar__row {
     gap: 0.2rem;
+    flex-wrap: wrap;
+  }
+
+  .toolbar__date-btn {
+    order: -1;
+    flex-basis: 100%;
   }
 
   .toolbar__arrow {
@@ -1383,6 +1418,24 @@ onUnmounted(() => {
     font-size: 1.2rem;
     bottom: 1rem;
     right: 1rem;
+  }
+}
+
+/* Mobile sel-bar: above FAB, edge-to-edge */
+@media (max-width: 768px) {
+  .sel-bar {
+    bottom: 5rem;
+    left: 1rem;
+    right: 1rem;
+    transform: none;
+    justify-content: space-around;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    padding: 0.6rem;
+  }
+  .sel-bar__count {
+    width: 100%;
+    text-align: center;
   }
 }
 </style>

@@ -556,7 +556,7 @@ onUnmounted(() => {
 }
 
 .btn-view-toggle {
-  background: white;
+  background: var(--bg-main);
   border: 1px solid var(--border-light);
   color: var(--text-secondary);
   font-size: 1.25rem;
@@ -581,7 +581,7 @@ onUnmounted(() => {
   position: absolute;
   top: calc(100% + 0.5rem);
   right: 0;
-  background: white;
+  background: var(--bg-main);
   border: 1px solid var(--border-light);
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-lg);
@@ -621,7 +621,7 @@ onUnmounted(() => {
 .filter-bar {
   display: flex;
   gap: 1rem;
-  background: white;
+  background: var(--bg-main);
   padding: 1rem;
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-sm);
@@ -695,6 +695,7 @@ onUnmounted(() => {
 
 .form-input {
   width: 100%; padding: 0.8rem; border: 1px solid var(--border-light); border-radius: var(--radius-md);
+  background: var(--bg-main); color: var(--text-primary);
 }
 
 .form-input:focus {
@@ -723,14 +724,14 @@ onUnmounted(() => {
   display: flex;
   gap: 0.75rem;
   padding: 1rem;
-  background-color: #FFF7ED;
+  background-color: var(--warning-bg);
   border-radius: var(--radius-md);
-  border-left: 3px solid #F59E0B;
+  border-left: 3px solid var(--warning-border);
 }
 
 .confirm-banner__icon {
   font-size: 1.4rem;
-  color: #D97706;
+  color: var(--warning-icon);
   flex-shrink: 0;
   margin-top: 0.1rem;
 }
@@ -738,22 +739,22 @@ onUnmounted(() => {
 .confirm-banner__title {
   font-weight: 700;
   font-size: 0.85rem;
-  color: #92400E;
+  color: var(--warning-title);
   margin-bottom: 0.25rem;
 }
 
 .confirm-banner__text {
   font-size: 0.82rem;
-  color: #78350F;
+  color: var(--warning-text);
   line-height: 1.4;
 }
 
 .btn-primary--warning {
-  background-color: #F59E0B;
+  background-color: var(--warning-btn);
 }
 
 .btn-primary--warning:hover:not(:disabled) {
-  background-color: #D97706;
+  background-color: var(--warning-btn-hover);
 }
 
 .modal-actions {
@@ -763,7 +764,7 @@ onUnmounted(() => {
 
 .input-error {
   border-color: var(--error-500) !important;
-  background-color: #FEF2F2;
+  background-color: var(--input-error-bg);
 }
 
 .error-text {

@@ -65,7 +65,7 @@ defineEmits(['toggle', 'edit'])
 
 <style scoped>
 .table-container {
-  background: white;
+  background: var(--bg-main);
   border-radius: var(--radius-md);
   padding: 1rem;
   box-shadow: var(--shadow-sm);
@@ -90,7 +90,7 @@ defineEmits(['toggle', 'edit'])
 }
 
 .datatable__row:hover {
-  background-color: #f9fafb;
+  background-color: var(--bg-card);
 }
 
 .datatable__cell--bold {
@@ -126,13 +126,13 @@ defineEmits(['toggle', 'edit'])
 }
 
 .role-tag {
-  background: #E0E7FF;
-  color: #3730A3;
+  background: var(--tag-role-bg);
+  color: var(--tag-role-text);
 }
 
 .level-tag {
-  background: #DBEAFE;
-  color: #1E40AF;
+  background: var(--tag-level-bg);
+  color: var(--tag-level-text);
 }
 
 .btn-toggle {

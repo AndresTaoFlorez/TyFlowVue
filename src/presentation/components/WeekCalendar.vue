@@ -3,6 +3,8 @@ import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import WindowBlock from '@/presentation/components/WindowBlock.vue'
 import WindowGroupBlock from '@/presentation/components/WindowGroupBlock.vue'
 import { useWindowGroups } from '@/presentation/composables/useWindowGroups'
+import { fmtHM, fmtSlotTime, formatHour, formatHourCompact } from '@/presentation/helpers/formatTime'
+import { fmtDateISO } from '@/presentation/helpers/formatDate'
 
 const props = defineProps({
   windows: { type: Array, default: () => [] },
@@ -81,6 +83,7 @@ const onCalSwipeEnd = (e) => {
 }
 
 const onHeaderSwipeEnd = (e) => {
+  if (touchOnBlock) return
   const dx = e.changedTouches[0].clientX - swipeStartX
   const dy = e.changedTouches[0].clientY - swipeStartY
   if (Math.abs(dx) < Math.abs(dy) * 0.8 || Math.abs(dx) < 80) return
@@ -106,10 +109,7 @@ const activeDayLabel = computed(() => {
 const now = ref(new Date())
 let timeInterval = null
 
-const todayStr = computed(() => {
-  const d = now.value
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-})
+const todayStr = computed(() => fmtDateISO(now.value))
 const todayIndex = computed(() => props.weekDates.indexOf(todayStr.value))
 
 // Reset active day when entering single-day mode
@@ -190,12 +190,7 @@ const selectionStyle = computed(() => {
 
 const selectionLabel = computed(() => {
   if (!dragging.value) return ''
-  const startH = Math.floor(selSlotMin.value / 2)
-  const startM = (selSlotMin.value % 2) * 30
-  const endH = Math.floor(selSlotMax.value / 2)
-  const endM = (selSlotMax.value % 2) * 30
-  const fmt = (h, m) => `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
-  return `${fmt(startH, startM)} – ${fmt(endH, endM)}`
+  return `${fmtSlotTime(selSlotMin.value)} – ${fmtSlotTime(selSlotMax.value)}`
 })
 
 const onCellMousedown = (dayIdx, slot, e) => {
@@ -354,7 +349,7 @@ const onCellTouchendTap = (dayIdx, slot, e) => {
 
 const onTouchmove = (e) => {
   // If the long-press hasn't activated yet, user is scrolling — cancel and don't interfere
-  if (!touchActive.value && !blockDragging.value && !resizing.value && !hExpanding.value && !erasing.value) {
+  if (!touchActive.value && !dragging.value && !blockDragging.value && !resizing.value && !hExpanding.value && !erasing.value) {
     if (touchTimer) {
       clearTimeout(touchTimer)
       touchTimer = null
@@ -364,6 +359,7 @@ const onTouchmove = (e) => {
   if (!dragging.value && !blockDragging.value && !resizing.value && !hExpanding.value && !erasing.value) return
   // Only prevent scroll when drag is confirmed
   e.preventDefault()
+  if (blockDragging.value || resizing.value) { onBlockDragMove(e); return }
   if (hExpanding.value) { onHExpandMove(e); return }
   if (erasing.value) {
     const clientX = e.touches[0]?.clientX
@@ -498,6 +494,27 @@ const blockDragGhostStyle = computed(() => {
   }
 })
 
+const compactBlockDragGhostStyle = computed(() => {
+  if (!blockDragging.value || !draggedWindow.value) return null
+  const duration = draggedWindow.value.endHour - draggedWindow.value.startHour
+  return {
+    top: draggedTargetSlot.value * COMPACT_SLOT_H + 'px',
+    height: duration * COMPACT_HOUR_H + 'px',
+  }
+})
+
+const onBlockTouchstart = (w, dayIdx, e) => {
+  touchOnBlock = true
+  onWindowLongPress(w, e)
+  onBlockDragStart(w, dayIdx, e)
+}
+
+const onGroupTouchstart = (group, dayIdx, e) => {
+  touchOnBlock = true
+  onGroupLongPress(group, e)
+  onGroupDragStart(group, dayIdx, e)
+}
+
 const onBlockDragEnd = () => {
   if (!blockDragging.value) return
   const w = draggedWindow.value
@@ -521,8 +538,6 @@ const onBlockDragEnd = () => {
   const endDecimal = startH + startM / 60 + duration
   const endH = Math.floor(endDecimal)
   const endM = Math.round((endDecimal % 1) * 60)
-
-  const fmt = (h, m) => `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
 
   const newStartHour = startH + startM / 60
   const originDate = props.weekDates[originDay]
@@ -553,8 +568,8 @@ const onBlockDragEnd = () => {
     emit('reschedule', {
       window: w._originalWindow || w,
       targetDate,
-      startTime: fmt(startH, startM),
-      endTime: fmt(endH, endM),
+      startTime: fmtHM(startH, startM),
+      endTime: fmtHM(endH, endM),
     })
   }
 }
@@ -611,12 +626,26 @@ const onResizeMove = (e) => {
   }
 }
 
+// Delta in slots being applied during resize (live, for batch preview)
+const resizeDeltaSlots = computed(() => {
+  if (!resizing.value) return 0
+  const source = resizeWindow.value || resizeGroup.value
+  if (!source) return 0
+  const startHour = source.startHour
+  const endHour = source.endHour
+  if (resizeDirection.value === 'top') {
+    return resizeSlot.value - Math.round(startHour * 2)
+  } else {
+    return (resizeSlot.value + 1) - Math.round(endHour * 2)
+  }
+})
+
 const resizeGhostStyle = computed(() => {
   if (!resizing.value) return null
   const source = resizeWindow.value || resizeGroup.value
   if (!source) return null
-  const startHour = source.startHour ?? source.startHour
-  const endHour = source.endHour ?? source.endHour
+  const startHour = source.startHour
+  const endHour = source.endHour
   let topSlot, bottomSlot
   if (resizeDirection.value === 'top') {
     topSlot = Math.min(resizeSlot.value, Math.round(endHour * 2) - 1)
@@ -631,8 +660,55 @@ const resizeGhostStyle = computed(() => {
   }
 })
 
+// Ghosts for all OTHER selected windows during batch resize (Map<dayIdx, style[]>)
+const batchResizeGhosts = computed(() => {
+  if (!resizing.value || props.selectedWindowIds.size < 2) return null
+  const source = resizeWindow.value || resizeGroup.value
+  if (!source) return null
+  const sourceId = resizeGroup.value
+    ? null
+    : (resizeWindow.value._originalWindow || resizeWindow.value).id
+  const touchesSelection = resizeGroup.value
+    ? resizeGroup.value.windows.some(gw => props.selectedWindowIds.has(gw.id))
+    : props.selectedWindowIds.has(sourceId)
+  if (!touchesSelection) return null
+
+  const delta = resizeDeltaSlots.value
+  if (delta === 0) return null
+
+  const dir = resizeDirection.value
+  const map = new Map()
+  for (const w of props.windows) {
+    if (!props.selectedWindowIds.has(w.id)) continue
+    // Skip the window being directly resized (it already has its own ghost)
+    if (w.id === sourceId) continue
+    const dayIdx = props.weekDates.indexOf(w.scheduledDate)
+    if (dayIdx === -1) continue
+
+    const origStart = Math.round(w.startHour * 2)
+    const origEnd = Math.round(w.endHour * 2)
+    let topSlot, bottomSlot
+    if (dir === 'top') {
+      topSlot = Math.min(origStart + delta, origEnd - 1)
+      bottomSlot = origEnd
+    } else {
+      topSlot = origStart
+      bottomSlot = Math.max(origEnd + delta, origStart + 1)
+    }
+    const style = {
+      top: topSlot * SLOT_H + 'px',
+      height: (bottomSlot - topSlot) * SLOT_H + 'px',
+    }
+    if (!map.has(dayIdx)) map.set(dayIdx, [])
+    map.get(dayIdx).push(style)
+  }
+  return map
+})
+
+let resizeJustEnded = false
 const onResizeEnd = () => {
   if (!resizing.value) return
+  resizeJustEnded = true
   const w = resizeWindow.value
   const group = resizeGroup.value
   const dir = resizeDirection.value
@@ -649,7 +725,6 @@ const onResizeEnd = () => {
   const startHour = source.startHour ?? source.startHour
   const endHour = source.endHour ?? source.endHour
 
-  const fmt = (h, m) => `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
   let startSlot = Math.round(startHour * 2)
   let endSlot = Math.round(endHour * 2)
 
@@ -667,35 +742,35 @@ const onResizeEnd = () => {
   // Only emit if something changed
   if (startSlot === Math.round(startHour * 2) && endSlot === Math.round(endHour * 2)) return
 
-  if (group) {
+  // Check if the resized block (single or group) overlaps with the selection
+  const deltaSlots = dir === 'top'
+    ? startSlot - Math.round(startHour * 2)
+    : endSlot - Math.round(endHour * 2)
+
+  const touchesSelection = group
+    ? group.windows.some(gw => props.selectedWindowIds.has(gw.id))
+    : props.selectedWindowIds.has((w._originalWindow || w).id)
+
+  if (props.selectedWindowIds.size > 1 && touchesSelection) {
+    emit('batch-resize', {
+      ids: [...props.selectedWindowIds],
+      direction: dir,
+      deltaSlots,
+    })
+  } else if (group) {
     emit('group-resize', {
       group,
-      startTime: fmt(sH, sM),
-      endTime: fmt(eH, eM),
+      startTime: fmtHM(sH, sM),
+      endTime: fmtHM(eH, eM),
     })
   } else {
-    const original = w._originalWindow || w
-    const wId = original.id
-
-    // If this window is part of a multi-selection, batch resize all selected
-    if (props.selectedWindowIds.size > 1 && props.selectedWindowIds.has(wId)) {
-      const deltaSlots = dir === 'top'
-        ? startSlot - Math.round(startHour * 2)
-        : endSlot - Math.round(endHour * 2)
-      emit('batch-resize', {
-        ids: [...props.selectedWindowIds],
-        direction: dir,
-        deltaSlots,
-      })
+    const payload = { window: w._originalWindow || w }
+    if (dir === 'top') {
+      payload.startTime = fmtHM(sH, sM)
     } else {
-      const payload = { window: original }
-      if (dir === 'top') {
-        payload.startTime = fmt(sH, sM)
-      } else {
-        payload.endTime = fmt(eH, eM)
-      }
-      emit('resize', payload)
+      payload.endTime = fmtHM(eH, eM)
     }
+    emit('resize', payload)
   }
 }
 
@@ -803,19 +878,14 @@ const onEraserEnd = () => {
   erasing.value = false
   const minSlot = Math.min(eraseStartSlot.value, eraseEndSlot.value)
   const maxSlot = Math.max(eraseStartSlot.value, eraseEndSlot.value) + 1
-  const fmt = (slot) => {
-    const h = Math.floor(slot / 2)
-    const m = (slot % 2) * 30
-    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
-  }
   const dates = []
   for (let d = eraseDayMin.value; d <= eraseDayMax.value; d++) {
     dates.push(props.weekDates[d])
   }
   emit('erase', {
     dates,
-    startTime: fmt(minSlot),
-    endTime: fmt(maxSlot),
+    startTime: fmtSlotTime(minSlot),
+    endTime: fmtSlotTime(maxSlot),
   })
 }
 
@@ -999,7 +1069,8 @@ let hExpandJustEnded = false
 const onBlockClick = (w, e) => {
   if (blockDragMoved) { blockDragMoved = false; return }
   if (hExpandJustEnded) { hExpandJustEnded = false; return }
-  if (props.activeTool === 'select') {
+  if (resizeJustEnded) { resizeJustEnded = false; return }
+  if (props.activeTool === 'select' || e.shiftKey || e.ctrlKey || e.metaKey) {
     onSelectClick(w, e)
     return
   }
@@ -1018,9 +1089,7 @@ const onGroupContext = (group, e) => {
 const onCellContext = (dayIdx, slot, e) => {
   e.preventDefault()
   const date = props.weekDates[dayIdx]
-  const hour = Math.floor(slot / 2)
-  const min = (slot % 2) * 30
-  const time = `${String(hour).padStart(2, '0')}:${String(min).padStart(2, '0')}`
+  const time = fmtSlotTime(slot)
   emit('context-cell', { date, time, x: e.clientX, y: e.clientY })
 }
 
@@ -1053,9 +1122,7 @@ const onLongPressMove = () => {
 const onCellLongPress = (dayIdx, slot, e) => {
   onLongPressStart((x, y) => {
     const date = props.weekDates[dayIdx]
-    const hour = Math.floor(slot / 2)
-    const min = (slot % 2) * 30
-    const time = `${String(hour).padStart(2, '0')}:${String(min).padStart(2, '0')}`
+    const time = fmtSlotTime(slot)
     emit('context-cell', { date, time, x, y })
   }, e)
 }
@@ -1074,8 +1141,20 @@ const onGroupLongPress = (group, e) => {
   }, e)
 }
 
-const onGroupClick = (group) => {
-  if (blockDragMoved) return
+const onGroupClick = (group, e) => {
+  if (blockDragMoved) { blockDragMoved = false; return }
+  if (resizeJustEnded) { resizeJustEnded = false; return }
+  // Shift/Ctrl+Click on group → select all windows in group
+  if (props.activeTool === 'select' || e?.shiftKey || e?.ctrlKey || e?.metaKey) {
+    const ids = new Set(props.selectedWindowIds)
+    for (const w of group.windows) {
+      if ((e?.ctrlKey || e?.metaKey) && ids.has(w.id)) ids.delete(w.id)
+      else ids.add(w.id)
+    }
+    if (group.windows.length > 0) lastSelectedId = group.windows[group.windows.length - 1].id
+    emit('selection-change', ids)
+    return
+  }
   emit('group-select', group)
 }
 
@@ -1107,19 +1186,6 @@ const inheritLabelMap = computed(() => {
 })
 const inheritLabel = (w) => inheritLabelMap.value.get(w.id) || ''
 
-const formatHour = (h) => {
-  const suffix = h < 12 ? 'AM' : 'PM'
-  const display = h === 0 ? 12 : h > 12 ? h - 12 : h
-  return `${display} ${suffix}`
-}
-
-const formatHourCompact = (h) => {
-  const hour = Math.floor(h)
-  if (!Number.isInteger(h)) return ''
-  if (hour === 0) return '12a'
-  if (hour === 12) return '12p'
-  return hour < 12 ? `${hour}a` : `${hour - 12}p`
-}
 
 const compactTimeTop = computed(() => {
   const d = now.value
@@ -1319,9 +1385,10 @@ const periodKey = computed(() => {
             <div
               v-if="dragging && isDayInSelection(activeMobileDay)"
               class="cal-drag"
+              :class="{ 'cal-drag--select': activeTool === 'select' }"
               :style="selectionStyle"
             >
-              <span class="cal-drag__label">{{ selectionLabel }}</span>
+              <span v-if="activeTool !== 'select'" class="cal-drag__label">{{ selectionLabel }}</span>
             </div>
 
             <!-- Mobile preselection indicator -->
@@ -1347,6 +1414,16 @@ const periodKey = computed(() => {
               :style="resizeGhostStyle"
             ></div>
 
+            <!-- Batch resize ghosts (other selected windows, mobile) -->
+            <template v-if="batchResizeGhosts && batchResizeGhosts.has(activeMobileDay)">
+              <div
+                v-for="(gs, gi) in batchResizeGhosts.get(activeMobileDay)"
+                :key="'brg-m-' + gi"
+                class="cal-resize-ghost cal-resize-ghost--batch"
+                :style="gs"
+              ></div>
+            </template>
+
             <!-- Eraser ghost (mobile) -->
             <div
               v-if="erasing && activeMobileDay >= eraseDayMin && activeMobileDay <= eraseDayMax && eraseGhostStyle"
@@ -1367,11 +1444,13 @@ const periodKey = computed(() => {
                 :specialists="specialists"
                 :applications="applications"
                 :selectable="selectable"
-                @click="onGroupClick(item)"
+                :selected-ids="selectedWindowIds"
+                :cut-ids="cutWindowIds"
+                @click="(_, ev) => onGroupClick(item, ev)"
                 @contextmenu.prevent="onGroupContext(item, $event)"
-                @touchstart.passive="onGroupLongPress(item, $event)"
+                @touchstart.stop="onGroupTouchstart(item, activeMobileDay, $event)"
                 @touchend="onLongPressEnd()"
-                @touchmove.passive="onLongPressMove()"
+                @touchmove="onLongPressMove()"
                 @mousedown.stop="onGroupDragStart(item, activeMobileDay, $event)"
                 @resize-start="onGroupResizeStart(item, activeMobileDay, $event)"
               />
@@ -1390,11 +1469,11 @@ const periodKey = computed(() => {
                 :cut="cutWindowIds.has((item.window._originalWindow || item.window).id)"
                 :inherited="!!(item.window.inheritedFromWindowId || item.window.inheritsOnReopen)"
                 :inherit-label="inheritLabel(item.window)"
-                @click="onBlockClick(item.window, $event)"
+                @click="(_, ev) => onBlockClick(item.window, ev)"
                 @contextmenu.prevent="onWindowContext(item.window, $event)"
-                @touchstart.passive="onWindowLongPress(item.window, $event)"
+                @touchstart.stop="onBlockTouchstart(item.window, activeMobileDay, $event)"
                 @touchend="onLongPressEnd()"
-                @touchmove.passive="onLongPressMove()"
+                @touchmove="onLongPressMove()"
                 @mousedown.stop="onBlockDragStart(item.window, activeMobileDay, $event)"
                 @resize-start="onResizeStart(item.window, activeMobileDay, $event)"
               />
@@ -1481,9 +1560,10 @@ const periodKey = computed(() => {
             <div
               v-if="dragging && isDayInSelection(dayIdx)"
               class="cal-drag"
+              :class="{ 'cal-drag--select': activeTool === 'select' }"
               :style="compactSelectionStyle"
             >
-              <span v-if="dayIdx === selDayMin" class="cal-drag__label cal-drag__label--compact">{{ selectionLabel }}</span>
+              <span v-if="activeTool !== 'select' && dayIdx === selDayMin" class="cal-drag__label cal-drag__label--compact">{{ selectionLabel }}</span>
             </div>
 
             <!-- Window blocks (compact) -->
@@ -1499,10 +1579,13 @@ const periodKey = computed(() => {
                 :applications="applications"
                 :selectable="selectable"
                 :compact="true"
-                @click="onGroupClick(item)"
-                @touchstart.passive="onGroupLongPress(item, $event)"
+                :selected-ids="selectedWindowIds"
+                :cut-ids="cutWindowIds"
+                @click="(_, ev) => onGroupClick(item, ev)"
+                @mousedown.stop="onGroupDragStart(item, dayIdx, $event)"
+                @touchstart.stop="onGroupTouchstart(item, dayIdx, $event)"
                 @touchend="onLongPressEnd()"
-                @touchmove.passive="onLongPressMove()"
+                @touchmove="onLongPressMove()"
               />
               <WindowBlock
                 v-else
@@ -1519,12 +1602,20 @@ const periodKey = computed(() => {
                 :selected="selectedWindowIds.has((item.window._originalWindow || item.window).id)"
                 :cut="cutWindowIds.has((item.window._originalWindow || item.window).id)"
                 :inherited="!!(item.window.inheritedFromWindowId || item.window.inheritsOnReopen)"
-                @click="onBlockClick(item.window, $event)"
-                @touchstart.passive="onWindowLongPress(item.window, $event)"
+                @click="(_, ev) => onBlockClick(item.window, ev)"
+                @mousedown.stop="onBlockDragStart(item.window, dayIdx, $event)"
+                @touchstart.stop="onBlockTouchstart(item.window, dayIdx, $event)"
                 @touchend="onLongPressEnd()"
-                @touchmove.passive="onLongPressMove()"
+                @touchmove="onLongPressMove()"
               />
             </template>
+
+            <!-- Block drag ghost (compact) -->
+            <div
+              v-if="blockDragging && draggedTargetDay === dayIdx && compactBlockDragGhostStyle"
+              class="cal-drag-ghost"
+              :style="compactBlockDragGhostStyle"
+            ></div>
           </div>
         </div>
       </div>
@@ -1680,9 +1771,10 @@ const periodKey = computed(() => {
             <div
               v-if="dragging && isDayInSelection(dayIdx)"
               class="cal-drag"
+              :class="{ 'cal-drag--select': activeTool === 'select' }"
               :style="selectionStyle"
             >
-              <span v-if="dayIdx === selDayMin" class="cal-drag__label">{{ selectionLabel }}</span>
+              <span v-if="activeTool !== 'select' && dayIdx === selDayMin" class="cal-drag__label">{{ selectionLabel }}</span>
             </div>
 
             <!-- Horizontal expand highlight -->
@@ -1704,7 +1796,9 @@ const periodKey = computed(() => {
                 :specialists="specialists"
                 :applications="applications"
                 :selectable="selectable"
-                @click="onGroupClick(item)"
+                :selected-ids="selectedWindowIds"
+                :cut-ids="cutWindowIds"
+                @click="(_, ev) => onGroupClick(item, ev)"
                 @contextmenu.prevent="onGroupContext(item, $event)"
                 @mousedown.stop="onGroupDragStart(item, dayIdx, $event)"
                 @resize-start="onGroupResizeStart(item, dayIdx, $event)"
@@ -1725,7 +1819,7 @@ const periodKey = computed(() => {
                 :inherited="!!(item.window.inheritedFromWindowId || item.window.inheritsOnReopen)"
                 :inherit-label="inheritLabel(item.window)"
                 :data-window-id="item.window.id"
-                @click="onBlockClick(item.window, $event)"
+                @click="(_, ev) => onBlockClick(item.window, ev)"
                 @contextmenu.prevent="onWindowContext(item.window, $event)"
                 @mousedown.stop="onBlockDragStart(item.window, dayIdx, $event)"
                 @resize-start="onResizeStart(item.window, dayIdx, $event)"
@@ -1745,6 +1839,16 @@ const periodKey = computed(() => {
               class="cal-resize-ghost"
               :style="resizeGhostStyle"
             ></div>
+
+            <!-- Batch resize ghosts (other selected windows) -->
+            <template v-if="batchResizeGhosts && batchResizeGhosts.has(dayIdx)">
+              <div
+                v-for="(gs, gi) in batchResizeGhosts.get(dayIdx)"
+                :key="'brg-' + gi"
+                class="cal-resize-ghost cal-resize-ghost--batch"
+                :style="gs"
+              ></div>
+            </template>
 
             <!-- Eraser ghost -->
             <div
@@ -1848,6 +1952,10 @@ const periodKey = computed(() => {
 
 .cal-header__day--today .cal-header__label {
   color: var(--primary-500);
+}
+
+.cal-header__day--compact-cell.cal-header__day--today {
+  background: rgba(42, 199, 143, 0.15);
 }
 
 /* Column resize handle */
@@ -2011,6 +2119,12 @@ const periodKey = computed(() => {
   to { opacity: 1; }
 }
 
+/* Select-tool drag — blue lasso, no label */
+.cal-drag--select {
+  background: rgba(96, 165, 250, 0.08);
+  border: 1.5px dashed rgba(96, 165, 250, 0.5);
+}
+
 .cal-col--dragging {
   background: rgba(42, 199, 143, 0.04);
 }
@@ -2037,6 +2151,11 @@ const periodKey = computed(() => {
   border-radius: 4px;
   z-index: 14;
   pointer-events: none;
+}
+
+.cal-resize-ghost--batch {
+  background: rgba(42, 199, 143, 0.08);
+  border-color: rgba(42, 199, 143, 0.35);
 }
 
 .cal--eraser .cal-col__cell {

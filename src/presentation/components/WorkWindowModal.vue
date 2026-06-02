@@ -1,5 +1,7 @@
 <script setup>
 import { ref, computed, watch, onMounted } from 'vue'
+import { fmtForInput, fmtTime12h } from '@/presentation/helpers/formatTime'
+import { fmtDateLocale, dateFromTimestamp } from '@/presentation/helpers/formatDate'
 
 const props = defineProps({
   window: { type: Object, required: true },
@@ -29,11 +31,7 @@ const editEndTime = ref('')
 const editNote = ref('')
 const editAffinityWeight = ref('')
 
-function dateFromTimestamp(ts) {
-  if (!ts) return ''
-  const d = new Date(ts)
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-}
+const fmtDate = (date) => fmtDateLocale(date)
 
 function enterEdit() {
   editStartDate.value = dateFromTimestamp(props.window.startsAt) || props.window.scheduledDate || ''
@@ -100,28 +98,7 @@ const hasChanged = computed(() => {
          editAffinityWeight.value !== origWeight
 })
 
-// ---- Formatting helpers ----
-function fmtForInput(time) {
-  if (!time) return '08:00'
-  const parts = time.split(':')
-  return `${parts[0].padStart(2, '0')}:${parts[1].padStart(2, '0')}`
-}
-
-function fmtDisplay(time) {
-  if (!time) return '?'
-  const parts = time.split(':')
-  const h = parseInt(parts[0], 10)
-  const m = parts[1]
-  const ampm = h >= 12 ? 'PM' : 'AM'
-  const h12 = h === 0 ? 12 : h > 12 ? h - 12 : h
-  return `${h12}:${m} ${ampm}`
-}
-
-function fmtDate(date) {
-  if (!date) return '—'
-  const d = new Date(date + 'T12:00:00')
-  return d.toLocaleDateString('es-CO', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })
-}
+const fmtDisplay = fmtTime12h
 
 const statusLabel = computed(() => props.window.isActive ? 'Activa' : 'Inactiva')
 const statusClass = computed(() => props.window.isActive ? 'open' : 'closed')
@@ -319,6 +296,8 @@ const statusClass = computed(() => props.window.isActive ? 'open' : 'closed')
   background: rgba(0, 0, 0, 0.4); backdrop-filter: blur(3px);
   display: flex; align-items: center; justify-content: center;
   z-index: 100;
+  padding: 1rem;
+  box-sizing: border-box;
 }
 
 .wm {
@@ -328,6 +307,9 @@ const statusClass = computed(() => props.window.isActive ? 'open' : 'closed')
   border-radius: var(--radius-lg);
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.15), 0 0 0 1px rgba(0, 0, 0, 0.04);
   overflow: hidden;
+  max-height: 90dvh;
+  display: flex;
+  flex-direction: column;
 }
 
 /* ===== Color bar ===== */
@@ -344,6 +326,7 @@ const statusClass = computed(() => props.window.isActive ? 'open' : 'closed')
   align-items: center;
   justify-content: space-between;
   padding: 12px 16px 4px;
+  flex-shrink: 0;
 }
 
 .wm__header-left {
@@ -399,6 +382,9 @@ const statusClass = computed(() => props.window.isActive ? 'open' : 'closed')
   display: flex;
   flex-direction: column;
   gap: 8px;
+  overflow-y: auto;
+  flex: 1;
+  -webkit-overflow-scrolling: touch;
 }
 
 /* Row items */
@@ -626,6 +612,7 @@ const statusClass = computed(() => props.window.isActive ? 'open' : 'closed')
   padding: 12px 16px;
   border-top: 1px solid var(--border-light);
   background: #fafafa;
+  flex-shrink: 0;
 }
 
 .wm__footer-right {
@@ -684,5 +671,12 @@ const statusClass = computed(() => props.window.isActive ? 'open' : 'closed')
   color: var(--error-500);
   border-color: var(--error-500);
   background: var(--error-bg);
+}
+
+@media (max-width: 480px) {
+  .wm {
+    max-width: calc(100% - 2rem);
+    border-radius: var(--radius-md);
+  }
 }
 </style>

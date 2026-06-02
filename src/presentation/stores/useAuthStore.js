@@ -6,6 +6,7 @@ import { fetchMeUseCase } from '@/application/use-cases/users/FetchMeUseCase'
 import { TOKEN_KEY } from '@/infrastructure/http/client'
 import { UserInactiveError } from '@/domain/errors/DomainErrors'
 import { useUserStore } from '@/presentation/stores/useUserStore'
+import { wsClient } from '@/infrastructure/realtime/wsClient'
 
 export const useAuthStore = defineStore('auth', () => {
   const user = ref(null)
@@ -23,6 +24,7 @@ export const useAuthStore = defineStore('auth', () => {
 
     try {
       await fetchProfile()
+      wsClient.connect()
     } catch (e) {
       logout()
       throw e
@@ -41,6 +43,7 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   function logout() {
+    wsClient.disconnect()
     logoutUseCase()
     user.value = null
     profile.value = null

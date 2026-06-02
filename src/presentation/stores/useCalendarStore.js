@@ -8,13 +8,18 @@ import { rescheduleWorkWindowUseCase } from '@/application/use-cases/work-window
 import { toggleWorkWindowUseCase } from '@/application/use-cases/work-windows/ToggleWorkWindowUseCase'
 import { disinheritWorkWindowUseCase } from '@/application/use-cases/work-windows/DisinheritWorkWindowUseCase'
 import { inheritWorkWindowUseCase } from '@/application/use-cases/work-windows/InheritWorkWindowUseCase'
+import { mergeWorkWindowsUseCase } from '@/application/use-cases/work-windows/MergeWorkWindowsUseCase'
+import { batchUpdateWorkWindowsUseCase } from '@/application/use-cases/work-windows/BatchUpdateWorkWindowsUseCase'
 import { WorkWindowRepository } from '@/infrastructure/repositories/WorkWindowRepository'
 import { WorkWindow } from '@/domain/entities/WorkWindow'
 import { useUserStore } from '@/presentation/stores/useUserStore'
+import { fmtHM } from '@/presentation/helpers/formatTime'
+import { fmtDateISO } from '@/presentation/helpers/formatDate'
+import { BP_MOBILE } from '@/presentation/utils/breakpoints'
 
 export const useCalendarStore = defineStore('calendar', () => {
   // ---- Navigation ----
-  const calView = ref(window.innerWidth < 768 ? 'day' : 'week')
+  const calView = ref(window.innerWidth < BP_MOBILE ? 'day' : 'week')
   const weekOffset = ref(0)
   const dayOffset = ref(0)
   const monthOffset = ref(0)
@@ -83,7 +88,7 @@ export const useCalendarStore = defineStore('calendar', () => {
     return Array.from({ length: 7 }, (_, i) => {
       const d = new Date(monday)
       d.setDate(monday.getDate() + i)
-      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+      return fmtDateISO(d)
     })
   })
 
@@ -95,12 +100,10 @@ export const useCalendarStore = defineStore('calendar', () => {
     const toMonday = day === 0 ? -6 : 1 - day
     const start = new Date(first)
     start.setDate(first.getDate() + toMonday)
-    const fmt = (d) =>
-      `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
     return Array.from({ length: 42 }, (_, i) => {
       const d = new Date(start)
       d.setDate(start.getDate() + i)
-      return fmt(d)
+      return fmtDateISO(d)
     })
   })
 
@@ -111,7 +114,7 @@ export const useCalendarStore = defineStore('calendar', () => {
   })
 
   // ---- Label ----
-  const isMobile = ref(window.innerWidth < 768)
+  const isMobile = ref(window.innerWidth < BP_MOBILE)
 
   const weekLabel = computed(() => {
     const meses = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic']
@@ -218,9 +221,7 @@ export const useCalendarStore = defineStore('calendar', () => {
   })
 
   // ---- Range helpers ----
-  function _fmtDate(d) {
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-  }
+  const _fmtDate = fmtDateISO
 
   function _isRangeCovered(from, to) {
     return _fetchedRanges.some(r => r.from <= from && r.to >= to)
@@ -368,7 +369,7 @@ export const useCalendarStore = defineStore('calendar', () => {
   function _addDays(dateStr, days) {
     const d = new Date(dateStr + 'T12:00:00')
     d.setDate(d.getDate() + days)
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+    return fmtDateISO(d)
   }
 
   function _findOriginal(id) {
@@ -465,7 +466,7 @@ export const useCalendarStore = defineStore('calendar', () => {
     return daysSinceEpoch * 24 * 60 + _timeToMinutes(time)
   }
 
-  function _checkOverlap(specialistId, date, startTime, endTime, excludeIds = []) {
+  function _checkOverlap(specialistId, date, startTime, endTime, excludeIds = [], applicationId = null) {
     const exclude = excludeIds instanceof Set ? excludeIds : new Set(excludeIds)
     const newS = _timeToMinutes(startTime)
     const newE = _timeToMinutes(endTime)
@@ -474,6 +475,7 @@ export const useCalendarStore = defineStore('calendar', () => {
       if (w.specialistId !== specialistId) return false
       if (w.scheduledDate !== date) return false
       if (!w.isActive) return false
+      if (applicationId && w.applicationId !== applicationId) return false
       const wS = _timeToMinutes(w.startTime)
       const wE = _timeToMinutes(w.endTime)
       return newS < wE && newE > wS
@@ -482,8 +484,7 @@ export const useCalendarStore = defineStore('calendar', () => {
   }
 
   function _todayISO() {
-    const d = new Date()
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+    return fmtDateISO(new Date())
   }
 
   function _timeToMinutes(t) {
@@ -491,11 +492,10 @@ export const useCalendarStore = defineStore('calendar', () => {
     return h * 60 + m
   }
 
-  const _fmt = (h, m) => `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
   const _toHM = (decimal) => {
     const h = Math.floor(decimal)
     const m = Math.round((decimal % 1) * 60)
-    return _fmt(h, m)
+    return fmtHM(h, m)
   }
 
   // ---- CRUD Actions ----
@@ -616,6 +616,10 @@ export const useCalendarStore = defineStore('calendar', () => {
       if (windowStart <= now) {
         throw { userMessage: 'No se pueden crear ventanas en horarios pasados.' }
       }
+      const conflict = _checkOverlap(w.specialistId, date, w.startTime, w.endTime, [], w.applicationId)
+      if (conflict) {
+        throw { userMessage: 'El horario se superpone con otra ventana del mismo especialista y aplicación.' }
+      }
     }
 
     const snapshot = [...windows.value]
@@ -721,9 +725,9 @@ export const useCalendarStore = defineStore('calendar', () => {
       const newDate = _addDays(orig.scheduledDate, deltaDays)
       const newStart = _toHM(orig.startHour + deltaHours)
       const newEnd = _toHM(orig.endHour + deltaHours)
-      const conflict = _checkOverlap(orig.specialistId, newDate, newStart, newEnd, batchIds)
+      const conflict = _checkOverlap(orig.specialistId, newDate, newStart, newEnd, batchIds, orig.applicationId)
       if (conflict) {
-        throw { userMessage: 'El horario se superpone con otra ventana del mismo especialista.' }
+        throw { userMessage: 'El horario se superpone con otra ventana del mismo especialista y aplicación.' }
       }
       const inheritErr = _checkInheritance(orig.id, newDate, newStart, newEnd)
       if (inheritErr) throw { userMessage: inheritErr }
@@ -733,23 +737,21 @@ export const useCalendarStore = defineStore('calendar', () => {
     _invalidateCache()
 
     try {
-      for (const w of originals.values()) {
-        const newDate = _addDays(w.scheduledDate, deltaDays)
-        await rescheduleWorkWindowUseCase(w, {
+      const items = [...originals.values()].map(w => ({
+        window: w,
+        data: {
           startTime: _toHM(w.startHour + deltaHours),
           endTime: _toHM(w.endHour + deltaHours),
-          targetDate: newDate,
-        })
-      }
-      // Undo = reschedule all back to original positions
+          targetDate: _addDays(w.scheduledDate, deltaDays),
+        },
+      }))
+      await batchUpdateWorkWindowsUseCase(items)
       _pushUndo(snapshot, async () => {
-        for (const w of originals.values()) {
-          const movedDate = _addDays(w.scheduledDate, deltaDays)
-          await rescheduleWorkWindowUseCase(
-            { id: w.id, scheduledDate: movedDate },
-            { startTime: w.startTime, endTime: w.endTime, targetDate: w.scheduledDate }
-          )
-        }
+        const undoItems = [...originals.values()].map(w => ({
+          window: { id: w.id, scheduledDate: _addDays(w.scheduledDate, deltaDays), startTime: w.startTime, endTime: w.endTime, endDate: w.endDate },
+          data: { startTime: w.startTime, endTime: w.endTime, targetDate: w.scheduledDate },
+        }))
+        await batchUpdateWorkWindowsUseCase(undoItems)
       })
     } catch (e) {
       windows.value = windows.value.map(w => originals.get(w.id) || w)
@@ -778,9 +780,9 @@ export const useCalendarStore = defineStore('calendar', () => {
     for (const orig of originals.values()) {
       const st = direction === 'top' ? _toHM(orig.startHour + deltaHours) : orig.startTime
       const et = direction === 'bottom' ? _toHM(orig.endHour + deltaHours) : orig.endTime
-      const conflict = _checkOverlap(orig.specialistId, orig.scheduledDate, st, et, batchIds)
+      const conflict = _checkOverlap(orig.specialistId, orig.scheduledDate, st, et, batchIds, orig.applicationId)
       if (conflict) {
-        throw { userMessage: 'El horario se superpone con otra ventana del mismo especialista.' }
+        throw { userMessage: 'El horario se superpone con otra ventana del mismo especialista y aplicación.' }
       }
       const inheritErr = _checkInheritance(orig.id, orig.scheduledDate, st, et)
       if (inheritErr) throw { userMessage: inheritErr }
@@ -790,19 +792,20 @@ export const useCalendarStore = defineStore('calendar', () => {
     _invalidateCache()
 
     try {
-      for (const orig of originals.values()) {
-        const data = {}
-        if (direction === 'top') data.startTime = _toHM(orig.startHour + deltaHours)
-        if (direction === 'bottom') data.endTime = _toHM(orig.endHour + deltaHours)
-        await updateWorkWindowUseCase(orig, data)
-      }
+      const items = [...originals.values()].map(orig => ({
+        window: orig,
+        data: {
+          ...(direction === 'top' ? { startTime: _toHM(orig.startHour + deltaHours) } : {}),
+          ...(direction === 'bottom' ? { endTime: _toHM(orig.endHour + deltaHours) } : {}),
+        },
+      }))
+      await batchUpdateWorkWindowsUseCase(items)
       _pushUndo(snapshot, async () => {
-        for (const orig of originals.values()) {
-          await updateWorkWindowUseCase(orig, {
-            startTime: orig.startTime,
-            endTime: orig.endTime,
-          })
-        }
+        const undoItems = [...originals.values()].map(orig => ({
+          window: orig,
+          data: { startTime: orig.startTime, endTime: orig.endTime },
+        }))
+        await batchUpdateWorkWindowsUseCase(undoItems)
       })
     } catch (e) {
       windows.value = windows.value.map(w => originals.get(w.id) || w)
@@ -823,6 +826,30 @@ export const useCalendarStore = defineStore('calendar', () => {
       await WorkWindowRepository.toggleWindows([...ids])
     })
     return results
+  }
+
+  async function batchMerge(ids) {
+    const snapshot = [...windows.value]
+    const result = await mergeWorkWindowsUseCase([...ids])
+
+    // Remove deleted windows (homogeneous merge)
+    if (result.deletedIds.length) {
+      const deleteSet = new Set(result.deletedIds)
+      windows.value = windows.value.filter(w => !deleteSet.has(w.id))
+      _purgeFromAllCaches(deleteSet)
+    }
+
+    // Update surviving/synced windows
+    for (const updated of result.windows) {
+      _replaceWindow(updated.id, updated)
+    }
+
+    _invalidateCache()
+
+    // Undo is not feasible (merge may delete windows server-side), reload instead
+    _pushUndo(snapshot, async () => { await loadWindows() })
+
+    return result
   }
 
   async function eraseRange(dates, eraseStartTime, eraseEndTime) {
@@ -888,18 +915,28 @@ export const useCalendarStore = defineStore('calendar', () => {
     // 2) Backend: deletes & updates in parallel, then creates sequentially
     const splitCreatedIds = []
     try {
-      const promises = []
-      for (const w of allDeletes) promises.push(deleteWorkWindowUseCase(w.id))
-      for (const op of allUpdates) {
-        const payload = {}
-        if (op.startTime) payload.startTime = op.startTime
-        if (op.endTime) payload.endTime = op.endTime
-        promises.push(updateWorkWindowUseCase(op.window, payload))
-      }
-      for (const op of allSplits) {
-        promises.push(updateWorkWindowUseCase(op.window, { endTime: op.cutStart }))
-      }
-      await Promise.all(promises)
+      const deletePromises = allDeletes.map(w => deleteWorkWindowUseCase(w.id))
+
+      // Batch all updates + split trims in one PATCH
+      const updateItems = [
+        ...allUpdates.map(op => ({
+          window: op.window,
+          data: {
+            ...(op.startTime ? { startTime: op.startTime } : {}),
+            ...(op.endTime ? { endTime: op.endTime } : {}),
+          },
+        })),
+        ...allSplits.map(op => ({
+          window: op.window,
+          data: { endTime: op.cutStart },
+        })),
+      ]
+
+      const batchPromise = updateItems.length > 0
+        ? batchUpdateWorkWindowsUseCase(updateItems)
+        : Promise.resolve()
+
+      await Promise.all([...deletePromises, batchPromise])
 
       for (const op of allSplits) {
         const splitId = '__split_' + op.window.id
@@ -922,25 +959,20 @@ export const useCalendarStore = defineStore('calendar', () => {
 
       // Undo = delete splits, restore updates, recreate deletes
       _pushUndo(snapshot, async () => {
-        // 1. Delete split-created windows
         if (splitCreatedIds.length > 0) {
           await Promise.all(splitCreatedIds.map(id => deleteWorkWindowUseCase(id)))
         }
-        // 2. Restore trimmed/split originals to their original times
-        const restorePromises = []
-        for (const op of allUpdates) {
-          restorePromises.push(updateWorkWindowUseCase(op.window, {
-            startTime: op.window.startTime,
-            endTime: op.window.endTime,
-          }))
-        }
-        for (const op of allSplits) {
-          restorePromises.push(updateWorkWindowUseCase(op.window, {
-            endTime: op.window.endTime,
-          }))
-        }
-        if (restorePromises.length > 0) await Promise.all(restorePromises)
-        // 3. Recreate deleted windows
+        const restoreItems = [
+          ...allUpdates.map(op => ({
+            window: op.window,
+            data: { startTime: op.window.startTime, endTime: op.window.endTime },
+          })),
+          ...allSplits.map(op => ({
+            window: op.window,
+            data: { endTime: op.window.endTime },
+          })),
+        ]
+        if (restoreItems.length > 0) await batchUpdateWorkWindowsUseCase(restoreItems)
         for (const w of allDeletes) {
           await createWorkWindowUseCase([_windowToCreateData(w)])
         }
@@ -976,9 +1008,9 @@ export const useCalendarStore = defineStore('calendar', () => {
     if (!original) return
     const st = startTime || original.startTime
     const et = endTime || original.endTime
-    const conflict = _checkOverlap(original.specialistId, original.scheduledDate, st, et, [w.id])
+    const conflict = _checkOverlap(original.specialistId, original.scheduledDate, st, et, [w.id], original.applicationId)
     if (conflict) {
-      throw { userMessage: 'El horario se superpone con otra ventana del mismo especialista.' }
+      throw { userMessage: 'El horario se superpone con otra ventana del mismo especialista y aplicación.' }
     }
     const inheritErr = _checkInheritance(w.id, original.scheduledDate, st, et)
     if (inheritErr) throw { userMessage: inheritErr }
@@ -1017,9 +1049,9 @@ export const useCalendarStore = defineStore('calendar', () => {
     for (const orig of originals.values()) {
       const st = startTime || orig.startTime
       const et = endTime || orig.endTime
-      const conflict = _checkOverlap(orig.specialistId, orig.scheduledDate, st, et, groupIds)
+      const conflict = _checkOverlap(orig.specialistId, orig.scheduledDate, st, et, groupIds, orig.applicationId)
       if (conflict) {
-        throw { userMessage: 'El horario se superpone con otra ventana del mismo especialista.' }
+        throw { userMessage: 'El horario se superpone con otra ventana del mismo especialista y aplicación.' }
       }
       const inheritErr = _checkInheritance(orig.id, orig.scheduledDate, st, et)
       if (inheritErr) throw { userMessage: inheritErr }
@@ -1049,9 +1081,9 @@ export const useCalendarStore = defineStore('calendar', () => {
     const original = _findOriginal(w.id)
     if (!original) return
     const date = targetDate || original.scheduledDate
-    const conflict = _checkOverlap(original.specialistId, date, startTime, endTime, [w.id])
+    const conflict = _checkOverlap(original.specialistId, date, startTime, endTime, [w.id], original.applicationId)
     if (conflict) {
-      throw { userMessage: 'El horario se superpone con otra ventana del mismo especialista.' }
+      throw { userMessage: 'El horario se superpone con otra ventana del mismo especialista y aplicación.' }
     }
     const inheritErr = _checkInheritance(w.id, date, startTime, endTime)
     if (inheritErr) throw { userMessage: inheritErr }
@@ -1094,9 +1126,9 @@ export const useCalendarStore = defineStore('calendar', () => {
     for (const orig of originals.values()) {
       const newStart = _toHM(orig.startHour + deltaHours)
       const newEnd = _toHM(orig.endHour + deltaHours)
-      const conflict = _checkOverlap(orig.specialistId, targetDate, newStart, newEnd, groupIds)
+      const conflict = _checkOverlap(orig.specialistId, targetDate, newStart, newEnd, groupIds, orig.applicationId)
       if (conflict) {
-        throw { userMessage: 'El horario se superpone con otra ventana del mismo especialista.' }
+        throw { userMessage: 'El horario se superpone con otra ventana del mismo especialista y aplicación.' }
       }
       const inheritErr = _checkInheritance(orig.id, targetDate, newStart, newEnd)
       if (inheritErr) throw { userMessage: inheritErr }
@@ -1243,6 +1275,7 @@ export const useCalendarStore = defineStore('calendar', () => {
     batchReschedule,
     batchResize,
     batchToggle,
+    batchMerge,
     eraseRange,
     updateWindow,
     resizeWindow,

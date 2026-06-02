@@ -11,9 +11,13 @@ import { createPinia } from 'pinia'
 import App from './App.vue'
 import router from './router'
 import { useAuthStore } from '@/presentation/stores/useAuthStore'
+import { usePreferencesStore } from '@/presentation/stores/usePreferencesStore'
 
 const app = createApp(App)
 app.use(createPinia())
+
+const prefs = usePreferencesStore()
+prefs.applyTheme()
 
 const authStore = useAuthStore()
 

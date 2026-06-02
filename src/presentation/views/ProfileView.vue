@@ -457,7 +457,7 @@ onUnmounted(() => {
 
 /* ---- Identity card (left) ---- */
 .profile-identity {
-  background: white;
+  background: var(--bg-main);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-sm);
   padding: 2rem 1.5rem;
@@ -538,7 +538,7 @@ onUnmounted(() => {
 }
 
 .detail-card {
-  background: white;
+  background: var(--bg-main);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-sm);
   padding: 1.25rem 1.5rem;
@@ -617,15 +617,15 @@ onUnmounted(() => {
 }
 
 .app-item:hover {
-  background: #f0f1f3;
+  background: var(--border-light);
 }
 
 .app-item__icon {
   width: 2rem;
   height: 2rem;
   border-radius: var(--radius-sm);
-  background: #EEF2FF;
-  color: #4F46E5;
+  background: var(--tag-app-bg);
+  color: var(--tag-app-text);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -658,8 +658,8 @@ onUnmounted(() => {
   font-weight: 600;
 }
 
-.role-tag { background: #E0E7FF; color: #3730A3; }
-.level-tag { background: #DBEAFE; color: #1E40AF; }
+.role-tag { background: var(--tag-role-bg); color: var(--tag-role-text); }
+.level-tag { background: var(--tag-level-bg); color: var(--tag-level-text); }
 
 /* ---- Modal ---- */
 .modal-overlay {
@@ -706,6 +706,7 @@ onUnmounted(() => {
 
 .form-input {
   width: 100%; padding: 0.8rem; border: 1px solid var(--border-light); border-radius: var(--radius-md);
+  background: var(--bg-main); color: var(--text-primary);
 }
 
 .form-input:focus {
@@ -734,14 +735,14 @@ onUnmounted(() => {
   display: flex;
   gap: 0.75rem;
   padding: 1rem;
-  background-color: #FFF7ED;
+  background-color: var(--warning-bg);
   border-radius: var(--radius-md);
-  border-left: 3px solid #F59E0B;
+  border-left: 3px solid var(--warning-border);
 }
 
 .confirm-banner__icon {
   font-size: 1.4rem;
-  color: #D97706;
+  color: var(--warning-icon);
   flex-shrink: 0;
   margin-top: 0.1rem;
 }
@@ -749,18 +750,18 @@ onUnmounted(() => {
 .confirm-banner__title {
   font-weight: 700;
   font-size: 0.85rem;
-  color: #92400E;
+  color: var(--warning-title);
   margin-bottom: 0.25rem;
 }
 
 .confirm-banner__text {
   font-size: 0.82rem;
-  color: #78350F;
+  color: var(--warning-text);
   line-height: 1.4;
 }
 
-.btn-primary--warning { background-color: #F59E0B; }
-.btn-primary--warning:hover:not(:disabled) { background-color: #D97706; }
+.btn-primary--warning { background-color: var(--warning-btn); }
+.btn-primary--warning:hover:not(:disabled) { background-color: var(--warning-btn-hover); }
 
 .modal-actions {
   display: flex; justify-content: flex-end; gap: 1rem; margin-top: 1.5rem;
@@ -769,7 +770,7 @@ onUnmounted(() => {
 
 .input-error {
   border-color: var(--error-500) !important;
-  background-color: #FEF2F2;
+  background-color: var(--input-error-bg);
 }
 
 .error-text {

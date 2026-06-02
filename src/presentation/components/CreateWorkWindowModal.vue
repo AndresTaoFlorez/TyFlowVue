@@ -1,5 +1,7 @@
 <script setup>
 import { ref, watch, computed, nextTick } from 'vue'
+import { ampm } from '@/presentation/helpers/formatTime'
+import { fmtDateISO } from '@/presentation/helpers/formatDate'
 
 const props = defineProps({
   visible: { type: Boolean, default: false },
@@ -18,7 +20,7 @@ const endTime = ref('17:00')
 const endDate = ref('')
 const selectedDates = ref([])
 const inheritsOnReopen = ref(false)
-const affinityWeight = ref('')
+const affinityWeight = ref('1')
 
 // Rows: each row is { specialistId, applicationId }
 const rows = ref([{ specialistId: '', applicationId: '' }])
@@ -97,10 +99,7 @@ const DAY_NAMES_SHORT = ['dom', 'lun', 'mar', 'mié', 'jue', 'vie', 'sáb']
 const DAY_NAMES = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado']
 const MONTHS = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre']
 
-const todayISO = () => {
-  const d = new Date()
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-}
+const todayISO = () => fmtDateISO(new Date())
 
 const isMultiDay = computed(() => selectedDates.value.length > 1)
 
@@ -130,11 +129,6 @@ const removeDate = (iso) => {
 }
 
 // ---- Time display ----
-const ampm = (time) => {
-  if (!time) return ''
-  const h = parseInt(time.split(':')[0])
-  return h < 12 ? 'AM' : 'PM'
-}
 
 const durationLabel = computed(() => {
   const [sh, sm] = (startTime.value || '08:00').split(':').map(Number)
@@ -193,11 +187,31 @@ const hasCompleteRow = computed(() => rows.value.some(r => r.specialistId && r.a
 
 watch(hasCompleteRow, (v) => { if (!v) inheritsOnReopen.value = false })
 
+const timeOrderError = computed(() => {
+  if (!startTime.value || !endTime.value) return null
+  const [sh, sm] = startTime.value.split(':').map(Number)
+  const [eh, em] = endTime.value.split(':').map(Number)
+  if (sh * 60 + sm >= eh * 60 + em) return 'La hora de inicio debe ser anterior a la de fin.'
+  return null
+})
+
+const affinityWeightError = computed(() => {
+  const v = affinityWeight.value
+  if (v === '' || v == null) return 'El peso de afinidad es requerido.'
+  const n = parseFloat(v)
+  if (isNaN(n)) return 'Ingresa un número válido.'
+  if (n < 0.01) return 'El peso mínimo es 0.01.'
+  if (n > 9.99) return 'El peso máximo es 9.99.'
+  return null
+})
+
 // ---- Validation ----
 const canSubmit = computed(() => {
   if (selectedDates.value.length === 0) return false
   if (!startTime.value || !endTime.value) return false
+  if (timeOrderError.value) return false
   if (endTimeError.value) return false
+  if (affinityWeightError.value) return false
   return rows.value.some(r => r.specialistId && r.applicationId)
 })
 
@@ -251,7 +265,7 @@ const handleSubmit = () => {
         scheduledDate: date,
         ...(useEndDate ? { endDate: endDate.value } : {}),
         inheritsOnReopen: inheritsOnReopen.value,
-        affinityWeight: affinityWeight.value ? parseFloat(affinityWeight.value) : null,
+        affinityWeight: parseFloat(affinityWeight.value),
       })
     }
   }
@@ -296,7 +310,8 @@ const handleSubmit = () => {
                 <span class="ampm-label">{{ ampm(endTime) }}</span>
                 <span v-if="durationLabel" class="time-badge">{{ durationLabel }}</span>
               </div>
-              <span v-if="endTimeError" class="row__error">{{ endTimeError }}</span>
+              <span v-if="timeOrderError" class="row__error">{{ timeOrderError }}</span>
+              <span v-else-if="endTimeError" class="row__error">{{ endTimeError }}</span>
             </div>
 
             <!-- Single/range: Google Calendar style (date+time start, date+time end) -->
@@ -336,7 +351,8 @@ const handleSubmit = () => {
                     <span v-if="durationLabel" class="time-badge">{{ durationLabel }}</span>
                   </div>
                 </div>
-                <span v-if="endTimeError" class="row__error">{{ endTimeError }}</span>
+                <span v-if="timeOrderError" class="row__error">{{ timeOrderError }}</span>
+                <span v-else-if="endTimeError" class="row__error">{{ endTimeError }}</span>
               </div>
             </template>
 
@@ -431,10 +447,12 @@ const handleSubmit = () => {
                   min="0.01"
                   max="9.99"
                   class="weight-input"
-                  placeholder="Ej. 1.5"
+                  :class="{ 'weight-input--error': affinityWeightError }"
+                  placeholder="1"
                   :disabled="creating"
                 >
               </div>
+              <span v-if="affinityWeightError" class="row__error">{{ affinityWeightError }}</span>
             </div>
 
             <!-- Inherit toggle -->
@@ -712,6 +730,12 @@ const handleSubmit = () => {
   box-shadow: 0 0 0 2px rgba(42, 199, 143, 0.2);
 }
 
+.weight-input--error {
+  border-color: var(--error-500, #ef4444);
+}
+.weight-input--error:focus {
+  box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.2);
+}
 .weight-input::placeholder { color: #94a3b8; font-weight: 500; }
 
 /* Section label */

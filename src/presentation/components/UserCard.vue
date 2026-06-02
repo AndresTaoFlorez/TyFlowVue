@@ -63,7 +63,7 @@ defineEmits(['toggle', 'edit'])
 
 <style scoped>
 .user-card {
-  background: white;
+  background: var(--bg-main);
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-sm);
   padding: 1rem 1.25rem 0.5rem 1.25rem;
@@ -198,13 +198,13 @@ defineEmits(['toggle', 'edit'])
 }
 
 .role-tag {
-  background: #E0E7FF;
-  color: #3730A3;
+  background: var(--tag-role-bg);
+  color: var(--tag-role-text);
 }
 
 .level-tag {
-  background: #DBEAFE;
-  color: #1E40AF;
+  background: var(--tag-level-bg);
+  color: var(--tag-level-text);
 }
 
 .btn-toggle {

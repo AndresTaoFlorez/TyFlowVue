@@ -169,6 +169,8 @@ function onCtxAction(action) {
   align-items: center;
   justify-content: center;
   z-index: 100;
+  padding: 1rem;
+  box-sizing: border-box;
 }
 
 .panel {
@@ -381,4 +383,11 @@ function onCtxAction(action) {
 .item__btn--close:hover:not(:disabled) { color: #607dea; border-color: #607dea; }
 .item__btn--delete:hover:not(:disabled) { color: var(--error-500); border-color: var(--error-500); }
 .item__btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+@media (max-width: 480px) {
+  .panel {
+    max-width: calc(100% - 2rem);
+    border-radius: var(--radius-md);
+  }
+}
 </style>

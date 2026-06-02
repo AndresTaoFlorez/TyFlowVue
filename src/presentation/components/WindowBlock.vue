@@ -67,7 +67,7 @@ const onHandleDown = (direction, e) => {
       width: width(),
       '--app-color': resolvedColor(),
     }"
-    @click="$emit('click', window)"
+    @click="$emit('click', window, $event)"
   >
     <!-- Resize handle top -->
     <div
@@ -228,6 +228,11 @@ const onHandleDown = (direction, e) => {
   filter: grayscale(0.5);
 }
 
+/* Hide resize handles in compact mode (not usable on touch) */
+.wb--compact .wb__handle {
+  display: none;
+}
+
 /* Compact — minimal info for mobile week */
 .wb--compact {
   padding: 2px 1px;
@@ -239,7 +244,7 @@ const onHandleDown = (direction, e) => {
 }
 
 .wb__compact-initials {
-  font-size: 0.45rem;
+  font-size: 0.6rem;
   font-weight: 700;
   color: rgba(255, 255, 255, 0.9);
   text-align: center;
@@ -248,7 +253,7 @@ const onHandleDown = (direction, e) => {
 }
 
 .wb__compact-time {
-  font-size: 0.4rem;
+  font-size: 0.55rem;
   font-weight: 700;
   color: rgba(255, 255, 255, 0.7);
   text-align: center;

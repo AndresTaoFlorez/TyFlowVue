@@ -1,4 +1,6 @@
 <script setup>
+import { computed } from 'vue'
+
 const props = defineProps({
   group: { type: Object, required: true },
   hourHeight: { type: Number, default: 60 },
@@ -9,6 +11,8 @@ const props = defineProps({
   applications: { type: Array, default: () => [] },
   selectable: { type: Boolean, default: false },
   compact: { type: Boolean, default: false },
+  selectedIds: { type: Object, default: () => new Set() },
+  cutIds: { type: Object, default: () => new Set() },
 })
 
 const emit = defineEmits(['click', 'resize-start'])
@@ -19,6 +23,16 @@ const left = () => props.totalCols === 1 ? '3%' : `${(props.col / props.totalCol
 const width = () => props.totalCols === 1 ? '92%' : `${92 / props.totalCols}%`
 
 const count = () => props.group.windows.length
+
+// Group is "selected" if ANY window inside is selected
+const hasSelected = computed(() => props.group.windows.some(w => props.selectedIds.has(w.id)))
+// Group is "all selected" if every window is selected
+const allSelected = computed(() => props.group.windows.every(w => props.selectedIds.has(w.id)))
+// Group is "all cut" if every window is cut
+const allCut = computed(() => props.group.windows.length > 0 && props.group.windows.every(w => props.cutIds.has(w.id)))
+// Any window inactive
+const hasInactive = computed(() => props.group.windows.some(w => !w.isActive))
+const allInactive = computed(() => props.group.windows.every(w => !w.isActive))
 
 // Sub-bar data for each window in the group
 const subBars = () => {
@@ -45,6 +59,8 @@ const subBars = () => {
       initials: initials.toUpperCase(),
       color,
       isOpen: w.isActive,
+      isSelected: props.selectedIds.has(w.id),
+      isCut: props.cutIds.has(w.id),
       barTop,
       barHeight,
       left: `${(i / total) * 100}%`,
@@ -62,14 +78,21 @@ const onHandleDown = (direction, e) => {
 <template>
   <div
     class="wgb"
-    :class="{ 'wgb--compact': compact }"
+    :class="{
+      'wgb--compact': compact,
+      'wgb--selected': hasSelected,
+      'wgb--all-selected': allSelected,
+      'wgb--cut': allCut,
+      'wgb--has-inactive': hasInactive,
+      'wgb--all-inactive': allInactive,
+    }"
     :style="{
       top: groupTop() + 'px',
       height: groupHeight() + 'px',
       left: left(),
       width: width(),
     }"
-    @click="$emit('click', group)"
+    @click="$emit('click', group, $event)"
   >
     <!-- Resize handle top -->
     <div
@@ -85,7 +108,12 @@ const onHandleDown = (direction, e) => {
         v-for="bar in subBars()"
         :key="bar.id"
         class="wgb__bar"
-        :class="{ 'wgb__bar--open': bar.isOpen }"
+        :class="{
+          'wgb__bar--open': bar.isOpen,
+          'wgb__bar--inactive': !bar.isOpen,
+          'wgb__bar--selected': bar.isSelected,
+          'wgb__bar--cut': bar.isCut,
+        }"
         :style="{
           left: bar.left,
           width: bar.width,
@@ -131,6 +159,34 @@ const onHandleDown = (direction, e) => {
   border-color: rgba(120, 130, 230, 0.4);
 }
 
+/* ---- Group-level selection ---- */
+.wgb--selected {
+  outline: 2px solid rgba(96, 165, 250, 0.6);
+  outline-offset: -1px;
+}
+
+.wgb--all-selected {
+  outline: 2px solid #60a5fa;
+  outline-offset: -1px;
+  filter: brightness(1.08);
+}
+
+/* Group-level cut */
+.wgb--cut {
+  opacity: 0.35;
+  filter: grayscale(0.5);
+}
+
+/* Group-level inactive */
+.wgb--all-inactive {
+  opacity: 0.5;
+  border-color: rgba(90, 96, 117, 0.3);
+}
+
+.wgb--has-inactive:not(.wgb--all-inactive) {
+  border-style: dashed;
+}
+
 /* ---- Sub-bars container ---- */
 .wgb__bars {
   position: absolute;
@@ -152,6 +208,37 @@ const onHandleDown = (direction, e) => {
 
 .wgb__bar--open {
   background: color-mix(in srgb, var(--bar-color) 28%, transparent);
+}
+
+/* Inactive bar — muted, hatched pattern */
+.wgb__bar--inactive {
+  background: repeating-linear-gradient(
+    -45deg,
+    color-mix(in srgb, var(--bar-color) 12%, transparent),
+    color-mix(in srgb, var(--bar-color) 12%, transparent) 3px,
+    color-mix(in srgb, var(--bar-color) 6%, transparent) 3px,
+    color-mix(in srgb, var(--bar-color) 6%, transparent) 6px
+  );
+  border-left-color: color-mix(in srgb, var(--bar-color) 40%, #5a6075);
+  opacity: 0.55;
+}
+
+.wgb__bar--inactive .wgb__bar-initials {
+  color: color-mix(in srgb, var(--bar-color) 50%, #8890a4);
+}
+
+/* Per-bar selected */
+.wgb__bar--selected {
+  outline: 2px solid #60a5fa;
+  outline-offset: -1px;
+  filter: brightness(1.15);
+}
+
+/* Per-bar cut */
+.wgb__bar--cut {
+  opacity: 0.35;
+  border-left-style: dashed;
+  filter: grayscale(0.6);
 }
 
 .wgb:hover .wgb__bar {
