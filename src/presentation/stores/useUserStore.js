@@ -7,6 +7,7 @@ import { toggleUserStatusUseCase } from '@/application/use-cases/users/ToggleUse
 import { deleteUserUseCase } from '@/application/use-cases/users/DeleteUserUseCase'
 import { fetchRolesUseCase } from '@/application/use-cases/roles/FetchRolesUseCase'
 import { fetchSupportLevelsUseCase } from '@/application/use-cases/support-levels/FetchSupportLevelsUseCase'
+import { fetchSupportCategoriesUseCase } from '@/application/use-cases/support-categories/FetchSupportCategoriesUseCase'
 import { fetchApplicationsUseCase } from '@/application/use-cases/applications/FetchApplicationsUseCase'
 import { Application } from '@/domain/entities/Application'
 import { SyncEngine } from '@/infrastructure/sync/SyncEngine'
@@ -15,6 +16,7 @@ const CACHE_VERSION = 'v2'
 const CACHE_KEYS = {
   roles: `tyflow_roles_${CACHE_VERSION}`,
   supportLevels: `tyflow_support_levels_${CACHE_VERSION}`,
+  supportCategories: `tyflow_support_categories_${CACHE_VERSION}`,
   applications: `tyflow_applications_${CACHE_VERSION}`,
 }
 
@@ -43,6 +45,7 @@ export const useUserStore = defineStore('users', () => {
   const users = ref([])
   const roles = ref(readCache(CACHE_KEYS.roles))
   const supportLevels = ref(readCache(CACHE_KEYS.supportLevels))
+  const supportCategories = ref(readCache(CACHE_KEYS.supportCategories))
   const applications = ref(appSync.loadFromCache())
   const loading = ref(false)
   const loadingSelects = ref(false)
@@ -62,7 +65,7 @@ export const useUserStore = defineStore('users', () => {
   }
 
   async function loadSelects(force = false) {
-    const hasCached = roles.value.length > 0 && supportLevels.value.length > 0 && applications.value.length > 0
+    const hasCached = roles.value.length > 0 && supportLevels.value.length > 0 && supportCategories.value.length > 0 && applications.value.length > 0
 
     if (!force && hasCached) {
       // Cache disponible → UI inmediata, sync en background
@@ -72,15 +75,18 @@ export const useUserStore = defineStore('users', () => {
 
     loadingSelects.value = true
     try {
-      const [rolesData, supportLevelsData, applicationsData] = await Promise.all([
+      const [rolesData, supportLevelsData, supportCategoriesData, applicationsData] = await Promise.all([
         fetchRolesUseCase(),
         fetchSupportLevelsUseCase(),
+        fetchSupportCategoriesUseCase(),
         fetchApplicationsUseCase(),
       ])
       roles.value = rolesData
       supportLevels.value = supportLevelsData
+      supportCategories.value = supportCategoriesData
       writeCache(CACHE_KEYS.roles, rolesData)
       writeCache(CACHE_KEYS.supportLevels, supportLevelsData)
+      writeCache(CACHE_KEYS.supportCategories, supportCategoriesData)
       appSync.replaceAll(applications, applicationsData)
     } finally {
       loadingSelects.value = false
@@ -127,16 +133,19 @@ export const useUserStore = defineStore('users', () => {
     users.value = []
     roles.value = []
     supportLevels.value = []
+    supportCategories.value = []
     applications.value = []
     appSync.clearCache()
     localStorage.removeItem(CACHE_KEYS.roles)
     localStorage.removeItem(CACHE_KEYS.supportLevels)
+    localStorage.removeItem(CACHE_KEYS.supportCategories)
   }
 
   return {
     users,
     roles,
     supportLevels,
+    supportCategories,
     applications,
     loading,
     loadingSelects,

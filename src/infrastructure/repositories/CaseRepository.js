@@ -1,104 +1,108 @@
 import client from '@/infrastructure/http/client'
 import { Case } from '@/domain/entities/Case'
-import { Assignment } from '@/domain/entities/Assignment'
 
 export const CaseRepository = {
-  /**
-   * Casos pendientes (sin asignación activa).
-   * Backend: GET /conversations?pending_only=true
-   */
-  async fetchPending({ applicationId, supportLevelId, page = 1, pageSize = 50 } = {}) {
-    const params = { pending_only: true, page, page_size: pageSize }
+  async fetchAll({ status, source, priority, applicationId, specialistId, page, pageSize } = {}) {
+    const params = {}
+    if (status) params.status = status
+    if (source) params.source = source
+    if (priority) params.priority = priority
     if (applicationId) params.application_id = applicationId
-    if (supportLevelId) params.support_level_id = supportLevelId
-    const { data } = await client.get('/conversations', { params })
+    if (specialistId) params.specialist_id = specialistId
+    if (page) params.page = page
+    if (pageSize) params.page_size = pageSize
+
+    const { data } = await client.get('/cases', { params })
+    const items = Array.isArray(data) ? data : data.data ?? []
+    const total = data.total ?? items.length
     return {
-      data: (data.data ?? []).map(c => new Case(c)),
-      total: data.total ?? 0,
+      data: items.map(item => new Case(item)),
+      total,
+      page: data.page ?? page ?? 1,
+      pageSize: data.page_size ?? pageSize ?? 100,
     }
   },
 
-  /**
-   * Crear caso(s) y opcionalmente disparar WDD.
-   * Backend: POST /conversations
-   */
-  async ingest({ subject, body, fromAddress, folderId, tags = [], triggerWdd = false }) {
-    const { data } = await client.post('/conversations', {
-      conversations: [{
-        folder_id: folderId,
-        subject,
-        body: body ?? '',
-        from_address: fromAddress ?? '',
-        tags,
-      }],
-      trigger_wdd: triggerWdd,
+  async fetchById(id) {
+    const { data } = await client.get(`/cases/${id}`)
+    return new Case(data)
+  },
+
+  async create(payload) {
+    const body = {
+      application_id: payload.applicationId,
+      source: payload.source,
+      subject: payload.subject ?? '',
+      description: payload.description ?? '',
+      priority: payload.priority ?? 'normal',
+    }
+    if (payload.supportLevelId) body.support_level_id = payload.supportLevelId
+    if (payload.supportCategoryId) body.support_category_id = payload.supportCategoryId
+    if (payload.conversationId) body.conversation_id = payload.conversationId
+    if (payload.ticketId) body.ticket_id = payload.ticketId
+
+    const { data } = await client.post('/cases', body)
+    return new Case(data)
+  },
+
+  async update(id, fields) {
+    const body = {}
+    if (fields.subject != null) body.subject = fields.subject
+    if (fields.description != null) body.description = fields.description
+    if (fields.priority != null) body.priority = fields.priority
+    if (fields.supportCategoryId !== undefined) body.support_category_id = fields.supportCategoryId
+    if (fields.supportLevelId !== undefined) body.support_level_id = fields.supportLevelId
+
+    const { data } = await client.patch(`/cases/${id}`, body)
+    return new Case(data)
+  },
+
+  async updateStatus(id, status) {
+    const { data } = await client.patch(`/cases/${id}/status`, { status })
+    return new Case(data)
+  },
+
+  async assignWdd({ caseId, applicationId, supportLevelId, supportCategoryId }) {
+    const { data } = await client.post('/cases/assign/wdd', {
+      case_id: caseId,
+      application_id: applicationId,
+      support_level_id: supportLevelId,
+      support_category_id: supportCategoryId,
     })
-    const result = data.results?.[0]
-    return {
-      conversation: result?.conversation ? new Case(result.conversation) : null,
-      assignmentId: result?.assignment_id ?? null,
-      wddError: result?.wdd_error ?? null,
-      created: data.created ?? 0,
-      assigned: data.assigned ?? 0,
+    return data
+  },
+
+  async assignManual({ caseId, specialistId, workWindowId, reason }) {
+    const body = {
+      case_id: caseId,
+      specialist_id: specialistId,
     }
+    if (workWindowId) body.work_window_id = workWindowId
+    if (reason) body.reason = reason
+
+    const { data } = await client.post('/cases/assign/manual', body)
+    return data
   },
 
-  /**
-   * Asignaciones recientes (enriquecidas con nombre de especialista y asunto).
-   * Backend: GET /assignments/recent?limit=N
-   */
-  async fetchRecentAssignments(limit = 10) {
-    const { data } = await client.get('/assignments/recent', { params: { limit } })
-    return Array.isArray(data) ? data : data.data ?? []
+  async reassign({ caseId, currentSpecialistId, newSpecialistId, reason, workWindowId, newSupportLevelId, note }) {
+    const body = {
+      case_id: caseId,
+      current_specialist_id: currentSpecialistId,
+      new_specialist_id: newSpecialistId,
+      reason: reason || 'reassignment_same_level',
+    }
+    if (workWindowId) body.work_window_id = workWindowId
+    if (newSupportLevelId) body.new_support_level_id = newSupportLevelId
+    if (note) body.note = note
+
+    const { data } = await client.post('/cases/reassign', body)
+    return data
   },
 
-  /**
-   * Cargas de especialistas por aplicación.
-   * Backend: GET /specialists/workload?application_id=X
-   */
   async fetchWorkloads(applicationId) {
     const { data } = await client.get('/specialists/workload', {
       params: { application_id: applicationId },
     })
     return Array.isArray(data) ? data : data.data ?? []
-  },
-
-  /**
-   * Asignación manual.
-   * Backend: POST /assignments/manual
-   */
-  async manualAssign({ conversationId, specialistId, workWindowId, reason = 'reassignment_same_level' }) {
-    const { data } = await client.post('/assignments/manual', {
-      conversation_id: conversationId,
-      specialist_id: specialistId,
-      work_window_id: workWindowId ?? null,
-      reason,
-    })
-    return data
-  },
-
-  /**
-   * WDD automático para un caso existente.
-   * Backend: POST /assignments/wdd
-   */
-  async wddAssign({ conversationId, applicationId, supportLevelId }) {
-    const { data } = await client.post('/assignments/wdd', {
-      conversation_id: conversationId,
-      application_id: applicationId,
-      support_level_id: supportLevelId,
-    })
-    return data
-  },
-
-  /**
-   * Lista de asignaciones con filtros.
-   * Backend: GET /assignments
-   */
-  async fetchAssignments({ specialistId, activeOnly = true, page = 1, pageSize = 100 } = {}) {
-    const params = { active_only: activeOnly, page, page_size: pageSize }
-    if (specialistId) params.specialist_id = specialistId
-    const { data } = await client.get('/assignments', { params })
-    const items = data.data ?? (Array.isArray(data) ? data : [])
-    return items.map(a => new Assignment(a))
   },
 }

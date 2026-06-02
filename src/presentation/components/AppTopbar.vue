@@ -20,8 +20,8 @@ const pageTitle = computed(() => route.meta?.title || '')
 <template>
   <header class="layout__header topbar">
     <div class="topbar__left">
-      <button class="sidebar-toggle" @click="$emit('toggle-sidebar')" aria-label="Toggle sidebar">
-        <i class='bx' :class="collapsed ? 'bx-menu' : 'bx-menu-alt-left'"></i>
+      <button class="sidebar-toggle sidebar-toggle--mobile" @click="$emit('toggle-sidebar')" aria-label="Toggle sidebar">
+        <i class='bx bx-menu'></i>
       </button>
       <h1 v-if="pageTitle" class="topbar__title">{{ pageTitle }}</h1>
     </div>

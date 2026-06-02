@@ -8,7 +8,8 @@ export function useCasesRealtime() {
 
   onMounted(() => {
     unsubs.push(wsClient.on('case.created', data => store.onCaseCreatedRT(data)))
-    unsubs.push(wsClient.on('assignment.created', data => store.onAssignmentCreatedRT(data)))
+    unsubs.push(wsClient.on('case.assigned', data => store.onCaseAssignedRT(data)))
+    unsubs.push(wsClient.on('case.reassigned', data => store.onCaseReassignedRT(data)))
   })
 
   onUnmounted(() => {

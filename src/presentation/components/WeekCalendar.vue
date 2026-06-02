@@ -1485,13 +1485,15 @@ const periodKey = computed(() => {
 
     <!-- ── MOBILE: vista compacta 7 columnas ── -->
     <template v-else-if="showCompactWeek">
-      <div ref="scrollContainerCompact" class="cal-scroll cal-scroll--compact"
-        @touchstart.passive="onCalSwipeStart"
-        @touchend.passive="onHeaderSwipeEnd"
-      >
-        <!-- Compact header -->
-        <div class="cal-header cal-header--compact">
-          <div class="cal-header__gutter cal-header__gutter--compact"></div>
+      <div ref="scrollContainerCompact" class="cal-scroll cal-scroll--compact">
+        <!-- Compact header with nav arrows -->
+        <div class="cal-header cal-header--compact"
+          @touchstart.passive="onCalSwipeStart"
+          @touchend.passive="onHeaderSwipeEnd"
+        >
+          <button class="cal-header__nav" @click="$emit('prev-week')">
+            <i class="bx bx-chevron-left"></i>
+          </button>
           <div
             v-for="(date, i) in weekDates"
             :key="date"
@@ -1504,6 +1506,9 @@ const periodKey = computed(() => {
             <span class="cal-header__label">{{ DAY_LABELS[i] }}</span>
             <span class="cal-header__num cal-header__num--compact">{{ parseInt(date.split('-')[2]) }}</span>
           </div>
+          <button class="cal-header__nav" @click="$emit('next-week')">
+            <i class="bx bx-chevron-right"></i>
+          </button>
         </div>
 
         <!-- Compact body -->
@@ -2601,8 +2606,27 @@ const periodKey = computed(() => {
 }
 
 .cal-header--compact {
-  grid-template-columns: 1.8rem repeat(7, 1fr);
+  grid-template-columns: auto repeat(7, 1fr) auto;
   padding: 0;
+}
+
+.cal-header__nav {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 1rem;
+  padding: 0 0.15rem;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: color 0.12s;
+}
+
+.cal-header__nav:hover,
+.cal-header__nav:active {
+  color: var(--primary-500);
 }
 
 .cal-header__gutter--compact {

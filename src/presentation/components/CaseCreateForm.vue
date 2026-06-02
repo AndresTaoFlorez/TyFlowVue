@@ -6,54 +6,45 @@ import { useUserStore } from '@/presentation/stores/useUserStore'
 const store = useCasesStore()
 const userStore = useUserStore()
 
-const subject = ref('')
-const body = ref('')
-const fromAddress = ref('')
-const folderId = ref('')
-const priority = ref('P3')
-const assignMode = ref('wdd')
-const selectedSpecialist = ref('')
+const form = ref({
+  applicationId: '',
+  source: 'manual',
+  subject: '',
+  description: '',
+  priority: 'normal',
+  supportLevelId: '',
+  supportCategoryId: '',
+})
+
 const submitting = ref(false)
-const feedback = ref(null) // { type: 'success'|'error', text }
+const feedback = ref(null)
 
 const applications = computed(() => userStore.applications ?? [])
-const specialists = computed(() => store.specialistWorkloads)
+const supportLevels = computed(() => userStore.supportLevels ?? [])
+const supportCategories = computed(() => userStore.supportCategories ?? [])
+
+const canSubmit = computed(() =>
+  form.value.subject.trim() && form.value.applicationId && !submitting.value
+)
 
 async function handleSubmit() {
-  if (!subject.value.trim() || !folderId.value) return
+  if (!canSubmit.value) return
   submitting.value = true
   feedback.value = null
 
   try {
     const payload = {
-      subject: subject.value.trim(),
-      body: body.value.trim(),
-      fromAddress: fromAddress.value.trim(),
-      folderId: folderId.value,
-      tags: [priority.value],
+      application_id: form.value.applicationId,
+      source: form.value.source,
+      subject: form.value.subject.trim(),
+      description: form.value.description.trim() || null,
+      priority: form.value.priority,
+      support_level_id: form.value.supportLevelId || null,
+      support_category_id: form.value.supportCategoryId || null,
     }
-
-    if (assignMode.value === 'wdd') {
-      const result = await store.createAndAutoAssign(payload)
-      if (result.wddError) {
-        feedback.value = { type: 'error', text: result.wddError }
-      } else {
-        feedback.value = { type: 'success', text: 'Caso creado y asignado automáticamente.' }
-        resetForm()
-      }
-    } else {
-      const result = await store.createWithoutAssign(payload)
-      if (selectedSpecialist.value && result.conversation) {
-        await store.manualAssign({
-          conversationId: result.conversation.id,
-          specialistId: selectedSpecialist.value,
-        })
-        feedback.value = { type: 'success', text: 'Caso creado y asignado manualmente.' }
-      } else {
-        feedback.value = { type: 'success', text: 'Caso creado. Pendiente de asignación.' }
-      }
-      resetForm()
-    }
+    await store.createCase(payload)
+    feedback.value = { type: 'success', text: 'Caso creado exitosamente.' }
+    resetForm()
   } catch (e) {
     feedback.value = { type: 'error', text: store.error || e.message || 'Error creando caso' }
   } finally {
@@ -62,13 +53,15 @@ async function handleSubmit() {
 }
 
 function resetForm() {
-  subject.value = ''
-  body.value = ''
-  fromAddress.value = ''
-  folderId.value = ''
-  priority.value = 'P3'
-  assignMode.value = 'wdd'
-  selectedSpecialist.value = ''
+  form.value = {
+    applicationId: '',
+    source: 'manual',
+    subject: '',
+    description: '',
+    priority: 'normal',
+    supportLevelId: '',
+    supportCategoryId: '',
+  }
 }
 </script>
 
@@ -79,17 +72,12 @@ function resetForm() {
 
       <div class="cf__field">
         <label class="cf__label">Asunto *</label>
-        <input v-model="subject" type="text" class="cf__input" placeholder="Describe brevemente el caso" />
+        <input v-model="form.subject" type="text" class="cf__input" placeholder="Describe brevemente el caso" />
       </div>
 
       <div class="cf__field">
         <label class="cf__label">Descripción</label>
-        <textarea v-model="body" class="cf__textarea" placeholder="Detalle del caso..." rows="5"></textarea>
-      </div>
-
-      <div class="cf__field">
-        <label class="cf__label">Remitente</label>
-        <input v-model="fromAddress" type="email" class="cf__input" placeholder="correo@empresa.com" />
+        <textarea v-model="form.description" class="cf__textarea" placeholder="Detalle del caso..." rows="5"></textarea>
       </div>
     </div>
 
@@ -98,21 +86,8 @@ function resetForm() {
         <span class="cf__section-label">Configuración</span>
 
         <div class="cf__field">
-          <label class="cf__label">Prioridad</label>
-          <div class="cf__pills">
-            <button
-              v-for="p in ['P1', 'P2', 'P3']"
-              :key="p"
-              class="cf__pill"
-              :class="[`cf__pill--${p.toLowerCase()}`, { 'cf__pill--sel': priority === p }]"
-              @click="priority = p"
-            >{{ p }}</button>
-          </div>
-        </div>
-
-        <div class="cf__field">
           <label class="cf__label">Aplicación *</label>
-          <select v-model="folderId" class="cf__select">
+          <select v-model="form.applicationId" class="cf__select">
             <option value="">— Seleccionar —</option>
             <option v-for="app in applications" :key="app.id" :value="app.id">
               {{ app.name }}
@@ -121,34 +96,61 @@ function resetForm() {
         </div>
 
         <div class="cf__field">
-          <label class="cf__label">Asignación</label>
-          <div class="cf__modes">
-            <label class="cf__mode" :class="{ 'cf__mode--on': assignMode === 'wdd' }">
-              <input type="radio" v-model="assignMode" value="wdd" /> <i class="bx bx-bot"></i> WDD Auto
-            </label>
-            <label class="cf__mode" :class="{ 'cf__mode--on': assignMode === 'manual' }">
-              <input type="radio" v-model="assignMode" value="manual" /> <i class="bx bx-user"></i> Manual
-            </label>
+          <label class="cf__label">Origen</label>
+          <div class="cf__pills">
+            <button
+              v-for="s in ['outlook', 'judit', 'manual']"
+              :key="s"
+              class="cf__pill"
+              :class="[`cf__pill--${s}`, { 'cf__pill--sel': form.source === s }]"
+              @click="form.source = s"
+            >
+              <i :class="'bx ' + (s === 'outlook' ? 'bx-envelope' : s === 'judit' ? 'bx-bot' : 'bx-edit')"></i>
+              {{ s === 'outlook' ? 'Outlook' : s === 'judit' ? 'Judit' : 'Manual' }}
+            </button>
           </div>
         </div>
 
-        <div v-if="assignMode === 'manual'" class="cf__field">
-          <select v-model="selectedSpecialist" class="cf__select">
-            <option value="">— Especialista —</option>
-            <option v-for="s in specialists" :key="s.specialist_id" :value="s.specialist_id">
-              {{ s.full_name }} ({{ s.current_count ?? 0 }} casos)
+        <div class="cf__field">
+          <label class="cf__label">Prioridad</label>
+          <div class="cf__pills">
+            <button
+              v-for="p in ['low', 'normal', 'high', 'urgent']"
+              :key="p"
+              class="cf__pill"
+              :class="[`cf__pill--${p}`, { 'cf__pill--sel': form.priority === p }]"
+              @click="form.priority = p"
+            >{{ p === 'low' ? 'Baja' : p === 'normal' ? 'Normal' : p === 'high' ? 'Alta' : 'Urgente' }}</button>
+          </div>
+        </div>
+
+        <div class="cf__field">
+          <label class="cf__label">Nivel de soporte</label>
+          <select v-model="form.supportLevelId" class="cf__select">
+            <option value="">— Ninguno —</option>
+            <option v-for="lv in supportLevels" :key="lv.id" :value="lv.id">
+              {{ lv.name }}
             </option>
           </select>
         </div>
 
-        <button class="cf__submit" :disabled="submitting || !subject.trim() || !folderId" @click="handleSubmit">
+        <div class="cf__field">
+          <label class="cf__label">Categoría de soporte</label>
+          <select v-model="form.supportCategoryId" class="cf__select">
+            <option value="">— Ninguna —</option>
+            <option v-for="cat in supportCategories" :key="cat.id" :value="cat.id">
+              {{ cat.name }}
+            </option>
+          </select>
+        </div>
+
+        <button class="cf__submit" :disabled="!canSubmit" @click="handleSubmit">
           <i v-if="submitting" class="bx bx-loader-alt bx-spin"></i>
           <i v-else class="bx bx-plus"></i>
           {{ submitting ? 'Creando...' : 'Crear Caso' }}
         </button>
       </div>
 
-      <!-- Feedback -->
       <div v-if="feedback" class="cf__feedback" :class="feedback.type === 'success' ? 'cf__feedback--ok' : 'cf__feedback--err'">
         <i :class="feedback.type === 'success' ? 'bx bx-check-circle' : 'bx bx-error-circle'"></i>
         {{ feedback.text }}
@@ -160,7 +162,7 @@ function resetForm() {
 <style scoped>
 .cf {
   display: grid;
-  grid-template-columns: 1fr 280px;
+  grid-template-columns: 1fr 300px;
   gap: 1.5rem;
   max-width: 860px;
   margin: 0 auto;
@@ -179,7 +181,6 @@ function resetForm() {
 }
 
 .cf__main { display: flex; flex-direction: column; gap: 0.85rem; }
-
 .cf__sidebar { display: flex; flex-direction: column; gap: 0.85rem; }
 
 .cf__config {
@@ -226,43 +227,35 @@ function resetForm() {
 
 .cf__textarea { resize: vertical; min-height: 120px; }
 
-/* Priority pills */
-.cf__pills { display: flex; gap: 0.35rem; }
+/* Pills */
+.cf__pills { display: flex; gap: 0.35rem; flex-wrap: wrap; }
 
 .cf__pill {
   flex: 1;
-  padding: 0.35rem 0;
+  padding: 0.35rem 0.4rem;
   border-radius: var(--radius-sm);
   border: 1.5px solid var(--border-light);
-  font-size: 0.72rem;
+  font-size: 0.7rem;
   font-weight: 700;
   text-align: center;
   cursor: pointer;
   transition: all 0.12s;
   background: transparent;
   color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.2rem;
 }
 
-.cf__pill--p1.cf__pill--sel { background: var(--priority-p1-bg); border-color: var(--priority-p1); color: var(--priority-p1); }
-.cf__pill--p2.cf__pill--sel { background: var(--priority-p2-bg); border-color: var(--priority-p2); color: var(--priority-p2); }
-.cf__pill--p3.cf__pill--sel { background: var(--priority-p3-bg); border-color: var(--priority-p3); color: var(--priority-p3); }
+.cf__pill--low.cf__pill--sel { background: var(--priority-low-bg); border-color: var(--priority-low); color: var(--priority-low); }
+.cf__pill--normal.cf__pill--sel { background: var(--priority-normal-bg); border-color: var(--priority-normal); color: var(--priority-normal); }
+.cf__pill--high.cf__pill--sel { background: var(--priority-high-bg); border-color: var(--priority-high); color: var(--priority-high); }
+.cf__pill--urgent.cf__pill--sel { background: var(--priority-urgent-bg); border-color: var(--priority-urgent); color: var(--priority-urgent); }
 
-/* Assign mode */
-.cf__modes { display: flex; gap: 0.4rem; }
-.cf__mode {
-  display: flex; align-items: center; gap: 0.3rem;
-  padding: 0.4rem 0.7rem; border-radius: var(--radius-md);
-  border: 1.5px solid var(--border-light);
-  font-size: 0.78rem; font-weight: 600;
-  color: var(--text-secondary); cursor: pointer;
-  transition: all 0.12s;
-}
-.cf__mode input { display: none; }
-.cf__mode--on {
-  border-color: var(--primary-500);
-  color: var(--primary-600);
-  background: rgba(42, 199, 143, 0.06);
-}
+.cf__pill--outlook.cf__pill--sel { background: var(--source-outlook-bg); border-color: var(--source-outlook); color: var(--source-outlook); }
+.cf__pill--judit.cf__pill--sel { background: var(--source-judit-bg); border-color: var(--source-judit); color: var(--source-judit); }
+.cf__pill--manual.cf__pill--sel { background: var(--source-manual-bg); border-color: var(--source-manual); color: var(--source-manual); }
 
 /* Submit */
 .cf__submit {

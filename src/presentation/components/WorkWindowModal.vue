@@ -19,6 +19,17 @@ const isFuture = computed(() => {
   return new Date(props.window.startsAt) > new Date()
 })
 
+const isInShift = computed(() => {
+  if (!props.window?.startsAt || !props.window?.endsAt) return false
+  const now = new Date()
+  return new Date(props.window.startsAt) <= now && now <= new Date(props.window.endsAt) && props.window.isActive
+})
+
+const isEnded = computed(() => {
+  if (!props.window?.endsAt) return false
+  return new Date(props.window.endsAt) < new Date()
+})
+
 const hasInheritance = computed(() => !!(props.window.inheritedFromWindowId || props.window.inheritsOnReopen))
 const canToggleInheritance = computed(() => isFuture.value)
 
@@ -59,10 +70,15 @@ function saveEdit() {
   const startTimeChanged = editStartTime.value !== origStartTime
   const endTimeChanged = editEndTime.value !== origEndTime
 
-  if (startDateChanged) payload.targetDate = editStartDate.value
-  if (endDateChanged) payload.endDate = editEndDate.value
-  if (startTimeChanged || startDateChanged) payload.startTime = editStartTime.value
-  if (endTimeChanged || endDateChanged) payload.endTime = editEndTime.value
+  // In-shift or ended: starts_at is blocked
+  if (!isInShift.value && !isEnded.value) {
+    if (startDateChanged) payload.targetDate = editStartDate.value
+    if (startTimeChanged || startDateChanged) payload.startTime = editStartTime.value
+  }
+  if (!isEnded.value) {
+    if (endDateChanged) payload.endDate = editEndDate.value
+    if (endTimeChanged || endDateChanged) payload.endTime = editEndTime.value
+  }
   if (editNote.value.trim()) payload.note = editNote.value.trim()
 
   const origWeight = props.window.affinityWeight != null ? String(parseFloat(props.window.affinityWeight.toFixed(2))) : '1'
@@ -90,10 +106,19 @@ const hasChanged = computed(() => {
   const origStartDate = dateFromTimestamp(props.window.startsAt) || props.window.scheduledDate || ''
   const origEndDate = dateFromTimestamp(props.window.endsAt) || props.window.scheduledDate || ''
   const origWeight = props.window.affinityWeight != null ? String(parseFloat(props.window.affinityWeight.toFixed(2))) : '1'
-  return editStartDate.value !== origStartDate ||
-         editEndDate.value !== origEndDate ||
-         editStartTime.value !== fmtForInput(props.window.startTime) ||
-         editEndTime.value !== fmtForInput(props.window.endTime) ||
+
+  // Start fields only count as changed if editable (not in-shift or ended)
+  const startChanged = !isInShift.value && !isEnded.value && (
+    editStartDate.value !== origStartDate ||
+    editStartTime.value !== fmtForInput(props.window.startTime)
+  )
+  // End fields only count as changed if not ended
+  const endChanged = !isEnded.value && (
+    editEndDate.value !== origEndDate ||
+    editEndTime.value !== fmtForInput(props.window.endTime)
+  )
+
+  return startChanged || endChanged ||
          editNote.value.trim() !== '' ||
          editAffinityWeight.value !== origWeight
 })
@@ -155,13 +180,21 @@ const statusClass = computed(() => props.window.isActive ? 'open' : 'closed')
 
         <!-- Date + Time (edit mode) -->
         <template v-else>
+          <div v-if="isInShift" class="wm__shift-hint">
+            <i class='bx bx-info-circle'></i>
+            Ventana en turno — solo se puede modificar la hora de fin.
+          </div>
+          <div v-if="isEnded" class="wm__shift-hint wm__shift-hint--ended">
+            <i class='bx bx-info-circle'></i>
+            Ventana finalizada — horario no editable.
+          </div>
           <div class="wm__edit-row">
             <i class='bx bx-calendar wm__edit-icon'></i>
             <div class="wm__edit-row-fields">
               <label>Inicio</label>
               <div class="wm__edit-row-inputs">
-                <input type="date" v-model="editStartDate" class="wm__date-input">
-                <input type="time" v-model="editStartTime" class="wm__time-input">
+                <input type="date" v-model="editStartDate" class="wm__date-input" :disabled="isInShift || isEnded">
+                <input type="time" v-model="editStartTime" class="wm__time-input" :disabled="isInShift || isEnded">
               </div>
             </div>
           </div>
@@ -170,8 +203,8 @@ const statusClass = computed(() => props.window.isActive ? 'open' : 'closed')
             <div class="wm__edit-row-fields">
               <label>Fin</label>
               <div class="wm__edit-row-inputs">
-                <input type="date" v-model="editEndDate" class="wm__date-input">
-                <input type="time" v-model="editEndTime" class="wm__time-input">
+                <input type="date" v-model="editEndDate" class="wm__date-input" :disabled="isEnded">
+                <input type="time" v-model="editEndTime" class="wm__time-input" :disabled="isEnded">
               </div>
             </div>
           </div>
@@ -470,6 +503,30 @@ const statusClass = computed(() => props.window.isActive ? 'open' : 'closed')
 
 .wm__date-input:focus,
 .wm__time-input:focus { border-color: var(--primary-500); }
+
+.wm__date-input:disabled,
+.wm__time-input:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  background: var(--bg-card);
+}
+
+.wm__shift-hint {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  font-weight: 600;
+  color: #0369a1;
+  background: #e0f2fe;
+}
+
+.wm__shift-hint--ended {
+  color: var(--text-secondary);
+  background: var(--bg-card);
+}
 
 /* ===== Note input ===== */
 .wm__edit-note {

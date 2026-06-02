@@ -29,39 +29,28 @@ export const WorkWindowRepository = {
     return items.map((item) => new WorkWindow(item))
   },
 
-  _buildPatchBody({ startsAt = null, endsAt = null, note = null, inheritsOnReopen = null, affinityWeight = undefined } = {}) {
-    const body = {}
-    if (startsAt != null) body.starts_at = startsAt
-    if (endsAt != null) body.ends_at = endsAt
-    if (note != null) body.note = note
-    if (inheritsOnReopen != null) body.inherits_on_reopen = inheritsOnReopen
-    if (affinityWeight !== undefined) body.affinity_weight = affinityWeight
-    return body
+  _buildPatchItem(id, { startsAt = null, endsAt = null, note = null, inheritsOnReopen = null, affinityWeight = undefined } = {}) {
+    const item = { id }
+    if (startsAt != null) item.starts_at = startsAt
+    if (endsAt != null) item.ends_at = endsAt
+    if (note != null) item.note = note
+    if (inheritsOnReopen != null) item.inherits_on_reopen = inheritsOnReopen
+    if (affinityWeight !== undefined) item.affinity_weight = affinityWeight
+    return item
   },
 
   async update(id, fields = {}) {
-    const body = this._buildPatchBody(fields)
-    const { data } = await client.patch(`/work-windows/${id}`, body)
-    return new WorkWindow(data)
+    const item = this._buildPatchItem(id, fields)
+    const { data } = await client.patch('/work-windows', { windows: [item] })
+    const items = Array.isArray(data) ? data : data.data ?? []
+    return items.length > 0 ? new WorkWindow(items[0]) : null
   },
 
   async batchUpdate(items) {
-    const results = await Promise.allSettled(
-      items.map(({ id, ...fields }) => {
-        const body = this._buildPatchBody(fields)
-        return client.patch(`/work-windows/${id}`, body).then(r => r.data)
-      })
-    )
-    const updated = []
-    const failed = []
-    results.forEach((r, i) => {
-      if (r.status === 'fulfilled') {
-        updated.push(new WorkWindow(r.value))
-      } else {
-        failed.push({ id: items[i].id, reason: r.reason?.response?.data?.detail || r.reason?.message || 'Error' })
-      }
-    })
-    return { updated, failed }
+    const windows = items.map(({ id, ...fields }) => this._buildPatchItem(id, fields))
+    const { data } = await client.patch('/work-windows', { windows })
+    const result = Array.isArray(data) ? data : data.data ?? []
+    return { updated: result.map(w => new WorkWindow(w)), failed: [] }
   },
 
   async deleteWindows(ids) {

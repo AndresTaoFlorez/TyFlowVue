@@ -106,7 +106,7 @@ onUnmounted(() => {
 
     <div class="layout__overlay" @click="closeMobileSidebar"></div>
 
-    <AppSidebar @navigate="closeMobileSidebar" />
+    <AppSidebar :collapsed="sidebarCollapsed" @navigate="closeMobileSidebar" @toggle-sidebar="toggleSidebar" />
 
     <div
       v-if="!sidebarCollapsed && viewportWidth > 768"

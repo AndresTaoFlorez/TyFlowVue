@@ -461,6 +461,32 @@ const handleBatchGroup = async () => {
     showToast('Selecciona al menos 2 ventanas para agrupar.', 'error')
     return
   }
+
+  // Validate merge rules before sending to backend
+  const now = new Date()
+  const wins = calStore.windows.filter(w => selectedWindows.value.has(w.id))
+
+  // Rule: no ended windows (ends_at < now)
+  const ended = wins.filter(w => w.endsAt && new Date(w.endsAt) < now)
+  if (ended.length > 0) {
+    showToast(`No se puede agrupar: ${ended.length} ventana(s) ya finalizaron.`, 'error')
+    return
+  }
+
+  // Rule: only the earliest window (MIN starts_at) can be in-shift
+  const inShift = wins.filter(w => w.startsAt && new Date(w.startsAt) <= now && w.endsAt && new Date(w.endsAt) >= now && w.isActive)
+  if (inShift.length > 1) {
+    showToast('No se puede agrupar: más de una ventana está en turno.', 'error')
+    return
+  }
+  if (inShift.length === 1) {
+    const earliest = wins.reduce((a, b) => new Date(a.startsAt) < new Date(b.startsAt) ? a : b)
+    if (inShift[0].id !== earliest.id) {
+      showToast('Solo la ventana más temprana puede estar en turno al agrupar.', 'error')
+      return
+    }
+  }
+
   try {
     const result = await calStore.batchMerge(selectedWindows.value)
     const label = result.mode === 'homogeneous'
@@ -537,7 +563,12 @@ const handleGroupReschedule = async (data) => {
 // ---- Batch reschedule (drag selected windows) ----
 const handleBatchReschedule = async ({ ids, targetDate, deltaHours }) => {
   try {
-    await calStore.batchReschedule(ids, targetDate, deltaHours)
+    // Compute numeric deltaDays from targetDate and the first window's date
+    const firstWin = calStore.windows.find(w => ids.includes(w.id))
+    const origDate = new Date(firstWin.scheduledDate + 'T00:00:00')
+    const destDate = new Date(targetDate + 'T00:00:00')
+    const deltaDays = Math.round((destDate - origDate) / 86400000)
+    await calStore.batchReschedule(ids, deltaDays, deltaHours)
     showToast('Ventanas movidas.')
   } catch (e) {
     showToast(e.userMessage || 'Error al mover las ventanas.', 'error')

@@ -72,6 +72,36 @@
   --skeleton-base: #e5e7eb;
   --skeleton-shine: #f3f4f6;
 
+  /* Case status */
+  --status-open: #3B82F6;
+  --status-open-bg: #DBEAFE;
+  --status-assigned: #8B5CF6;
+  --status-assigned-bg: #EDE9FE;
+  --status-in-progress: #F59E0B;
+  --status-in-progress-bg: #FEF3C7;
+  --status-resolved: #10B981;
+  --status-resolved-bg: #D1FAE5;
+  --status-closed: #6B7280;
+  --status-closed-bg: #F3F4F6;
+
+  /* Case priority */
+  --priority-low: #6B7280;
+  --priority-low-bg: #F3F4F6;
+  --priority-normal: #3B82F6;
+  --priority-normal-bg: #DBEAFE;
+  --priority-high: #F97316;
+  --priority-high-bg: #FFEDD5;
+  --priority-urgent: #EF4444;
+  --priority-urgent-bg: #FEE2E2;
+
+  /* Case source */
+  --source-outlook: #7C3AED;
+  --source-outlook-bg: #EDE9FE;
+  --source-judit: #0891B2;
+  --source-judit-bg: #CFFAFE;
+  --source-manual: #065F46;
+  --source-manual-bg: #D1FAE5;
+
   /* Layout */
   --sidebar-width: 260px;
   --sidebar-width-collapsed: 72px;
@@ -146,4 +176,22 @@
   /* Skeleton shimmer */
   --skeleton-base: #374151;
   --skeleton-shine: #4B5563;
+
+  /* Case status */
+  --status-open-bg: #1E3A5F;
+  --status-assigned-bg: #2E1065;
+  --status-in-progress-bg: #451A03;
+  --status-resolved-bg: #064E3B;
+  --status-closed-bg: #374151;
+
+  /* Case priority */
+  --priority-low-bg: #374151;
+  --priority-normal-bg: #1E3A5F;
+  --priority-high-bg: #7C2D12;
+  --priority-urgent-bg: #7F1D1D;
+
+  /* Case source */
+  --source-outlook-bg: #2E1065;
+  --source-judit-bg: #164E63;
+  --source-manual-bg: #064E3B;
 }

@@ -17,7 +17,37 @@ export const SupportLevelRepository = {
     return new SupportLevel(data)
   },
 
+  async update(supportLevelId, supportLevelData) {
+    const { data } = await client.put(`/support-levels/${supportLevelId}`, supportLevelData)
+    return new SupportLevel(data)
+  },
+
   async delete(supportLevelId) {
     await client.delete(`/support-levels/${supportLevelId}`)
+  },
+
+  // ── Pivot: Support Level ↔ Support Category ──
+
+  async fetchSupportCategories(supportLevelId) {
+    const { data } = await client.get(`/support-levels/${supportLevelId}/support-categories`)
+    return Array.isArray(data) ? data : data.data ?? []
+  },
+
+  async addSupportCategory(supportLevelId, supportCategoryId) {
+    const { data } = await client.post(`/support-levels/${supportLevelId}/support-categories`, {
+      support_category_id: supportCategoryId,
+    })
+    return data
+  },
+
+  async syncSupportCategories(supportLevelId, supportCategoryIds) {
+    const { data } = await client.put(`/support-levels/${supportLevelId}/support-categories/sync`, {
+      support_category_ids: supportCategoryIds,
+    })
+    return Array.isArray(data) ? data : data.data ?? []
+  },
+
+  async removeSupportCategoryPivot(recordId) {
+    await client.delete(`/support-levels/support-categories/${recordId}`)
   },
 }

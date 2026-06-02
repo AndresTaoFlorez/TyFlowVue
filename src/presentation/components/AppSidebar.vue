@@ -1,11 +1,16 @@
 <script setup>
 import { useAuthStore } from '@/presentation/stores/useAuthStore'
 import { useRouter } from 'vue-router'
+import logoSrc from '@/assets/logo.svg'
 
 const authStore = useAuthStore()
 const router = useRouter()
 
-defineEmits(['navigate'])
+defineProps({
+  collapsed: { type: Boolean, default: false }
+})
+
+defineEmits(['navigate', 'toggle-sidebar'])
 
 const handleLogout = () => {
   authStore.logout()
@@ -15,6 +20,15 @@ const handleLogout = () => {
 
 <template>
   <aside class="layout__sidebar sidebar">
+    <div class="sidebar__header">
+      <div class="sidebar__brand">
+        <img :src="logoSrc" alt="TyFlow" class="sidebar__logo" />
+        <span class="sidebar__brand-name sidebar__label">TyFlow</span>
+      </div>
+      <button class="sidebar__collapse-btn" @click="$emit('toggle-sidebar')" aria-label="Toggle sidebar">
+        <i class='bx' :class="collapsed ? 'bx-chevron-right' : 'bx-chevron-left'"></i>
+      </button>
+    </div>
     <ul class="sidebar__list">
       <li class="sidebar__item">
         <RouterLink :to="{ name: 'dashboard' }" class="sidebar__link" active-class="sidebar__link--active" @click="$emit('navigate')">

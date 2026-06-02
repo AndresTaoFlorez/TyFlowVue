@@ -2,14 +2,16 @@
 import { ref, computed, onMounted } from 'vue'
 import { useAuthStore } from '@/presentation/stores/useAuthStore'
 import { useSettingsStore } from '@/presentation/stores/useSettingsStore'
+import { useUserStore } from '@/presentation/stores/useUserStore'
 import SettingsAppearance from '@/presentation/components/SettingsAppearance.vue'
 import SettingsNotifications from '@/presentation/components/SettingsNotifications.vue'
 import SettingsCalendar from '@/presentation/components/SettingsCalendar.vue'
 import SettingsRoles from '@/presentation/components/SettingsRoles.vue'
-import SettingsSupportLevels from '@/presentation/components/SettingsSupportLevels.vue'
+import SettingsHierarchy from '@/presentation/components/SettingsHierarchy.vue'
 
 const authStore = useAuthStore()
 const settingsStore = useSettingsStore()
+const userStore = useUserStore()
 
 const sections = computed(() => {
   const items = [
@@ -20,7 +22,7 @@ const sections = computed(() => {
   if (authStore.isAdmin) {
     items.push(
       { id: 'roles', label: 'Roles', icon: 'bx-shield-quarter' },
-      { id: 'support-levels', label: 'Niveles de Soporte', icon: 'bx-layer' },
+      { id: 'hierarchy', label: 'Jerarquía de Soporte', icon: 'bx-sitemap' },
     )
   }
   return items
@@ -28,8 +30,9 @@ const sections = computed(() => {
 
 const activeSection = ref('appearance')
 
-onMounted(() => {
+onMounted(async () => {
   if (authStore.isAdmin) {
+    await userStore.loadSelects()
     settingsStore.loadAll()
   }
 })
@@ -56,7 +59,7 @@ onMounted(() => {
       <SettingsNotifications v-else-if="activeSection === 'notifications'" />
       <SettingsCalendar v-else-if="activeSection === 'calendar'" />
       <SettingsRoles v-else-if="activeSection === 'roles'" />
-      <SettingsSupportLevels v-else-if="activeSection === 'support-levels'" />
+      <SettingsHierarchy v-else-if="activeSection === 'hierarchy'" />
     </div>
   </div>
 </template>
