@@ -758,11 +758,10 @@ const onResizeEnd = () => {
       deltaSlots,
     })
   } else if (group) {
-    emit('group-resize', {
-      group,
-      startTime: fmtHM(sH, sM),
-      endTime: fmtHM(eH, eM),
-    })
+    const gPayload = { group }
+    if (dir === 'top') gPayload.startTime = fmtHM(sH, sM)
+    else gPayload.endTime = fmtHM(eH, eM)
+    emit('group-resize', gPayload)
   } else {
     const payload = { window: w._originalWindow || w }
     if (dir === 'top') {

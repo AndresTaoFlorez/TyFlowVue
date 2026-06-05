@@ -72,12 +72,17 @@ const abrirEditar = async () => {
     let roleIds = []
     let supportLevelIds = []
     let applicationIds = []
+    let applicationLevels = []
 
     if (isAdmin.value) {
       await userStore.loadSelects()
       roleIds = resolverIds(p.roleNames, userStore.roles)
       supportLevelIds = resolverIds(p.supportLevelNames, userStore.supportLevels)
       applicationIds = p.applicationAssignments.map(a => a.application_id)
+      applicationLevels = p.applicationAssignments.map(a => ({
+        application_id: a.application_id,
+        support_level_id: a.support_level_id,
+      }))
     }
 
     emailOriginal.value = p.email || ''
@@ -91,6 +96,7 @@ const abrirEditar = async () => {
       roleIds,
       supportLevelIds,
       applicationIds,
+      applicationLevels,
     }
     formularioOriginal.value = JSON.parse(JSON.stringify(formulario.value))
     editando.value = true

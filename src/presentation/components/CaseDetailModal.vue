@@ -5,51 +5,19 @@ import { useUserStore } from '@/presentation/stores/useUserStore'
 import CaseStatusTimeline from '@/presentation/components/CaseStatusTimeline.vue'
 import CaseAssignPanel from '@/presentation/components/CaseAssignPanel.vue'
 import CaseReassignModal from '@/presentation/components/CaseReassignModal.vue'
+import { useCaseDetail } from '@/presentation/composables/useCaseDetail'
 
 const store = useCasesStore()
 const userStore = useUserStore()
 
-const showAssign = ref(false)
-const showReassign = ref(false)
-
 const c = computed(() => store.selectedCase)
-
-const statusOptions = ['open', 'assigned', 'in_progress', 'resolved', 'closed']
-const statusLabels = { open: 'Abierto', assigned: 'Asignado', in_progress: 'En progreso', resolved: 'Resuelto', closed: 'Cerrado' }
-
-function onAssignDone() {
-  showAssign.value = false
-  if (c.value) store.loadCaseById(c.value.id)
-}
-
-function onReassignDone() {
-  showReassign.value = false
-  if (c.value) store.loadCaseById(c.value.id)
-}
-
-async function changeStatus(newStatus) {
-  await store.updateCaseStatus(c.value.id, newStatus)
-}
-
-function fmtDate(iso) {
-  if (!iso) return '—'
-  return new Date(iso).toLocaleString('es-CO', {
-    day: '2-digit', month: 'short', year: 'numeric',
-    hour: '2-digit', minute: '2-digit',
-  })
-}
-
-const specialistName = computed(() => {
-  if (!c.value?.specialistId) return null
-  const s = store.specialistWorkloads.find(w => w.specialist_id === c.value.specialistId)
-  return s?.full_name ?? c.value.specialistId.slice(0, 8)
-})
-
-const categoryName = computed(() => {
-  if (!c.value?.supportCategoryId) return null
-  const cat = userStore.supportCategories.find(sc => sc.id === c.value.supportCategoryId)
-  return cat?.name ?? c.value.supportCategoryId.slice(0, 8)
-})
+const {
+  assignMode, toggleAssign, showReassign,
+  statusOptions, statusLabels,
+  applicationName, supportLevelName, specialistName, categoryName,
+  changeStatus, fmtDate,
+  onAssignDone, onReassignDone,
+} = useCaseDetail(c)
 
 function onOverlay(e) {
   if (e.target === e.currentTarget) store.closeDetail()
@@ -102,8 +70,8 @@ function onKeydown(e) {
         </div>
 
         <!-- Error -->
-        <div v-else-if="store.error && !c" class="cdm__error">
-          <i class="bx bx-error-circle"></i> {{ store.error }}
+        <div v-else-if="store.detailError && !c" class="cdm__error">
+          <i class="bx bx-error-circle"></i> {{ store.detailError }}
         </div>
 
         <!-- Content -->
@@ -113,8 +81,8 @@ function onKeydown(e) {
           <div class="cdm__badges">
             <span class="cdm__badge" :style="{ background: c.statusBg, color: c.statusColor }">{{ c.statusLabel }}</span>
             <span class="cdm__badge" :style="{ background: c.priorityBg, color: c.priorityColor }">{{ c.priorityLabel }}</span>
-            <span class="cdm__badge" :style="{ background: c.sourceBg, color: c.sourceColor }">
-              <i :class="'bx ' + c.sourceIcon" style="font-size: 0.7rem"></i> {{ c.sourceLabel }}
+            <span class="cdm__badge" :style="{ background: c.originBg, color: c.originColor }">
+              <i :class="'bx ' + c.originIcon" style="font-size: 0.7rem"></i> {{ c.originLabel }}
             </span>
           </div>
 
@@ -123,9 +91,22 @@ function onKeydown(e) {
 
           <!-- Action bar -->
           <div class="cdm__actions">
-            <button v-if="c.isAssignable" class="cdm__action cdm__action--primary" @click="showAssign = !showAssign">
-              <i class="bx bx-user-plus"></i> Asignar
-            </button>
+            <template v-if="c.isAssignable">
+              <button
+                class="cdm__action"
+                :class="{ 'cdm__action--active': assignMode === 'wdd' }"
+                @click="toggleAssign('wdd')"
+              >
+                <i class="bx bx-bot"></i> WDD Auto
+              </button>
+              <button
+                class="cdm__action"
+                :class="{ 'cdm__action--active': assignMode === 'manual' }"
+                @click="toggleAssign('manual')"
+              >
+                <i class="bx bx-user-plus"></i> Manual
+              </button>
+            </template>
             <button v-if="c.isReassignable" class="cdm__action" @click="showReassign = true">
               <i class="bx bx-transfer"></i> Reasignar
             </button>
@@ -138,12 +119,28 @@ function onKeydown(e) {
           </div>
 
           <!-- Assign panel -->
-          <CaseAssignPanel v-if="showAssign" :case-id="c.id" @done="onAssignDone" />
+          <CaseAssignPanel v-if="assignMode" :case-id="c.id" :mode="assignMode" @done="onAssignDone" />
 
           <!-- Details grid -->
           <div class="cdm__section">
             <h4 class="cdm__section-title">Detalles</h4>
             <div class="cdm__grid">
+              <div class="cdm__detail">
+                <span class="cdm__detail-label">Aplicación</span>
+                <span class="cdm__detail-value">{{ applicationName ?? '—' }}</span>
+              </div>
+              <div class="cdm__detail">
+                <span class="cdm__detail-label">Nivel</span>
+                <span class="cdm__detail-value">{{ supportLevelName ?? '—' }}</span>
+              </div>
+              <div class="cdm__detail">
+                <span class="cdm__detail-label">Categoría</span>
+                <span class="cdm__detail-value">{{ categoryName ?? '—' }}</span>
+              </div>
+              <div class="cdm__detail">
+                <span class="cdm__detail-label">Especialista</span>
+                <span class="cdm__detail-value">{{ specialistName ?? '—' }}</span>
+              </div>
               <div class="cdm__detail">
                 <span class="cdm__detail-label">Creado</span>
                 <span class="cdm__detail-value">{{ fmtDate(c.createdAt) }}</span>
@@ -151,14 +148,6 @@ function onKeydown(e) {
               <div class="cdm__detail">
                 <span class="cdm__detail-label">Asignado</span>
                 <span class="cdm__detail-value">{{ fmtDate(c.assignedAt) }}</span>
-              </div>
-              <div class="cdm__detail">
-                <span class="cdm__detail-label">Especialista</span>
-                <span class="cdm__detail-value">{{ specialistName ?? '—' }}</span>
-              </div>
-              <div class="cdm__detail">
-                <span class="cdm__detail-label">Categoría</span>
-                <span class="cdm__detail-value">{{ categoryName ?? '—' }}</span>
               </div>
               <div class="cdm__detail">
                 <span class="cdm__detail-label">Resuelto</span>
@@ -204,13 +193,15 @@ function onKeydown(e) {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 0.75rem;
   padding: 1.5rem;
   outline: none;
 }
 
-/* Nav arrows */
+/* Nav arrows — fixed position so they never displace the panel */
 .cdm__nav {
+  position: fixed;
+  top: 50%;
+  transform: translateY(-50%);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -222,10 +213,12 @@ function onKeydown(e) {
   color: var(--text-primary);
   font-size: 1.5rem;
   cursor: pointer;
-  flex-shrink: 0;
   transition: all 0.15s;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  z-index: 210;
 }
+.cdm__nav--prev { left: 1rem; }
+.cdm__nav--next { right: 1rem; }
 .cdm__nav:hover {
   background: var(--primary-500);
   color: white;
@@ -358,12 +351,12 @@ function onKeydown(e) {
   transition: all 0.12s;
 }
 .cdm__action:hover { border-color: var(--primary-500); color: var(--primary-500); }
-.cdm__action--primary {
+.cdm__action--active {
   background: var(--primary-500);
   color: white;
   border-color: var(--primary-500);
 }
-.cdm__action--primary:hover { background: var(--primary-600); color: white; }
+.cdm__action--active:hover { background: var(--primary-600); color: white; }
 
 .cdm__status-group {
   display: flex;
@@ -433,7 +426,7 @@ function onKeydown(e) {
 
 /* Responsive */
 @media (max-width: 768px) {
-  .cdm__overlay { padding: 0; gap: 0; }
+  .cdm__overlay { padding: 0; }
   .cdm__panel {
     max-width: 100%;
     max-height: 100%;
@@ -441,14 +434,12 @@ function onKeydown(e) {
     border-radius: 0;
   }
   .cdm__nav {
-    position: fixed;
+    top: auto;
     bottom: 1.25rem;
-    z-index: 210;
+    transform: none;
     width: 44px;
     height: 44px;
   }
-  .cdm__nav--prev { left: 1rem; }
-  .cdm__nav--next { right: 1rem; }
   .cdm__grid { grid-template-columns: 1fr 1fr; }
 }
 </style>

@@ -10,7 +10,7 @@ export const ConversationRepository = {
 
     const { data } = await client.get('/conversations', { params })
     return {
-      data: (data.data || []).map((item) => new Conversation(item)),
+      data: (data.items || data.data || []).map((item) => new Conversation(item)),
       total: data.total,
       page: data.page,
       pageSize: data.page_size,

@@ -1,16 +1,20 @@
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
-import { RoleRepository } from '@/infrastructure/repositories/RoleRepository'
+import { ref, computed } from 'vue'
 import { SupportLevelRepository } from '@/infrastructure/repositories/SupportLevelRepository'
 import { SupportCategoryRepository } from '@/infrastructure/repositories/SupportCategoryRepository'
 import { ApplicationRepository } from '@/infrastructure/repositories/ApplicationRepository'
+import { AppLevelCategoryRepository } from '@/infrastructure/repositories/AppLevelCategoryRepository'
+import { useUserStore } from '@/presentation/stores/useUserStore'
 
 export const useSettingsStore = defineStore('settings', () => {
-  const roles = ref([])
-  const supportLevels = ref([])
-  const supportCategories = ref([])
-  const loading = ref(false)
   const error = ref(null)
+
+  // Reference data: read from useUserStore (single source of truth)
+  const userStore = useUserStore()
+  const roles = computed(() => userStore.roles)
+  const supportLevels = computed(() => userStore.supportLevels)
+  const supportCategories = computed(() => userStore.supportCategories)
+  const loading = computed(() => userStore.loadingSelects)
 
   // ── Hierarchy state ──
   const selectedAppId = ref(null)
@@ -19,79 +23,50 @@ export const useSettingsStore = defineStore('settings', () => {
   const levelCategoryPivots = ref([])  // pivot records for selected level
   const loadingPivots = ref(false)
 
-  async function loadRoles() {
-    try {
-      roles.value = await RoleRepository.fetchAll()
-    } catch (e) {
-      error.value = e.message || 'Error cargando roles'
-    }
-  }
-
-  async function loadSupportLevels() {
-    try {
-      supportLevels.value = await SupportLevelRepository.fetchAll()
-    } catch (e) {
-      error.value = e.message || 'Error cargando niveles de soporte'
-    }
-  }
-
-  async function loadSupportCategories() {
-    try {
-      supportCategories.value = await SupportCategoryRepository.fetchAll()
-    } catch (e) {
-      error.value = e.message || 'Error cargando categorías de soporte'
-    }
-  }
-
-  async function loadAll() {
-    loading.value = true
-    error.value = null
-    await Promise.all([loadRoles(), loadSupportLevels(), loadSupportCategories()])
-    loading.value = false
-  }
-
   // ── CRUD: Support Levels ──
   async function createSupportLevel(payload) {
     error.value = null
     const created = await SupportLevelRepository.create(payload)
-    supportLevels.value.push(created)
+    userStore.supportLevels.push(created)
     return created
   }
 
   async function updateSupportLevel(id, payload) {
     error.value = null
     const updated = await SupportLevelRepository.update(id, payload)
-    const idx = supportLevels.value.findIndex(sl => sl.id === id)
-    if (idx !== -1) supportLevels.value[idx] = updated
+    const idx = userStore.supportLevels.findIndex(sl => sl.id === id)
+    if (idx !== -1) userStore.supportLevels[idx] = updated
     return updated
   }
 
   async function deleteSupportLevel(id) {
     error.value = null
     await SupportLevelRepository.delete(id)
-    supportLevels.value = supportLevels.value.filter(sl => sl.id !== id)
+    const idx = userStore.supportLevels.findIndex(sl => sl.id === id)
+    if (idx !== -1) userStore.supportLevels.splice(idx, 1)
   }
 
   // ── CRUD: Support Categories ──
   async function createSupportCategory(payload) {
     error.value = null
     const created = await SupportCategoryRepository.create(payload)
-    supportCategories.value.push(created)
+    userStore.supportCategories.push(created)
     return created
   }
 
   async function updateSupportCategory(id, payload) {
     error.value = null
     const updated = await SupportCategoryRepository.update(id, payload)
-    const idx = supportCategories.value.findIndex(sc => sc.id === id)
-    if (idx !== -1) supportCategories.value[idx] = updated
+    const idx = userStore.supportCategories.findIndex(sc => sc.id === id)
+    if (idx !== -1) userStore.supportCategories[idx] = updated
     return updated
   }
 
   async function deleteSupportCategory(id) {
     error.value = null
     await SupportCategoryRepository.delete(id)
-    supportCategories.value = supportCategories.value.filter(sc => sc.id !== id)
+    const idx = userStore.supportCategories.findIndex(sc => sc.id === id)
+    if (idx !== -1) userStore.supportCategories.splice(idx, 1)
   }
 
   // ── Hierarchy: App → Level pivots ──
@@ -121,13 +96,13 @@ export const useSettingsStore = defineStore('settings', () => {
     }
   }
 
-  // ── Hierarchy: Level → Category pivots ──
+  // ── Hierarchy: (App, Level) → Category pivots ──
   async function loadLevelCategories(levelId) {
     selectedLevelId.value = levelId
-    if (!levelId) { levelCategoryPivots.value = []; return }
+    if (!levelId || !selectedAppId.value) { levelCategoryPivots.value = []; return }
     loadingPivots.value = true
     try {
-      levelCategoryPivots.value = await SupportLevelRepository.fetchSupportCategories(levelId)
+      levelCategoryPivots.value = await AppLevelCategoryRepository.fetchAll(selectedAppId.value, levelId)
     } catch (e) {
       error.value = e.message || 'Error cargando categorías del nivel'
       levelCategoryPivots.value = []
@@ -139,7 +114,7 @@ export const useSettingsStore = defineStore('settings', () => {
   async function syncLevelCategories(levelId, categoryIds) {
     error.value = null
     try {
-      levelCategoryPivots.value = await SupportLevelRepository.syncSupportCategories(levelId, categoryIds)
+      levelCategoryPivots.value = await AppLevelCategoryRepository.sync(selectedAppId.value, levelId, categoryIds)
     } catch (e) {
       error.value = e.message || 'Error sincronizando categorías'
       throw e
@@ -153,7 +128,6 @@ export const useSettingsStore = defineStore('settings', () => {
     selectedAppId, selectedLevelId,
     appLevelPivots, levelCategoryPivots, loadingPivots,
     // Actions
-    loadAll, loadRoles, loadSupportLevels, loadSupportCategories,
     createSupportLevel, updateSupportLevel, deleteSupportLevel,
     createSupportCategory, updateSupportCategory, deleteSupportCategory,
     loadAppLevels, syncAppLevels,

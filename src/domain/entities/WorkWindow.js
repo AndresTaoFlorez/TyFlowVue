@@ -2,7 +2,7 @@ export class WorkWindow {
   constructor({
     id, specialist_id, application_id, starts_at, ends_at,
     opening_count = 0, current_count = 0, inherits_on_reopen = false,
-    is_active = true, created_at = null, opened_at = null, closed_at = null,
+    is_active = true, created_at = null, deactivated_at = null,
     closing_count = null, inherited_from_window_id = null,
     affinity_weight = null, deleted_at = null,
   }) {
@@ -16,8 +16,7 @@ export class WorkWindow {
     this.inheritsOnReopen = inherits_on_reopen
     this.isActive = is_active
     this.createdAt = created_at
-    this.openedAt = opened_at
-    this.closedAt = closed_at
+    this.deactivatedAt = deactivated_at
     this.closingCount = closing_count
     this.inheritedFromWindowId = inherited_from_window_id
     this.affinityWeight = affinity_weight
@@ -64,6 +63,24 @@ export class WorkWindow {
     return d.getHours() + d.getMinutes() / 60
   }
 
+  // --- Temporal guards (match backend fn_update_work_window rules) ---
+
+  /** Window is currently in shift: now() between starts_at and ends_at AND active */
+  get isInShift() {
+    if (!this.startsAt || !this.endsAt || !this.isActive) return false
+    const now = Date.now()
+    return now >= new Date(this.startsAt).getTime() && now <= new Date(this.endsAt).getTime()
+  }
+
+  /** Window start has already passed */
+  get hasStarted() {
+    if (!this.startsAt) return false
+    return Date.now() >= new Date(this.startsAt).getTime()
+  }
+
+  /** Can starts_at be changed? Blocked only while in-shift */
+  get canEditStart() { return !this.isInShift }
+
   get timeRange() {
     const fmt = (t) => {
       if (!t) return '?'
@@ -85,8 +102,7 @@ export class WorkWindow {
       inherits_on_reopen: this.inheritsOnReopen,
       is_active: this.isActive,
       created_at: this.createdAt,
-      opened_at: this.openedAt,
-      closed_at: this.closedAt,
+      deactivated_at: this.deactivatedAt,
       closing_count: this.closingCount,
       inherited_from_window_id: this.inheritedFromWindowId,
       affinity_weight: this.affinityWeight,

@@ -1,16 +1,14 @@
 <script setup>
-import { ref, computed, watch } from 'vue'
+import { ref, computed } from 'vue'
 import { useCasesStore } from '@/presentation/stores/useCasesStore'
 import { useUserStore } from '@/presentation/stores/useUserStore'
-import { ApplicationRepository } from '@/infrastructure/repositories/ApplicationRepository'
-import { SupportLevelRepository } from '@/infrastructure/repositories/SupportLevelRepository'
+import { useCascadingSelects } from '@/presentation/composables/useCascadingSelects'
 
 const store = useCasesStore()
 const userStore = useUserStore()
 
 const form = ref({
   applicationId: '',
-  source: 'manual',
   subject: '',
   description: '',
   priority: 'normal',
@@ -21,43 +19,14 @@ const form = ref({
 const submitting = ref(false)
 const feedback = ref(null)
 
-// Cascading data
-const availableLevels = ref([])
-const availableCategories = ref([])
-const loadingLevels = ref(false)
-const loadingCategories = ref(false)
-
 const applications = computed(() => userStore.applications ?? [])
 
-// App changed → load levels, clear downstream
-watch(() => form.value.applicationId, async (appId) => {
-  form.value.supportLevelId = ''
-  form.value.supportCategoryId = ''
-  availableLevels.value = []
-  availableCategories.value = []
-  if (!appId) return
-  loadingLevels.value = true
-  try {
-    const pivots = await ApplicationRepository.fetchSupportLevels(appId)
-    const ids = pivots.map(p => p.support_level_id)
-    availableLevels.value = (userStore.supportLevels ?? []).filter(l => ids.includes(l.id))
-  } catch { /* silent */ }
-  finally { loadingLevels.value = false }
-})
-
-// Level changed → load categories, clear downstream
-watch(() => form.value.supportLevelId, async (levelId) => {
-  form.value.supportCategoryId = ''
-  availableCategories.value = []
-  if (!levelId) return
-  loadingCategories.value = true
-  try {
-    const pivots = await SupportLevelRepository.fetchSupportCategories(levelId)
-    const ids = pivots.map(p => p.support_category_id)
-    availableCategories.value = (userStore.supportCategories ?? []).filter(c => ids.includes(c.id))
-  } catch { /* silent */ }
-  finally { loadingCategories.value = false }
-})
+const { availableLevels, availableCategories, loadingLevels, loadingCategories } =
+  useCascadingSelects(
+    computed(() => form.value.applicationId),
+    computed({ get: () => form.value.supportLevelId, set: v => form.value.supportLevelId = v }),
+    computed({ get: () => form.value.supportCategoryId, set: v => form.value.supportCategoryId = v }),
+  )
 
 const canSubmit = computed(() =>
   form.value.subject.trim() && form.value.applicationId && !submitting.value
@@ -70,19 +39,19 @@ async function handleSubmit() {
 
   try {
     const payload = {
-      application_id: form.value.applicationId,
-      source: form.value.source,
+      applicationId: form.value.applicationId,
+      origin: { type: 'tyflow' },
       subject: form.value.subject.trim(),
       description: form.value.description.trim() || null,
       priority: form.value.priority,
-      support_level_id: form.value.supportLevelId || null,
-      support_category_id: form.value.supportCategoryId || null,
+      supportLevelId: form.value.supportLevelId || undefined,
+      supportCategoryId: form.value.supportCategoryId || undefined,
     }
     await store.createCase(payload)
     feedback.value = { type: 'success', text: 'Caso creado exitosamente.' }
     setTimeout(() => store.showCreateModal = false, 800)
   } catch (e) {
-    feedback.value = { type: 'error', text: store.error || e.message || 'Error creando caso' }
+    feedback.value = { type: 'error', text: store.actionError || e.message || 'Error creando caso' }
   } finally {
     submitting.value = false
   }
@@ -142,22 +111,6 @@ function onOverlay(e) {
                   <option value="">— Seleccionar —</option>
                   <option v-for="app in applications" :key="app.id" :value="app.id">{{ app.name }}</option>
                 </select>
-              </div>
-
-              <div class="ccm__field">
-                <label class="ccm__label">Origen</label>
-                <div class="ccm__pills">
-                  <button
-                    v-for="s in ['outlook', 'judit', 'manual']"
-                    :key="s"
-                    class="ccm__pill"
-                    :class="[`ccm__pill--${s}`, { 'ccm__pill--sel': form.source === s }]"
-                    @click="form.source = s"
-                  >
-                    <i :class="'bx ' + (s === 'outlook' ? 'bx-envelope' : s === 'judit' ? 'bx-bot' : 'bx-edit')"></i>
-                    {{ s === 'outlook' ? 'Outlook' : s === 'judit' ? 'Judit' : 'Manual' }}
-                  </button>
-                </div>
               </div>
 
               <div class="ccm__field">
@@ -343,10 +296,6 @@ function onOverlay(e) {
 .ccm__pill--normal.ccm__pill--sel { background: var(--priority-normal-bg); border-color: var(--priority-normal); color: var(--priority-normal); }
 .ccm__pill--high.ccm__pill--sel { background: var(--priority-high-bg); border-color: var(--priority-high); color: var(--priority-high); }
 .ccm__pill--urgent.ccm__pill--sel { background: var(--priority-urgent-bg); border-color: var(--priority-urgent); color: var(--priority-urgent); }
-.ccm__pill--outlook.ccm__pill--sel { background: var(--source-outlook-bg); border-color: var(--source-outlook); color: var(--source-outlook); }
-.ccm__pill--judit.ccm__pill--sel { background: var(--source-judit-bg); border-color: var(--source-judit); color: var(--source-judit); }
-.ccm__pill--manual.ccm__pill--sel { background: var(--source-manual-bg); border-color: var(--source-manual); color: var(--source-manual); }
-
 /* Feedback */
 .ccm__feedback {
   display: flex;

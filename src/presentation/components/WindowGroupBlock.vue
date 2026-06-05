@@ -1,6 +1,15 @@
 <script setup>
 import { computed } from 'vue'
 
+function getLuminance(hex) {
+  const h = hex.replace('#', '')
+  const r = parseInt(h.substring(0, 2), 16) / 255
+  const g = parseInt(h.substring(2, 4), 16) / 255
+  const b = parseInt(h.substring(4, 6), 16) / 255
+  const toLinear = c => c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4
+  return 0.2126 * toLinear(r) + 0.7152 * toLinear(g) + 0.0722 * toLinear(b)
+}
+
 const props = defineProps({
   group: { type: Object, required: true },
   hourHeight: { type: Number, default: 60 },
@@ -46,18 +55,27 @@ const subBars = () => {
     const spec = props.specialists.find(s => s.specialistId === w.specialistId)
     const app = props.applications.find(a => a.id === w.applicationId)
     const color = app?.color || app?.theme?.color || '#8b8fea'
-    const initials = spec?.fullName
-      ? spec.fullName.split(' ').slice(0, 2).map(p => p[0]).join('')
+    const fullName = spec?.fullName ?? ''
+    const initials = fullName
+      ? fullName.split(' ').slice(0, 2).map(p => p[0]).join('').toUpperCase()
       : '?'
 
     // Vertical position within the group block
     const barTop = ((w.startHour - gStart) / gDuration) * gH
     const barHeight = Math.max(8, ((w.endHour - w.startHour) / gDuration) * gH)
 
+    // Text color based on luminance
+    const isDark = getLuminance(color) < 0.45
+    const textColor = isDark
+      ? 'color-mix(in oklch, var(--bar-color) 70%, white)'
+      : 'color-mix(in oklch, var(--bar-color) 70%, black)'
+
     return {
       id: w.id,
-      initials: initials.toUpperCase(),
+      label: fullName || initials,
+      initials,
       color,
+      textColor,
       isOpen: w.isActive,
       isSelected: props.selectedIds.has(w.id),
       isCut: props.cutIds.has(w.id),
@@ -76,53 +94,42 @@ const onHandleDown = (direction, e) => {
 </script>
 
 <template>
-  <div
-    class="wgb"
-    :class="{
-      'wgb--compact': compact,
-      'wgb--selected': hasSelected,
-      'wgb--all-selected': allSelected,
-      'wgb--cut': allCut,
-      'wgb--has-inactive': hasInactive,
-      'wgb--all-inactive': allInactive,
-    }"
-    :style="{
-      top: groupTop() + 'px',
-      height: groupHeight() + 'px',
-      left: left(),
-      width: width(),
-    }"
-    @click="$emit('click', group, $event)"
-  >
+  <div class="wgb" :class="{
+    'wgb--compact': compact,
+    'wgb--selected': hasSelected,
+    'wgb--all-selected': allSelected,
+    'wgb--cut': allCut,
+    'wgb--has-inactive': hasInactive,
+    'wgb--all-inactive': allInactive,
+  }" :style="{
+    top: groupTop() + 'px',
+    height: groupHeight() + 'px',
+    left: left(),
+    width: width(),
+  }" @click="$emit('click', group, $event)">
     <!-- Resize handle top -->
-    <div
-      v-if="selectable"
-      class="wgb__handle wgb__handle--top"
-      @mousedown="onHandleDown('top', $event)"
-      @touchstart.stop.prevent="onHandleDown('top', $event)"
-    ></div>
+    <div v-if="selectable" class="wgb__handle wgb__handle--top" @mousedown="onHandleDown('top', $event)"
+      @touchstart.stop.prevent="onHandleDown('top', $event)"></div>
 
     <!-- Sub-bars -->
     <div class="wgb__bars">
-      <div
-        v-for="bar in subBars()"
-        :key="bar.id"
-        class="wgb__bar"
-        :class="{
-          'wgb__bar--open': bar.isOpen,
-          'wgb__bar--inactive': !bar.isOpen,
-          'wgb__bar--selected': bar.isSelected,
-          'wgb__bar--cut': bar.isCut,
-        }"
-        :style="{
-          left: bar.left,
-          width: bar.width,
-          top: bar.barTop + 'px',
-          height: bar.barHeight + 'px',
-          '--bar-color': bar.color,
-        }"
-      >
-        <span v-if="!compact" class="wgb__bar-initials">{{ bar.initials }}</span>
+      <div v-for="bar in subBars()" :key="bar.id" class="wgb__bar" :class="{
+        'wgb__bar--open': bar.isOpen,
+        'wgb__bar--inactive': !bar.isOpen,
+        'wgb__bar--selected': bar.isSelected,
+        'wgb__bar--cut': bar.isCut,
+      }" :style="{
+        left: bar.left,
+        width: bar.width,
+        top: bar.barTop + 'px',
+        height: bar.barHeight + 'px',
+        '--bar-color': bar.color,
+        '--bar-text-color': bar.textColor,
+      }">
+        <template v-if="!compact">
+          <span class="wgb__bar-name">{{ bar.label }}</span>
+          <span class="wgb__bar-initials">{{ bar.initials }}</span>
+        </template>
         <span v-if="compact && bar.barHeight >= 16" class="wgb__bar-initials wgb__bar-initials--compact">{{ bar.initials }}</span>
       </div>
     </div>
@@ -131,12 +138,8 @@ const onHandleDown = (direction, e) => {
     <div class="wgb__badge">{{ count() }}</div>
 
     <!-- Resize handle bottom -->
-    <div
-      v-if="selectable"
-      class="wgb__handle wgb__handle--bottom"
-      @mousedown="onHandleDown('bottom', $event)"
-      @touchstart.stop.prevent="onHandleDown('bottom', $event)"
-    ></div>
+    <div v-if="selectable" class="wgb__handle wgb__handle--bottom" @mousedown="onHandleDown('bottom', $event)"
+      @touchstart.stop.prevent="onHandleDown('bottom', $event)"></div>
   </div>
 </template>
 
@@ -201,9 +204,10 @@ const onHandleDown = (direction, e) => {
   display: flex;
   align-items: flex-start;
   justify-content: center;
-  padding-top: 0.2rem;
   box-sizing: border-box;
+  padding: 4px 2px;
   transition: filter 0.12s;
+  container-type: size;
 }
 
 .wgb__bar--open {
@@ -212,19 +216,18 @@ const onHandleDown = (direction, e) => {
 
 /* Inactive bar — muted, hatched pattern */
 .wgb__bar--inactive {
-  background: repeating-linear-gradient(
-    -45deg,
-    color-mix(in srgb, var(--bar-color) 12%, transparent),
-    color-mix(in srgb, var(--bar-color) 12%, transparent) 3px,
-    color-mix(in srgb, var(--bar-color) 6%, transparent) 3px,
-    color-mix(in srgb, var(--bar-color) 6%, transparent) 6px
-  );
+  background: repeating-linear-gradient(-45deg,
+      color-mix(in srgb, var(--bar-color) 12%, transparent),
+      color-mix(in srgb, var(--bar-color) 12%, transparent) 3px,
+      color-mix(in srgb, var(--bar-color) 6%, transparent) 3px,
+      color-mix(in srgb, var(--bar-color) 6%, transparent) 6px);
   border-left-color: color-mix(in srgb, var(--bar-color) 40%, #5a6075);
   opacity: 0.55;
 }
 
+.wgb__bar--inactive .wgb__bar-name,
 .wgb__bar--inactive .wgb__bar-initials {
-  color: color-mix(in srgb, var(--bar-color) 50%, #8890a4);
+  opacity: 0.7;
 }
 
 /* Per-bar selected */
@@ -245,33 +248,64 @@ const onHandleDown = (direction, e) => {
   filter: brightness(1.1);
 }
 
-.wgb__bar-initials {
-  font-size: 0.5rem;
+/* Full name — shown when bar is wide enough */
+.wgb__bar-name {
+  font-size: clamp(0.55rem, 50cqh, 0.8rem);
   font-weight: 700;
-  color: var(--bar-color);
-  text-transform: uppercase;
-  line-height: 1;
+  color: var(--bar-text-color);
+  line-height: 1.1;
   white-space: nowrap;
   overflow: hidden;
+  text-overflow: ellipsis;
+  width: 100%;
+  text-align: left;
+  padding: 0 4px;
 }
+
+/* Initials — shown when bar is too narrow for full name */
+.wgb__bar-initials {
+  font-size: clamp(0.4rem, 45cqh, 0.7rem);
+  font-weight: 800;
+  color: var(--bar-text-color);
+  line-height: 1;
+  text-transform: uppercase;
+  text-align: center;
+  width: 100%;
+  overflow: hidden;
+}
+
+/* Default: wide bars (>80px) — show full name, hide initials */
+.wgb__bar-name { display: block; }
+.wgb__bar-initials:not(.wgb__bar-initials--compact) { display: none; }
+
+/* Narrow bars (<80px) — show initials, hide name */
+@container (max-width: 80px) {
+  .wgb__bar-name { display: none; }
+  .wgb__bar-initials:not(.wgb__bar-initials--compact) { display: block; }
+  .wgb__bar-name,
+  .wgb__bar-initials { padding: 0; }
+}
+
 
 /* ---- Badge ---- */
 .wgb__badge {
   position: absolute;
-  top: 2px;
-  right: 3px;
-  font-size: 0.5rem;
+  top: 3px;
+  right: 4px;
+  font-size: 0.6rem;
   font-weight: 800;
   color: white;
-  background: rgba(60, 65, 80, 0.7);
-  width: 0.9rem;
-  height: 0.9rem;
+  background: rgba(30, 35, 55, 0.85);
+  width: 1.1rem;
+  height: 1.1rem;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
   line-height: 1;
   z-index: 2;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.25);
 }
 
 /* ---- Resize handles ---- */
@@ -315,9 +349,9 @@ const onHandleDown = (direction, e) => {
 }
 
 .wgb--compact .wgb__badge {
-  font-size: 0.4rem;
-  width: 0.7rem;
-  height: 0.7rem;
+  font-size: 0.45rem;
+  width: 0.85rem;
+  height: 0.85rem;
   top: 1px;
   right: 1px;
 }
@@ -329,7 +363,6 @@ const onHandleDown = (direction, e) => {
 }
 
 .wgb__bar-initials--compact {
-  font-size: 0.4rem;
-  color: rgba(255, 255, 255, 0.9);
+  text-transform: uppercase;
 }
 </style>

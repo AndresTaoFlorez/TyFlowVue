@@ -38,10 +38,9 @@
   --priority-p3-bg: #F3F4F6;
 
   /* Origin badges */
-  --origin-rpa: #7C3AED;
-  --origin-rpa-bg: #EDE9FE;
-  --origin-tyflow: #065F46;
-  --origin-tyflow-bg: #D1FAE5;
+  --origin-outlook: #7C3AED;  --origin-outlook-bg: #EDE9FE;
+  --origin-judit:   #0891B2;  --origin-judit-bg:   #CFFAFE;
+  --origin-tyflow:  #065F46;  --origin-tyflow-bg:  #D1FAE5;
 
   /* Specialist load */
   --load-low: #2AC78F;
@@ -94,13 +93,6 @@
   --priority-urgent: #EF4444;
   --priority-urgent-bg: #FEE2E2;
 
-  /* Case source */
-  --source-outlook: #7C3AED;
-  --source-outlook-bg: #EDE9FE;
-  --source-judit: #0891B2;
-  --source-judit-bg: #CFFAFE;
-  --source-manual: #065F46;
-  --source-manual-bg: #D1FAE5;
 
   /* Layout */
   --sidebar-width: 260px;
@@ -150,8 +142,9 @@
   --priority-p3-bg: #374151;
 
   /* Origin badges */
-  --origin-rpa-bg: #2E1065;
-  --origin-tyflow-bg: #064E3B;
+  --origin-outlook-bg: #2E1065;
+  --origin-judit-bg:   #164E63;
+  --origin-tyflow-bg:  #064E3B;
 
   /* Tags / badges */
   --tag-role-bg: #312E81;
@@ -190,8 +183,4 @@
   --priority-high-bg: #7C2D12;
   --priority-urgent-bg: #7F1D1D;
 
-  /* Case source */
-  --source-outlook-bg: #2E1065;
-  --source-judit-bg: #164E63;
-  --source-manual-bg: #064E3B;
 }

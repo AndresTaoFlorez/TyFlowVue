@@ -6,7 +6,7 @@ export const FolderRepository = {
     const { data } = await client.get('/folders', {
       params: { application_id: applicationId },
     })
-    const items = Array.isArray(data) ? data : data.data ?? []
+    const items = Array.isArray(data) ? data : data.items ?? data.data ?? []
     return items.map((item) => new Folder(item))
   },
 

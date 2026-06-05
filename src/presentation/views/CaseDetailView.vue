@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useCasesStore } from '@/presentation/stores/useCasesStore'
 import { useUserStore } from '@/presentation/stores/useUserStore'
@@ -7,16 +7,21 @@ import { useCasesRealtime } from '@/presentation/composables/useCasesRealtime'
 import CaseStatusTimeline from '@/presentation/components/CaseStatusTimeline.vue'
 import CaseAssignPanel from '@/presentation/components/CaseAssignPanel.vue'
 import CaseReassignModal from '@/presentation/components/CaseReassignModal.vue'
+import { useCaseDetail } from '@/presentation/composables/useCaseDetail'
 
 const route = useRoute()
 const router = useRouter()
 const store = useCasesStore()
 const userStore = useUserStore()
 
-const showAssign = ref(false)
-const showReassign = ref(false)
-
 const c = computed(() => store.selectedCase)
+
+const {
+  assignMode, toggleAssign, showReassign,
+  statusOptions, statusLabels,
+  applicationName, supportLevelName, specialistName, categoryName,
+  changeStatus, fmtDate,
+} = useCaseDetail(c)
 
 useCasesRealtime()
 
@@ -33,7 +38,7 @@ function goBack() {
 }
 
 function onAssignDone() {
-  showAssign.value = false
+  assignMode.value = null
   store.loadCaseById(route.params.id)
 }
 
@@ -41,33 +46,6 @@ function onReassignDone() {
   showReassign.value = false
   store.loadCaseById(route.params.id)
 }
-
-const statusOptions = ['open', 'assigned', 'in_progress', 'resolved', 'closed']
-const statusLabels = { open: 'Abierto', assigned: 'Asignado', in_progress: 'En progreso', resolved: 'Resuelto', closed: 'Cerrado' }
-
-async function changeStatus(newStatus) {
-  await store.updateCaseStatus(c.value.id, newStatus)
-}
-
-function fmtDate(iso) {
-  if (!iso) return '—'
-  return new Date(iso).toLocaleString('es-CO', {
-    day: '2-digit', month: 'short', year: 'numeric',
-    hour: '2-digit', minute: '2-digit',
-  })
-}
-
-const specialistName = computed(() => {
-  if (!c.value?.specialistId) return null
-  const s = store.specialistWorkloads.find(w => w.specialist_id === c.value.specialistId)
-  return s?.full_name ?? c.value.specialistId.slice(0, 8)
-})
-
-const categoryName = computed(() => {
-  if (!c.value?.supportCategoryId) return null
-  const cat = userStore.supportCategories.find(sc => sc.id === c.value.supportCategoryId)
-  return cat?.name ?? c.value.supportCategoryId.slice(0, 8)
-})
 </script>
 
 <template>
@@ -78,8 +56,8 @@ const categoryName = computed(() => {
     </div>
 
     <!-- Error -->
-    <div v-else-if="store.error" class="cd__error">
-      <i class="bx bx-error-circle"></i> {{ store.error }}
+    <div v-else-if="store.detailError" class="cd__error">
+      <i class="bx bx-error-circle"></i> {{ store.detailError }}
       <button class="cd__back-link" @click="goBack">Volver a la lista</button>
     </div>
 
@@ -95,8 +73,8 @@ const categoryName = computed(() => {
           <div class="cd__badges">
             <span class="cd__badge" :style="{ background: c.statusBg, color: c.statusColor }">{{ c.statusLabel }}</span>
             <span class="cd__badge" :style="{ background: c.priorityBg, color: c.priorityColor }">{{ c.priorityLabel }}</span>
-            <span class="cd__badge" :style="{ background: c.sourceBg, color: c.sourceColor }">
-              <i :class="'bx ' + c.sourceIcon" style="font-size: 0.7rem"></i> {{ c.sourceLabel }}
+            <span class="cd__badge" :style="{ background: c.originBg, color: c.originColor }">
+              <i :class="'bx ' + c.originIcon" style="font-size: 0.7rem"></i> {{ c.originLabel }}
             </span>
             <span class="cd__id">{{ c.shortId }}</span>
           </div>
@@ -108,9 +86,14 @@ const categoryName = computed(() => {
 
       <!-- Action bar -->
       <div class="cd__actions">
-        <button v-if="c.isAssignable" class="cd__action cd__action--primary" @click="showAssign = !showAssign">
-          <i class="bx bx-user-plus"></i> Asignar
-        </button>
+        <template v-if="c.isAssignable">
+          <button class="cd__action" :class="{ 'cd__action--active': assignMode === 'wdd' }" @click="toggleAssign('wdd')">
+            <i class="bx bx-bot"></i> WDD Auto
+          </button>
+          <button class="cd__action" :class="{ 'cd__action--active': assignMode === 'manual' }" @click="toggleAssign('manual')">
+            <i class="bx bx-user-plus"></i> Manual
+          </button>
+        </template>
         <button v-if="c.isReassignable" class="cd__action" @click="showReassign = true">
           <i class="bx bx-transfer"></i> Reasignar
         </button>
@@ -125,7 +108,7 @@ const categoryName = computed(() => {
       </div>
 
       <!-- Assign panel inline -->
-      <CaseAssignPanel v-if="showAssign" :case-id="c.id" @done="onAssignDone" />
+      <CaseAssignPanel v-if="assignMode" :case-id="c.id" :mode="assignMode" @done="onAssignDone" />
 
       <!-- Body -->
       <div class="cd__body">
@@ -133,20 +116,28 @@ const categoryName = computed(() => {
           <h4 class="cd__section-title">Detalles</h4>
           <div class="cd__grid">
             <div class="cd__detail">
-              <span class="cd__detail-label">Creado</span>
-              <span class="cd__detail-value">{{ fmtDate(c.createdAt) }}</span>
+              <span class="cd__detail-label">Aplicación</span>
+              <span class="cd__detail-value">{{ applicationName ?? '—' }}</span>
             </div>
             <div class="cd__detail">
-              <span class="cd__detail-label">Asignado</span>
-              <span class="cd__detail-value">{{ fmtDate(c.assignedAt) }}</span>
+              <span class="cd__detail-label">Nivel</span>
+              <span class="cd__detail-value">{{ supportLevelName ?? '—' }}</span>
+            </div>
+            <div class="cd__detail">
+              <span class="cd__detail-label">Categoría</span>
+              <span class="cd__detail-value">{{ categoryName ?? '—' }}</span>
             </div>
             <div class="cd__detail">
               <span class="cd__detail-label">Especialista</span>
               <span class="cd__detail-value">{{ specialistName ?? '—' }}</span>
             </div>
             <div class="cd__detail">
-              <span class="cd__detail-label">Categoría</span>
-              <span class="cd__detail-value">{{ categoryName ?? '—' }}</span>
+              <span class="cd__detail-label">Creado</span>
+              <span class="cd__detail-value">{{ fmtDate(c.createdAt) }}</span>
+            </div>
+            <div class="cd__detail">
+              <span class="cd__detail-label">Asignado</span>
+              <span class="cd__detail-value">{{ fmtDate(c.assignedAt) }}</span>
             </div>
             <div class="cd__detail">
               <span class="cd__detail-label">Resuelto</span>
@@ -286,13 +277,13 @@ const categoryName = computed(() => {
 
 .cd__action:hover { border-color: var(--primary-500); color: var(--primary-500); }
 
-.cd__action--primary {
+.cd__action--active {
   background: var(--primary-500);
   color: white;
   border-color: var(--primary-500);
 }
 
-.cd__action--primary:hover { background: var(--primary-600); color: white; }
+.cd__action--active:hover { background: var(--primary-600); color: white; }
 
 .cd__status-group {
   display: flex;

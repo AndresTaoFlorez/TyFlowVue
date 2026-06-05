@@ -9,6 +9,8 @@ import { fetchRolesUseCase } from '@/application/use-cases/roles/FetchRolesUseCa
 import { fetchSupportLevelsUseCase } from '@/application/use-cases/support-levels/FetchSupportLevelsUseCase'
 import { fetchSupportCategoriesUseCase } from '@/application/use-cases/support-categories/FetchSupportCategoriesUseCase'
 import { fetchApplicationsUseCase } from '@/application/use-cases/applications/FetchApplicationsUseCase'
+import { listSpecialistAppLevelsUseCase } from '@/application/use-cases/specialists/ListSpecialistAppLevelsUseCase'
+import { syncSpecialistAppLevelsUseCase } from '@/application/use-cases/specialists/SyncSpecialistAppLevelsUseCase'
 import { Application } from '@/domain/entities/Application'
 import { SyncEngine } from '@/infrastructure/sync/SyncEngine'
 
@@ -50,6 +52,10 @@ export const useUserStore = defineStore('users', () => {
   const loading = ref(false)
   const loadingSelects = ref(false)
   const error = ref(null)
+
+  // ── Specialist app-level state ──
+  const specialistAppLevels = ref([])
+  const loadingSpecialistPivots = ref(false)
 
   async function loadUsers() {
     const isFirstLoad = users.value.length === 0
@@ -120,6 +126,31 @@ export const useUserStore = defineStore('users', () => {
     users.value = users.value.filter((u) => u.id !== userId)
   }
 
+  // ── Specialist ↔ App-Level (unified) ──
+
+  async function loadSpecialistAppLevels(specialistId) {
+    if (!specialistId) { specialistAppLevels.value = []; return }
+    loadingSpecialistPivots.value = true
+    try {
+      specialistAppLevels.value = await listSpecialistAppLevelsUseCase(specialistId)
+    } catch (e) {
+      error.value = e.message || 'Error cargando app-levels del especialista'
+      specialistAppLevels.value = []
+    } finally {
+      loadingSpecialistPivots.value = false
+    }
+  }
+
+  async function syncSpecialistAppLevels(specialistId, entries) {
+    error.value = null
+    try {
+      specialistAppLevels.value = await syncSpecialistAppLevelsUseCase(specialistId, entries)
+    } catch (e) {
+      error.value = e.message || 'Error sincronizando app-levels'
+      throw e
+    }
+  }
+
   function updateApplicationInPlace(id, updated) {
     appSync.updateLocal(applications, id, updated)
   }
@@ -150,12 +181,18 @@ export const useUserStore = defineStore('users', () => {
     loading,
     loadingSelects,
     error,
+    // Specialist app-levels
+    specialistAppLevels,
+    loadingSpecialistPivots,
+    // Actions
     loadUsers,
     loadSelects,
     createUser,
     updateUser,
     toggleStatus,
     deleteUser,
+    loadSpecialistAppLevels,
+    syncSpecialistAppLevels,
     updateApplicationInPlace,
     invalidateApplications,
     clearAll,

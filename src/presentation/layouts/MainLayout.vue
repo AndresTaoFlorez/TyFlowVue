@@ -5,8 +5,26 @@ import AppTopbar from '@/presentation/components/AppTopbar.vue'
 import AppSidebar from '@/presentation/components/AppSidebar.vue'
 import ChangePasswordModal from '@/presentation/components/ChangePasswordModal.vue'
 import { BP_MOBILE } from '@/presentation/utils/breakpoints'
+import { wsStatus } from '@/infrastructure/realtime/wsClient'
 
 const route = useRoute()
+
+// Debounced WS indicator — only show after 4s of not being connected
+const showWsWarning = ref(false)
+let _wsTimer = null
+watch(wsStatus, (s) => {
+  if (s === 'connected' || s === 'disconnected' && !_wsTimer) {
+    clearTimeout(_wsTimer)
+    _wsTimer = null
+    showWsWarning.value = false
+  }
+  if (s === 'reconnecting') {
+    if (!_wsTimer) _wsTimer = setTimeout(() => { showWsWarning.value = true }, 4000)
+  }
+  if (s === 'disconnected') {
+    showWsWarning.value = true
+  }
+})
 const mostrarCambiarClave = ref(false)
 const sidebarCollapsed = ref(false)
 const sidebarMobileOpen = ref(false)
@@ -120,6 +138,13 @@ onUnmounted(() => {
     <main class="layout__main" :class="{ 'layout__main--flush': isFlush }">
       <router-view />
     </main>
+
+    <Transition name="ws-fade">
+      <div v-if="showWsWarning" class="layout__ws-pill" :class="{ 'layout__ws-pill--off': wsStatus === 'disconnected' }">
+        <i class="bx bx-wifi-off"></i>
+        {{ wsStatus === 'disconnected' ? 'Sin conexión' : 'Reconectando...' }}
+      </div>
+    </Transition>
 
     <ChangePasswordModal
       v-if="mostrarCambiarClave"

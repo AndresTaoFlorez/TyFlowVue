@@ -12,6 +12,7 @@ import App from './App.vue'
 import router from './router'
 import { useAuthStore } from '@/presentation/stores/useAuthStore'
 import { usePreferencesStore } from '@/presentation/stores/usePreferencesStore'
+import { wsClient } from '@/infrastructure/realtime/wsClient'
 
 const app = createApp(App)
 app.use(createPinia())
@@ -28,6 +29,7 @@ if (token) {
     if (payload.exp * 1000 > Date.now()) {
       authStore.user = { id: payload.sub, email: payload.email }
       await authStore.fetchProfile()
+      wsClient.connect()
     }
   } catch { /* token invalido, se ignora */ }
 }

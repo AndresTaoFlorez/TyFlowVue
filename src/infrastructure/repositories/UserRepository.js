@@ -4,7 +4,7 @@ import { User } from '@/domain/entities/User'
 export const UserRepository = {
   async fetchAll() {
     const { data } = await client.get('/users')
-    const items = Array.isArray(data) ? data : data.data ?? []
+    const items = Array.isArray(data) ? data : data.items ?? data.data ?? []
     return items.map((item) => new User(item))
   },
 
@@ -38,7 +38,7 @@ export const UserRepository = {
     const { data } = await client.get('/users', {
       params: { is_specialist: true, application_ids: applicationId },
     })
-    const items = Array.isArray(data) ? data : data.data ?? []
+    const items = Array.isArray(data) ? data : data.items ?? data.data ?? []
     return items.map((item) => new User(item))
   },
 }

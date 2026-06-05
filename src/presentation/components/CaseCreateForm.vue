@@ -8,7 +8,6 @@ const userStore = useUserStore()
 
 const form = ref({
   applicationId: '',
-  source: 'manual',
   subject: '',
   description: '',
   priority: 'normal',
@@ -34,19 +33,19 @@ async function handleSubmit() {
 
   try {
     const payload = {
-      application_id: form.value.applicationId,
-      source: form.value.source,
+      applicationId: form.value.applicationId,
+      origin: { type: 'tyflow' },
       subject: form.value.subject.trim(),
       description: form.value.description.trim() || null,
       priority: form.value.priority,
-      support_level_id: form.value.supportLevelId || null,
-      support_category_id: form.value.supportCategoryId || null,
+      supportLevelId: form.value.supportLevelId || undefined,
+      supportCategoryId: form.value.supportCategoryId || undefined,
     }
     await store.createCase(payload)
     feedback.value = { type: 'success', text: 'Caso creado exitosamente.' }
     resetForm()
   } catch (e) {
-    feedback.value = { type: 'error', text: store.error || e.message || 'Error creando caso' }
+    feedback.value = { type: 'error', text: store.actionError || e.message || 'Error creando caso' }
   } finally {
     submitting.value = false
   }
@@ -55,7 +54,6 @@ async function handleSubmit() {
 function resetForm() {
   form.value = {
     applicationId: '',
-    source: 'manual',
     subject: '',
     description: '',
     priority: 'normal',
@@ -93,22 +91,6 @@ function resetForm() {
               {{ app.name }}
             </option>
           </select>
-        </div>
-
-        <div class="cf__field">
-          <label class="cf__label">Origen</label>
-          <div class="cf__pills">
-            <button
-              v-for="s in ['outlook', 'judit', 'manual']"
-              :key="s"
-              class="cf__pill"
-              :class="[`cf__pill--${s}`, { 'cf__pill--sel': form.source === s }]"
-              @click="form.source = s"
-            >
-              <i :class="'bx ' + (s === 'outlook' ? 'bx-envelope' : s === 'judit' ? 'bx-bot' : 'bx-edit')"></i>
-              {{ s === 'outlook' ? 'Outlook' : s === 'judit' ? 'Judit' : 'Manual' }}
-            </button>
-          </div>
         </div>
 
         <div class="cf__field">
@@ -252,10 +234,6 @@ function resetForm() {
 .cf__pill--normal.cf__pill--sel { background: var(--priority-normal-bg); border-color: var(--priority-normal); color: var(--priority-normal); }
 .cf__pill--high.cf__pill--sel { background: var(--priority-high-bg); border-color: var(--priority-high); color: var(--priority-high); }
 .cf__pill--urgent.cf__pill--sel { background: var(--priority-urgent-bg); border-color: var(--priority-urgent); color: var(--priority-urgent); }
-
-.cf__pill--outlook.cf__pill--sel { background: var(--source-outlook-bg); border-color: var(--source-outlook); color: var(--source-outlook); }
-.cf__pill--judit.cf__pill--sel { background: var(--source-judit-bg); border-color: var(--source-judit); color: var(--source-judit); }
-.cf__pill--manual.cf__pill--sel { background: var(--source-manual-bg); border-color: var(--source-manual); color: var(--source-manual); }
 
 /* Submit */
 .cf__submit {

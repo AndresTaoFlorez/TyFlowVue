@@ -2,10 +2,10 @@ import client from '@/infrastructure/http/client'
 import { Case } from '@/domain/entities/Case'
 
 export const CaseRepository = {
-  async fetchAll({ status, source, priority, applicationId, specialistId, page, pageSize } = {}) {
+  async fetchAll({ status, originType, priority, applicationId, specialistId, page, pageSize } = {}) {
     const params = {}
     if (status) params.status = status
-    if (source) params.source = source
+    if (originType) params.origin_type = originType
     if (priority) params.priority = priority
     if (applicationId) params.application_id = applicationId
     if (specialistId) params.specialist_id = specialistId
@@ -13,7 +13,7 @@ export const CaseRepository = {
     if (pageSize) params.page_size = pageSize
 
     const { data } = await client.get('/cases', { params })
-    const items = Array.isArray(data) ? data : data.data ?? []
+    const items = Array.isArray(data) ? data : data.items ?? data.data ?? []
     const total = data.total ?? items.length
     return {
       data: items.map(item => new Case(item)),
@@ -31,15 +31,13 @@ export const CaseRepository = {
   async create(payload) {
     const body = {
       application_id: payload.applicationId,
-      source: payload.source,
+      origin: payload.origin,
       subject: payload.subject ?? '',
       description: payload.description ?? '',
       priority: payload.priority ?? 'normal',
     }
     if (payload.supportLevelId) body.support_level_id = payload.supportLevelId
     if (payload.supportCategoryId) body.support_category_id = payload.supportCategoryId
-    if (payload.conversationId) body.conversation_id = payload.conversationId
-    if (payload.ticketId) body.ticket_id = payload.ticketId
 
     const { data } = await client.post('/cases', body)
     return new Case(data)
@@ -103,6 +101,6 @@ export const CaseRepository = {
     const { data } = await client.get('/specialists/workload', {
       params: { application_id: applicationId },
     })
-    return Array.isArray(data) ? data : data.data ?? []
+    return Array.isArray(data) ? data : data.items ?? data.data ?? []
   },
 }

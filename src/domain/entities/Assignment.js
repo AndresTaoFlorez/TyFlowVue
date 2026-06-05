@@ -1,22 +1,31 @@
 export class Assignment {
   constructor({
     id,
-    conversation_id,
+    assignment_id,
+    case_id,
     specialist_id,
-    ticket_id = null,
     work_window_id = null,
     assignment_reason = null,
-    is_active = true,
-    created_at = null,
+    assigned_at = null,
+    unassigned_at = null,
+    assigned_by = null,
+    case_subject = null,
+    specialist_name = null,
   }) {
-    this.id = id
-    this.conversationId = conversation_id
+    this.id = id ?? assignment_id
+    this.caseId = case_id
     this.specialistId = specialist_id
-    this.ticketId = ticket_id
     this.workWindowId = work_window_id
     this.assignmentReason = assignment_reason
-    this.isActive = is_active
-    this.createdAt = created_at
+    this.assignedAt = assigned_at
+    this.unassignedAt = unassigned_at
+    this.assignedBy = assigned_by
+    this.caseSubject = case_subject
+    this.specialistName = specialist_name
+  }
+
+  get isActive() {
+    return this.unassignedAt == null
   }
 
   get reasonLabel() {

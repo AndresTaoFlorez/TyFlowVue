@@ -4,7 +4,7 @@ import { Application } from '@/domain/entities/Application'
 export const ApplicationRepository = {
   async fetchAll() {
     const { data } = await client.get('/applications')
-    const items = Array.isArray(data) ? data : data.data ?? []
+    const items = Array.isArray(data) ? data : data.items ?? data.data ?? []
     return items.map((item) => new Application(item))
   },
 
@@ -26,7 +26,7 @@ export const ApplicationRepository = {
 
   async fetchSupportLevels(applicationId) {
     const { data } = await client.get(`/applications/${applicationId}/support-levels`)
-    return Array.isArray(data) ? data : data.data ?? []
+    return Array.isArray(data) ? data : data.items ?? data.data ?? []
   },
 
   async addSupportLevel(applicationId, supportLevelId) {
@@ -40,7 +40,7 @@ export const ApplicationRepository = {
     const { data } = await client.put(`/applications/${applicationId}/support-levels/sync`, {
       support_level_ids: supportLevelIds,
     })
-    return Array.isArray(data) ? data : data.data ?? []
+    return Array.isArray(data) ? data : data.items ?? data.data ?? []
   },
 
   async removeSupportLevelPivot(recordId) {

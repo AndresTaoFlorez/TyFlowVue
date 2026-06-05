@@ -2,11 +2,11 @@
 import { ref, computed, watch } from 'vue'
 import { useCasesStore } from '@/presentation/stores/useCasesStore'
 import { useUserStore } from '@/presentation/stores/useUserStore'
-import { ApplicationRepository } from '@/infrastructure/repositories/ApplicationRepository'
-import { SupportLevelRepository } from '@/infrastructure/repositories/SupportLevelRepository'
+import { useCascadingSelects } from '@/presentation/composables/useCascadingSelects'
 
 const props = defineProps({
   caseId: { type: String, required: true },
+  mode: { type: String, required: true }, // 'wdd' | 'manual'
 })
 
 const emit = defineEmits(['done'])
@@ -14,64 +14,80 @@ const emit = defineEmits(['done'])
 const store = useCasesStore()
 const userStore = useUserStore()
 
-const mode = ref('wdd')
+const _case = store.selectedCase
+
 const form = ref({
-  applicationId: '',
-  supportLevelId: '',
-  supportCategoryId: '',
+  applicationId: _case?.applicationId ?? '',
+  supportLevelId: _case?.supportLevelId ?? '',
+  supportCategoryId: _case?.supportCategoryId ?? '',
   specialistId: '',
-  workWindowId: '',
   reason: '',
 })
 
 const submitting = ref(false)
 const error = ref(null)
 
-// Cascading data
-const availableLevels = ref([])
-const availableCategories = ref([])
-const loadingLevels = ref(false)
-const loadingCategories = ref(false)
-
 const applications = computed(() => userStore.applications ?? [])
-const specialists = computed(() => store.specialistWorkloads)
+const panelWorkloads = ref([])
 
-// App changed → load levels, clear downstream
-watch(() => form.value.applicationId, async (appId) => {
-  form.value.supportLevelId = ''
-  form.value.supportCategoryId = ''
-  availableLevels.value = []
-  availableCategories.value = []
-  if (!appId) return
-  loadingLevels.value = true
-  try {
-    const pivots = await ApplicationRepository.fetchSupportLevels(appId)
-    const ids = pivots.map(p => p.support_level_id)
-    availableLevels.value = (userStore.supportLevels ?? []).filter(l => ids.includes(l.id))
-  } catch { /* silent */ }
-  finally { loadingLevels.value = false }
+// Track initial values so cascading watchers don't clear them on first run
+let _pendingLevelId = _case?.supportLevelId ?? null
+let _pendingCategoryId = _case?.supportCategoryId ?? null
+
+// Cascading selects
+const { availableLevels, availableCategories, loadingLevels, loadingCategories } =
+  useCascadingSelects(
+    computed(() => form.value.applicationId),
+    computed({
+      get: () => form.value.supportLevelId,
+      set: v => {
+        // On first cascade (app watcher clears level), restore the case's level
+        if (v === '' && _pendingLevelId) {
+          form.value.supportLevelId = _pendingLevelId
+          _pendingLevelId = null
+        } else {
+          form.value.supportLevelId = v
+        }
+      },
+    }),
+    computed({
+      get: () => form.value.supportCategoryId,
+      set: v => {
+        if (v === '' && _pendingCategoryId) {
+          form.value.supportCategoryId = _pendingCategoryId
+          _pendingCategoryId = null
+        } else {
+          form.value.supportCategoryId = v
+        }
+      },
+    }),
+    { immediate: true },
+  )
+
+// App changed → load workloads
+watch(() => form.value.applicationId, (appId) => {
+  panelWorkloads.value = []
+  if (appId) {
+    store.loadWorkloads(appId).then(() => {
+      panelWorkloads.value = [...store.specialistWorkloads]
+    })
+  }
+}, { immediate: true })
+
+// Info computed
+const selectedAppName = computed(() => {
+  const app = applications.value.find(a => a.id === form.value.applicationId)
+  return app?.name ?? null
 })
 
-// Level changed → load categories, clear downstream
-watch(() => form.value.supportLevelId, async (levelId) => {
-  form.value.supportCategoryId = ''
-  availableCategories.value = []
-  if (!levelId) return
-  loadingCategories.value = true
-  try {
-    const pivots = await SupportLevelRepository.fetchSupportCategories(levelId)
-    const ids = pivots.map(p => p.support_category_id)
-    availableCategories.value = (userStore.supportCategories ?? []).filter(c => ids.includes(c.id))
-  } catch { /* silent */ }
-  finally { loadingCategories.value = false }
-})
+const specialistCount = computed(() => panelWorkloads.value.length)
 
 async function handleAssign() {
   submitting.value = true
   error.value = null
 
   try {
-    if (mode.value === 'wdd') {
+    if (props.mode === 'wdd') {
       await store.assignWdd({
         caseId: props.caseId,
         applicationId: form.value.applicationId,
@@ -82,13 +98,12 @@ async function handleAssign() {
       await store.assignManual({
         caseId: props.caseId,
         specialistId: form.value.specialistId,
-        workWindowId: form.value.workWindowId || null,
         reason: form.value.reason.trim() || null,
       })
     }
     emit('done')
   } catch (e) {
-    error.value = store.error || e.message || 'Error asignando caso'
+    error.value = store.actionError || e.message || 'Error asignando caso'
   } finally {
     submitting.value = false
   }
@@ -96,23 +111,27 @@ async function handleAssign() {
 
 const canSubmit = computed(() => {
   if (submitting.value) return false
-  if (mode.value === 'wdd') return !!form.value.applicationId
+  if (props.mode === 'wdd') return !!form.value.applicationId
   return !!form.value.specialistId
 })
 </script>
 
 <template>
   <div class="ap">
-    <h4 class="ap__title">Asignar caso</h4>
-
-    <!-- Mode tabs -->
-    <div class="ap__modes">
-      <button class="ap__mode" :class="{ 'ap__mode--on': mode === 'wdd' }" @click="mode = 'wdd'">
-        <i class="bx bx-bot"></i> WDD Auto
-      </button>
-      <button class="ap__mode" :class="{ 'ap__mode--on': mode === 'manual' }" @click="mode = 'manual'">
-        <i class="bx bx-user"></i> Manual
-      </button>
+    <!-- Info badges -->
+    <div v-if="form.applicationId && !loadingLevels" class="ap__info">
+      <span class="ap__info-chip">
+        <i class="bx bx-user"></i> {{ specialistCount }} especialista{{ specialistCount !== 1 ? 's' : '' }}
+      </span>
+      <span class="ap__info-chip">
+        <i class="bx bx-layer"></i> {{ availableLevels.length }} nivel{{ availableLevels.length !== 1 ? 'es' : '' }}
+      </span>
+      <span class="ap__info-chip">
+        <i class="bx bx-category"></i> {{ availableCategories.length }} categoría{{ availableCategories.length !== 1 ? 's' : '' }}
+      </span>
+    </div>
+    <div v-else-if="loadingLevels" class="ap__info">
+      <span class="ap__info-chip"><i class="bx bx-loader-alt bx-spin"></i> Cargando...</span>
     </div>
 
     <!-- WDD form -->
@@ -148,7 +167,7 @@ const canSubmit = computed(() => {
         <label class="ap__label">Especialista *</label>
         <select v-model="form.specialistId" class="ap__select">
           <option value="">— Seleccionar —</option>
-          <option v-for="s in specialists" :key="s.specialist_id" :value="s.specialist_id">
+          <option v-for="s in panelWorkloads" :key="s.specialist_id" :value="s.specialist_id">
             {{ s.full_name }} ({{ s.current_count ?? 0 }} casos)
           </option>
         </select>
@@ -156,7 +175,7 @@ const canSubmit = computed(() => {
 
       <div class="ap__field">
         <label class="ap__label">Razón</label>
-        <input v-model="form.reason" type="text" class="ap__input" placeholder="Motivo de asignación (opcional)" />
+        <input v-model="form.reason" type="text" class="ap__input" placeholder="Motivo (opcional)" />
       </div>
     </template>
 
@@ -167,7 +186,7 @@ const canSubmit = computed(() => {
     <button class="ap__submit" :disabled="!canSubmit" @click="handleAssign">
       <i v-if="submitting" class="bx bx-loader-alt bx-spin"></i>
       <i v-else class="bx bx-check"></i>
-      {{ submitting ? 'Asignando...' : 'Asignar' }}
+      {{ submitting ? 'Asignando...' : 'Confirmar asignación' }}
     </button>
   </div>
 </template>
@@ -176,60 +195,45 @@ const canSubmit = computed(() => {
 .ap {
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
-  padding: 1rem;
+  gap: 0.6rem;
+  padding: 0.85rem;
   background: var(--bg-card);
   border: 1px solid var(--border-light);
   border-radius: var(--radius-lg);
 }
 
-.ap__title {
-  font-size: 0.88rem;
-  font-weight: 700;
-  color: var(--text-primary);
-}
-
-.ap__modes {
+.ap__info {
   display: flex;
   gap: 0.35rem;
+  flex-wrap: wrap;
 }
 
-.ap__mode {
-  flex: 1;
-  display: flex;
+.ap__info-chip {
+  display: inline-flex;
   align-items: center;
-  justify-content: center;
-  gap: 0.3rem;
-  padding: 0.45rem;
-  border-radius: var(--radius-md);
-  border: 1.5px solid var(--border-light);
-  font-size: 0.78rem;
+  gap: 0.2rem;
+  padding: 0.2rem 0.5rem;
+  background: rgba(42, 199, 143, 0.08);
+  border: 1px solid rgba(42, 199, 143, 0.2);
+  border-radius: var(--radius-sm);
+  font-size: 0.68rem;
   font-weight: 600;
-  color: var(--text-secondary);
-  background: transparent;
-  cursor: pointer;
-  transition: all 0.12s;
-}
-
-.ap__mode--on {
-  border-color: var(--primary-500);
   color: var(--primary-600);
-  background: rgba(42, 199, 143, 0.06);
 }
 
-.ap__field { display: flex; flex-direction: column; gap: 0.25rem; }
+.ap__field { display: flex; flex-direction: column; gap: 0.2rem; }
 
 .ap__label {
-  font-size: 0.72rem;
+  font-size: 0.7rem;
   font-weight: 600;
   color: var(--text-secondary);
 }
 
 .ap__select, .ap__input {
-  padding: 0.45rem 0.6rem;
+  padding: 0.4rem 0.55rem;
   border: 1px solid var(--border-light);
   border-radius: var(--radius-md);
-  font-size: 0.8rem;
+  font-size: 0.78rem;
   color: var(--text-primary);
   background: var(--bg-main);
   outline: none;
@@ -242,27 +246,27 @@ const canSubmit = computed(() => {
   display: flex;
   align-items: center;
   gap: 0.3rem;
-  padding: 0.5rem 0.7rem;
+  padding: 0.45rem 0.6rem;
   background: var(--error-bg);
   color: var(--error-text);
   border-radius: var(--radius-md);
-  font-size: 0.78rem;
+  font-size: 0.75rem;
   font-weight: 600;
 }
 
 .ap__submit {
-  padding: 0.55rem;
+  padding: 0.5rem;
   background: var(--primary-500);
   color: white;
   font-weight: 700;
-  font-size: 0.82rem;
+  font-size: 0.78rem;
   border-radius: var(--radius-md);
   border: none;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 0.35rem;
+  gap: 0.3rem;
   transition: background 0.12s;
 }
 

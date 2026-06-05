@@ -2,11 +2,11 @@ import client from '@/infrastructure/http/client'
 import { Assignment } from '@/domain/entities/Assignment'
 
 export const AssignmentRepository = {
-  async fetchByConversation(conversationId) {
+  async fetchByCase(caseId) {
     const { data } = await client.get('/assignments', {
-      params: { conversation_id: conversationId },
+      params: { case_id: caseId },
     })
-    const items = Array.isArray(data) ? data : data.data ?? []
+    const items = Array.isArray(data) ? data : data.items ?? data.data ?? []
     return items.map((item) => new Assignment(item))
   },
 }

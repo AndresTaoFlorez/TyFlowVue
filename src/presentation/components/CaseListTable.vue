@@ -49,9 +49,9 @@ function nextPage() {
             <td class="ct__id">{{ c.shortId }}</td>
             <td class="ct__subject">{{ c.subject }}</td>
             <td>
-              <span class="ct__badge" :style="{ background: c.sourceBg, color: c.sourceColor }">
-                <i :class="'bx ' + c.sourceIcon" style="font-size: 0.7rem"></i>
-                {{ c.sourceLabel }}
+              <span class="ct__badge" :style="{ background: c.originBg, color: c.originColor }">
+                <i :class="'bx ' + c.originIcon" style="font-size: 0.7rem"></i>
+                {{ c.originLabel }}
               </span>
             </td>
             <td>

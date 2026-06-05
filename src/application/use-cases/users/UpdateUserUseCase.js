@@ -1,6 +1,6 @@
 import { UserRepository } from '@/infrastructure/repositories/UserRepository'
 
-export async function updateUserUseCase(userId, { firstName, secondName, firstSurname, secondSurname, documentNumber, email, roleIds, supportLevelIds, applicationIds }, { emailChanged = false } = {}) {
+export async function updateUserUseCase(userId, { firstName, secondName, firstSurname, secondSurname, documentNumber, email, roleIds, applicationLevels, supportLevelIds, applicationIds }, { emailChanged = false } = {}) {
   const payload = {
     first_name: firstName || null,
     second_name: secondName || null,
@@ -11,8 +11,18 @@ export async function updateUserUseCase(userId, { firstName, secondName, firstSu
 
   if (emailChanged) payload.email = email
   if (Array.isArray(roleIds)) payload.role_ids = roleIds
-  if (Array.isArray(supportLevelIds)) payload.support_level_ids = supportLevelIds
-  if (Array.isArray(applicationIds)) payload.application_ids = applicationIds
+
+  // Prefer explicit applicationLevels pairs; fall back to cross-product of old separate arrays
+  if (Array.isArray(applicationLevels)) {
+    payload.application_levels = applicationLevels.map(al => ({
+      application_id: al.applicationId ?? al.application_id,
+      support_level_id: al.supportLevelId ?? al.support_level_id,
+    }))
+  } else if (Array.isArray(applicationIds) && Array.isArray(supportLevelIds)) {
+    payload.application_levels = applicationIds.flatMap(appId =>
+      supportLevelIds.map(lvlId => ({ application_id: appId, support_level_id: lvlId }))
+    )
+  }
 
   return UserRepository.update(userId, payload)
 }

@@ -15,11 +15,11 @@ const statuses = [
   { value: 'closed', label: 'Cerrados' },
 ]
 
-const sources = [
+const origins = [
   { value: null, label: 'Todos' },
   { value: 'outlook', label: 'Outlook' },
   { value: 'judit', label: 'Judit' },
-  { value: 'manual', label: 'Manual' },
+  { value: 'tyflow', label: 'TyFlow' },
 ]
 
 const priorities = [
@@ -52,10 +52,10 @@ function setFilter(key, value) {
 
     <div class="fb__sep"></div>
 
-    <!-- Source -->
-    <select class="fb__select" :value="store.filters.source" @change="setFilter('source', $event.target.value || null)">
+    <!-- Origin -->
+    <select class="fb__select" :value="store.filters.originType" @change="setFilter('originType', $event.target.value || null)">
       <option value="">Origen: Todos</option>
-      <option v-for="s in sources.slice(1)" :key="s.value" :value="s.value">{{ s.label }}</option>
+      <option v-for="o in origins.slice(1)" :key="o.value" :value="o.value">{{ o.label }}</option>
     </select>
 
     <!-- Priority -->

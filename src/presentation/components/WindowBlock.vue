@@ -1,6 +1,16 @@
 <script setup>
 import { computed } from 'vue'
 
+function getLuminance(hex) {
+  const h = (hex || '').replace('#', '')
+  if (h.length < 6) return 0.5
+  const r = parseInt(h.substring(0, 2), 16) / 255
+  const g = parseInt(h.substring(2, 4), 16) / 255
+  const b = parseInt(h.substring(4, 6), 16) / 255
+  const toLinear = c => c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4
+  return 0.2126 * toLinear(r) + 0.7152 * toLinear(g) + 0.0722 * toLinear(b)
+}
+
 const props = defineProps({
   window: { type: Object, required: true },
   specialistName: { type: String, default: '—' },
@@ -19,6 +29,14 @@ const props = defineProps({
 })
 
 const resolvedColor = () => props.appColor || '#2AC78F'
+
+const textColor = computed(() => {
+  const c = resolvedColor()
+  const isDark = getLuminance(c) < 0.45
+  return isDark
+    ? 'color-mix(in oklch, var(--app-color) 70%, white)'
+    : 'color-mix(in oklch, var(--app-color) 70%, black)'
+})
 
 const emit = defineEmits(['click', 'resize-start'])
 
@@ -66,6 +84,7 @@ const onHandleDown = (direction, e) => {
       left: left(),
       width: width(),
       '--app-color': resolvedColor(),
+      '--app-text-color': textColor,
     }"
     @click="$emit('click', window, $event)"
   >
@@ -131,6 +150,7 @@ const onHandleDown = (direction, e) => {
   flex-direction: column;
   gap: 0.1rem;
   transition: transform 0.1s ease, box-shadow 0.15s ease, filter 0.15s ease;
+  container-type: size;
 }
 
 .wb:hover {
@@ -210,9 +230,9 @@ const onHandleDown = (direction, e) => {
   background: color-mix(in srgb, var(--app-color) 22%, transparent);
   border-left-color: var(--app-color);
 }
-.wb--open .wb__name { color: color-mix(in srgb, var(--app-color) 70%, white); }
-.wb--open .wb__time { color: color-mix(in srgb, var(--app-color) 60%, white); }
-.wb--open .wb__app { color: color-mix(in srgb, var(--app-color) 55%, white); }
+.wb--open .wb__name { color: var(--app-text-color); }
+.wb--open .wb__time { color: var(--app-text-color); opacity: 0.85; }
+.wb--open .wb__app { color: var(--app-text-color); opacity: 0.75; }
 
 /* Selected — highlighted */
 .wb--selected {
@@ -244,20 +264,20 @@ const onHandleDown = (direction, e) => {
 }
 
 .wb__compact-initials {
-  font-size: 0.6rem;
+  font-size: clamp(0.4rem, min(55cqh, 70cqw), 0.8rem);
   font-weight: 700;
   color: rgba(255, 255, 255, 0.9);
   text-align: center;
-  line-height: 1.2;
+  line-height: 1;
   overflow: hidden;
 }
 
 .wb__compact-time {
-  font-size: 0.55rem;
+  font-size: clamp(0.35rem, min(35cqh, 60cqw), 0.65rem);
   font-weight: 700;
   color: rgba(255, 255, 255, 0.7);
   text-align: center;
-  line-height: 1.2;
+  line-height: 1;
   overflow: hidden;
 }
 
@@ -284,7 +304,7 @@ const onHandleDown = (direction, e) => {
 }
 
 .wb__name {
-  font-size: 0.68rem;
+  font-size: clamp(0.5rem, 22cqh, 0.85rem);
   font-weight: 700;
   white-space: nowrap;
   overflow: hidden;
@@ -296,13 +316,13 @@ const onHandleDown = (direction, e) => {
 }
 
 .wb__inherit-icon {
-  font-size: 0.72rem;
+  font-size: clamp(0.5rem, 22cqh, 0.85rem);
   opacity: 0.85;
   flex-shrink: 0;
 }
 
 .wb__inherit-label {
-  font-size: 0.5rem;
+  font-size: clamp(0.4rem, 14cqh, 0.6rem);
   font-weight: 600;
   color: rgba(255, 255, 255, 0.45);
   white-space: nowrap;
@@ -314,13 +334,13 @@ const onHandleDown = (direction, e) => {
 }
 
 .wb__time {
-  font-size: 0.6rem;
+  font-size: clamp(0.45rem, 16cqh, 0.7rem);
   font-weight: 500;
   white-space: nowrap;
 }
 
 .wb__app {
-  font-size: 0.56rem;
+  font-size: clamp(0.4rem, 14cqh, 0.65rem);
   font-weight: 500;
   white-space: nowrap;
   overflow: hidden;

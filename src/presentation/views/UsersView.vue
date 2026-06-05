@@ -134,6 +134,10 @@ const abrirEditar = async (user) => {
 
     const supportLevelIds = resolverIds(user.supportLevelNames, userStore.supportLevels)
     const applicationIds = user.applicationAssignments.map(a => a.application_id)
+    const applicationLevels = user.applicationAssignments.map(a => ({
+      application_id: a.application_id,
+      support_level_id: a.support_level_id,
+    }))
 
     formulario.value = {
       firstName: user.firstName || '',
@@ -145,6 +149,7 @@ const abrirEditar = async (user) => {
       roleIds: resolverIds(user.roleNames, userStore.roles),
       supportLevelIds,
       applicationIds,
+      applicationLevels,
     }
     // Si el usuario ya es specialist en la BD, asegurar que el rol esté marcado
     if (user.specialistId && specialistRoleId.value && !formulario.value.roleIds.includes(specialistRoleId.value)) {

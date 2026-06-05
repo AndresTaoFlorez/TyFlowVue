@@ -5,7 +5,7 @@ import { Conversation } from '@/domain/entities/Conversation'
 import { fetchConversationsUseCase } from '@/application/use-cases/conversations/FetchConversationsUseCase'
 import { fetchConversationUseCase } from '@/application/use-cases/conversations/FetchConversationUseCase'
 import { ingestConversationsUseCase } from '@/application/use-cases/conversations/IngestConversationsUseCase'
-import { fetchAssignmentsByConversationUseCase } from '@/application/use-cases/assignments/FetchAssignmentsByConversationUseCase'
+import { fetchAssignmentsByCaseUseCase } from '@/application/use-cases/assignments/FetchAssignmentsByCaseUseCase'
 
 const INITIAL_PAGE_SIZE = 50
 const LOAD_MORE_SIZE = 50
@@ -145,15 +145,8 @@ export const useConversationStore = defineStore('conversations', () => {
       }
     }
 
-    // Load assignments in background
-    loadingAssignments.value = true
-    try {
-      selectedAssignments.value = await fetchAssignmentsByConversationUseCase(id)
-    } catch {
-      selectedAssignments.value = []
-    } finally {
-      loadingAssignments.value = false
-    }
+    // TODO: assignments now require case_id — need backend to return case_id in conversation response
+    selectedAssignments.value = []
   }
 
   // ---- Ingest ----

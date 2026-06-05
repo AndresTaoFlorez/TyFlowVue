@@ -48,7 +48,7 @@ async function handleReassign() {
     })
     emit('done')
   } catch (e) {
-    error.value = store.error || e.message || 'Error reasignando caso'
+    error.value = store.actionError || e.message || 'Error reasignando caso'
   } finally {
     submitting.value = false
   }

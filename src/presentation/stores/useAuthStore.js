@@ -24,7 +24,7 @@ export const useAuthStore = defineStore('auth', () => {
 
     try {
       await fetchProfile()
-      wsClient.connect()
+      wsClient.connect(localStorage.getItem(TOKEN_KEY))
     } catch (e) {
       logout()
       throw e

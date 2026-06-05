@@ -4,7 +4,7 @@ import { WorkWindow } from '@/domain/entities/WorkWindow'
 export const WorkWindowRepository = {
   async fetchAll(params = {}) {
     const { data } = await client.get('/work-windows', { params })
-    const items = Array.isArray(data) ? data : data.data ?? []
+    const items = Array.isArray(data) ? data : data.items ?? data.data ?? []
     return items.map((item) => new WorkWindow(item))
   },
 
@@ -25,7 +25,7 @@ export const WorkWindowRepository = {
         affinity_weight: w.affinityWeight ?? null,
       })),
     })
-    const items = Array.isArray(data) ? data : data.data ?? []
+    const items = Array.isArray(data) ? data : data.items ?? data.data ?? []
     return items.map((item) => new WorkWindow(item))
   },
 
@@ -42,14 +42,14 @@ export const WorkWindowRepository = {
   async update(id, fields = {}) {
     const item = this._buildPatchItem(id, fields)
     const { data } = await client.patch('/work-windows', { windows: [item] })
-    const items = Array.isArray(data) ? data : data.data ?? []
+    const items = Array.isArray(data) ? data : data.updated ?? data.items ?? data.data ?? []
     return items.length > 0 ? new WorkWindow(items[0]) : null
   },
 
   async batchUpdate(items) {
     const windows = items.map(({ id, ...fields }) => this._buildPatchItem(id, fields))
     const { data } = await client.patch('/work-windows', { windows })
-    const result = Array.isArray(data) ? data : data.data ?? []
+    const result = Array.isArray(data) ? data : data.updated ?? data.items ?? data.data ?? []
     return { updated: result.map(w => new WorkWindow(w)), failed: [] }
   },
 

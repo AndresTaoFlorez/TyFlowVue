@@ -95,7 +95,7 @@ function fmtTime(iso) {
 
       <div v-for="(a, i) in recent" :key="i" class="ra">
         <div class="ra__left">
-          <span class="ra__subject">{{ a.conversation_subject || a.conversation_id?.slice(0, 6) }}</span>
+          <span class="ra__subject">{{ a.case_subject || a.case_id?.slice(0, 6) }}</span>
           <span class="ra__specialist">→ {{ a.specialist_name || a.specialist_id?.slice(0, 6) }}</span>
         </div>
         <span class="ra__time">{{ fmtTime(a.assigned_at) }}</span>

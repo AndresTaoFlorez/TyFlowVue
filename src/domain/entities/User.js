@@ -16,6 +16,7 @@ export class User {
     specialist_is_active = null,
     support_level_names = [],
     application_assignments = [],
+    preferences = null,
   }) {
     this.id = id
     this.firstName = first_name
@@ -32,6 +33,7 @@ export class User {
     this.specialistIsActive = specialist_is_active
     this.supportLevelNames = Array.isArray(support_level_names) ? support_level_names : []
     this.applicationAssignments = Array.isArray(application_assignments) ? application_assignments : []
+    this.preferences = preferences
     this._fullName = full_name
   }
 

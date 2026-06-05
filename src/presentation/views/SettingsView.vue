@@ -33,7 +33,6 @@ const activeSection = ref('appearance')
 onMounted(async () => {
   if (authStore.isAdmin) {
     await userStore.loadSelects()
-    settingsStore.loadAll()
   }
 })
 </script>

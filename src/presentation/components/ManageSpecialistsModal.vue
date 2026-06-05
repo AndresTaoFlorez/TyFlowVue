@@ -44,10 +44,16 @@ const availableUsers = () => {
 async function assignUser(user) {
   processing.value = user.id
   try {
-    const currentAppIds = (user.applicationAssignments || []).map((a) => a.id || a)
-    await updateUserUseCase(user.id, {
-      application_ids: [...currentAppIds, props.appId],
-    })
+    const currentLevels = (user.applicationAssignments || []).map(a => ({
+      application_id: a.application_id,
+      support_level_id: a.support_level_id,
+    }))
+    // Add new app with first available support level (or null — backend will validate)
+    const existingForApp = currentLevels.find(al => al.application_id === props.appId)
+    if (!existingForApp) {
+      currentLevels.push({ application_id: props.appId, support_level_id: null })
+    }
+    await updateUserUseCase(user.id, { applicationLevels: currentLevels })
     emit('assign', user)
   } catch {
     // silent
@@ -59,10 +65,13 @@ async function assignUser(user) {
 async function removeUser(user) {
   processing.value = user.id
   try {
-    const currentAppIds = (user.applicationAssignments || []).map((a) => a.id || a)
-    await updateUserUseCase(user.id, {
-      application_ids: currentAppIds.filter((id) => id !== props.appId),
-    })
+    const currentLevels = (user.applicationAssignments || [])
+      .filter(a => a.application_id !== props.appId)
+      .map(a => ({
+        application_id: a.application_id,
+        support_level_id: a.support_level_id,
+      }))
+    await updateUserUseCase(user.id, { applicationLevels: currentLevels })
     emit('remove', user.id)
   } catch {
     // silent

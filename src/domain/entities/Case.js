@@ -1,4 +1,4 @@
-const STATUS_LABELS = {
+export const STATUS_LABELS = {
   open: 'Abierto',
   assigned: 'Asignado',
   in_progress: 'En progreso',
@@ -6,36 +6,48 @@ const STATUS_LABELS = {
   closed: 'Cerrado',
 }
 
-const PRIORITY_LABELS = {
+export const STATUS_OPTIONS = ['open', 'assigned', 'in_progress', 'resolved', 'closed']
+
+export const STATUS_TRANSITIONS = {
+  open: ['closed'],
+  assigned: ['in_progress', 'open', 'closed'],
+  in_progress: ['resolved', 'closed'],
+  resolved: ['closed', 'in_progress'],
+  closed: ['open'],
+}
+
+export const PRIORITY_LABELS = {
   low: 'Baja',
   normal: 'Normal',
   high: 'Alta',
   urgent: 'Urgente',
 }
 
-const SOURCE_LABELS = {
+const ORIGIN_LABELS = {
   outlook: 'Outlook',
   judit: 'Judit',
-  manual: 'Manual',
+  tyflow: 'TyFlow',
 }
 
-const SOURCE_ICONS = {
+const ORIGIN_ICONS = {
   outlook: 'bx-envelope',
   judit: 'bx-bot',
-  manual: 'bx-edit',
+  tyflow: 'bx-edit',
 }
 
 export class Case {
   constructor(raw) {
     this.id = raw.id
     this.applicationId = raw.application_id
-    this.source = raw.source
+    this.origin = raw.origin ?? { type: null }
+    this.originType = this.origin.type ?? null
     this.subject = raw.subject ?? ''
     this.description = raw.description ?? ''
     this.status = raw.status ?? 'open'
     this.priority = raw.priority ?? 'normal'
-    this.conversationId = raw.conversation_id ?? null
-    this.ticketId = raw.ticket_id ?? null
+    this.conversationId = this.origin.conversation_id ?? null
+    this.ticketId = this.origin.ticket_id ?? null
+    this.externalId = this.origin.external_id ?? null
     this.specialistId = raw.specialist_id ?? null
     this.workWindowId = raw.work_window_id ?? null
     this.supportCategoryId = raw.support_category_id ?? null
@@ -77,30 +89,40 @@ export class Case {
     return `var(--priority-${this.priority}-bg)`
   }
 
-  // --- Source ---
-  get sourceLabel() {
-    return SOURCE_LABELS[this.source] ?? this.source
-  }
-
-  get sourceIcon() {
-    return SOURCE_ICONS[this.source] ?? 'bx-help-circle'
-  }
-
-  get sourceColor() {
-    return `var(--source-${this.source})`
-  }
-
-  get sourceBg() {
-    return `var(--source-${this.source}-bg)`
-  }
+  // --- Origin ---
+  get originLabel() { return ORIGIN_LABELS[this.originType] ?? this.originType }
+  get originIcon()  { return ORIGIN_ICONS[this.originType] ?? 'bx-help-circle' }
+  get originColor() { return `var(--origin-${this.originType})` }
+  get originBg()    { return `var(--origin-${this.originType}-bg)` }
 
   // --- Computed flags ---
   get isAssignable() {
-    return this.status === 'open'
+    return this.status === 'open' && !!this.applicationId
   }
 
   get isReassignable() {
     return this.status === 'assigned' || this.status === 'in_progress'
+  }
+
+  _toRaw() {
+    return {
+      id: this.id,
+      application_id: this.applicationId,
+      origin: this.origin,
+      subject: this.subject,
+      description: this.description,
+      status: this.status,
+      priority: this.priority,
+      specialist_id: this.specialistId,
+      work_window_id: this.workWindowId,
+      support_category_id: this.supportCategoryId,
+      support_level_id: this.supportLevelId,
+      created_at: this.createdAt,
+      updated_at: this.updatedAt,
+      assigned_at: this.assignedAt,
+      resolved_at: this.resolvedAt,
+      closed_at: this.closedAt,
+    }
   }
 
   // --- Waiting time ---

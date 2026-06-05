@@ -177,47 +177,11 @@ export const useCalendarStore = defineStore('calendar', () => {
 
   // ---- Sync offsets when switching views ----
   let _skipViewSync = false
-  watch(calView, (newView, oldView) => {
+  watch(calView, (newView) => {
     if (_skipViewSync) { _skipViewSync = false; return }
-    if (newView === 'week') {
-      if (oldView === 'day') {
-        const target = new Date()
-        target.setDate(target.getDate() + dayOffset.value)
-        const now = new Date()
-        const diffMs = target.getTime() - now.getTime()
-        weekOffset.value = Math.round(diffMs / (7 * 24 * 60 * 60 * 1000))
-      } else if (oldView === 'month') {
-        const now = new Date()
-        const target = new Date(now.getFullYear(), now.getMonth() + monthOffset.value, 1)
-        const diffMs = target.getTime() - now.getTime()
-        weekOffset.value = Math.round(diffMs / (7 * 24 * 60 * 60 * 1000))
-      }
-    } else if (newView === 'day') {
-      if (oldView === 'week') {
-        const now = new Date()
-        const day = now.getDay()
-        const toMonday = day === 0 ? -6 : 1 - day
-        dayOffset.value = toMonday + weekOffset.value * 7
-      } else if (oldView === 'month') {
-        const now = new Date()
-        const target = new Date(now.getFullYear(), now.getMonth() + monthOffset.value, 1)
-        dayOffset.value = Math.round((target.getTime() - now.getTime()) / (24 * 60 * 60 * 1000))
-      }
-    } else if (newView === 'month') {
-      if (oldView === 'week') {
-        const now = new Date()
-        const monday = new Date(now)
-        const day = monday.getDay()
-        const diff = day === 0 ? -6 : 1 - day
-        monday.setDate(monday.getDate() + diff + weekOffset.value * 7)
-        monthOffset.value = (monday.getFullYear() - now.getFullYear()) * 12 + (monday.getMonth() - now.getMonth())
-      } else if (oldView === 'day') {
-        const now = new Date()
-        const target = new Date()
-        target.setDate(target.getDate() + dayOffset.value)
-        monthOffset.value = (target.getFullYear() - now.getFullYear()) * 12 + (target.getMonth() - now.getMonth())
-      }
-    }
+    if (newView === 'day') dayOffset.value = 0
+    else if (newView === 'week') weekOffset.value = 0
+    else if (newView === 'month') monthOffset.value = 0
   })
 
   // ---- Range helpers ----
@@ -331,6 +295,7 @@ export const useCalendarStore = defineStore('calendar', () => {
 
   // ---- Mutation helpers ----
   function _replaceWindow(id, updated) {
+    if (!updated) return
     const idx = windows.value.findIndex(x => x.id === id)
     if (idx !== -1) {
       windows.value = [...windows.value.slice(0, idx), updated, ...windows.value.slice(idx + 1)]
@@ -635,7 +600,10 @@ export const useCalendarStore = defineStore('calendar', () => {
     const created = await createWorkWindowUseCase(windowsData)
     _addWindows(created)
 
-    if (direction === 'left') {
+    if (direction === 'left' && !w.inheritsOnReopen) {
+      if (w.hasStarted) {
+        throw { userMessage: 'No se puede activar herencia en una ventana que ya inició.' }
+      }
       const updated = await updateWorkWindowUseCase(w, { inheritsOnReopen: true })
       _replaceWindow(w.id, updated)
     }
@@ -711,6 +679,9 @@ export const useCalendarStore = defineStore('calendar', () => {
     for (const id of ids) {
       const orig = _findOriginal(id)
       if (!orig) continue
+      if (orig.isInShift) {
+        throw { userMessage: 'No se puede mover una ventana en turno activo.' }
+      }
       originals.set(id, orig)
       const newDate = _addDays(orig.scheduledDate, deltaDays)
       optimisticMap.set(id, _buildOptimistic(orig, {
@@ -770,6 +741,9 @@ export const useCalendarStore = defineStore('calendar', () => {
     for (const id of ids) {
       const orig = _findOriginal(id)
       if (!orig) continue
+      if (direction === 'top' && orig.isInShift) {
+        throw { userMessage: 'No se puede cambiar el inicio de una ventana en turno activo. Solo se permite ajustar el fin.' }
+      }
       originals.set(id, orig)
       const newStart = direction === 'top' ? _toHM(orig.startHour + deltaHours) : orig.startTime
       const newEnd = direction === 'bottom' ? _toHM(orig.endHour + deltaHours) : orig.endTime
@@ -1006,6 +980,9 @@ export const useCalendarStore = defineStore('calendar', () => {
   async function resizeWindow({ window: w, startTime, endTime }) {
     const original = _findOriginal(w.id)
     if (!original) return
+    if (startTime && original.isInShift) {
+      throw { userMessage: 'No se puede cambiar el inicio de una ventana en turno activo. Solo se permite ajustar el fin.' }
+    }
     const st = startTime || original.startTime
     const et = endTime || original.endTime
     const conflict = _checkOverlap(original.specialistId, original.scheduledDate, st, et, [w.id], original.applicationId)
@@ -1041,6 +1018,9 @@ export const useCalendarStore = defineStore('calendar', () => {
     for (const gw of group.windows) {
       const orig = _findOriginal(gw.id)
       if (!orig) continue
+      if (startTime && orig.isInShift) {
+        throw { userMessage: 'No se puede cambiar el inicio de una ventana en turno activo. Solo se permite ajustar el fin.' }
+      }
       originals.set(gw.id, orig)
       optimisticMap.set(gw.id, _buildOptimistic(orig, { startTime, endTime }))
     }
@@ -1061,14 +1041,17 @@ export const useCalendarStore = defineStore('calendar', () => {
     _invalidateCache()
 
     try {
-      for (const w of originals.values()) {
-        await updateWorkWindowUseCase(w, { startTime, endTime })
-      }
-      // Undo = resize all back
+      const items = [...originals.values()].map(w => ({
+        window: w,
+        data: { startTime, endTime },
+      }))
+      await batchUpdateWorkWindowsUseCase(items)
       _pushUndo(snapshot, async () => {
-        for (const w of originals.values()) {
-          await updateWorkWindowUseCase(w, { startTime: w.startTime, endTime: w.endTime })
-        }
+        const undoItems = [...originals.values()].map(w => ({
+          window: w,
+          data: { startTime: w.startTime, endTime: w.endTime },
+        }))
+        await batchUpdateWorkWindowsUseCase(undoItems)
       })
     } catch (e) {
       windows.value = windows.value.map(w => originals.get(w.id) || w)
@@ -1080,6 +1063,9 @@ export const useCalendarStore = defineStore('calendar', () => {
   async function rescheduleWindow({ window: w, targetDate, startTime, endTime }) {
     const original = _findOriginal(w.id)
     if (!original) return
+    if (original.isInShift) {
+      throw { userMessage: 'No se puede mover una ventana en turno activo.' }
+    }
     const date = targetDate || original.scheduledDate
     const conflict = _checkOverlap(original.specialistId, date, startTime, endTime, [w.id], original.applicationId)
     if (conflict) {
@@ -1114,6 +1100,9 @@ export const useCalendarStore = defineStore('calendar', () => {
     for (const gw of group.windows) {
       const orig = _findOriginal(gw.id)
       if (!orig) continue
+      if (orig.isInShift) {
+        throw { userMessage: 'No se puede mover una ventana en turno activo.' }
+      }
       originals.set(gw.id, orig)
       optimisticMap.set(gw.id, _buildOptimistic(orig, {
         startTime: _toHM(orig.startHour + deltaHours),
@@ -1138,21 +1127,21 @@ export const useCalendarStore = defineStore('calendar', () => {
     _invalidateCache()
 
     try {
-      for (const w of originals.values()) {
-        await rescheduleWorkWindowUseCase(w, {
+      const items = [...originals.values()].map(w => ({
+        window: w,
+        data: {
           startTime: _toHM(w.startHour + deltaHours),
           endTime: _toHM(w.endHour + deltaHours),
           targetDate,
-        })
-      }
-      // Undo = reschedule all back
+        },
+      }))
+      await batchUpdateWorkWindowsUseCase(items)
       _pushUndo(snapshot, async () => {
-        for (const w of originals.values()) {
-          await rescheduleWorkWindowUseCase(
-            { id: w.id, scheduledDate: targetDate },
-            { startTime: w.startTime, endTime: w.endTime, targetDate: w.scheduledDate }
-          )
-        }
+        const undoItems = [...originals.values()].map(w => ({
+          window: { id: w.id, scheduledDate: targetDate, startTime: w.startTime, endTime: w.endTime, endDate: w.endDate },
+          data: { startTime: w.startTime, endTime: w.endTime, targetDate: w.scheduledDate },
+        }))
+        await batchUpdateWorkWindowsUseCase(undoItems)
       })
     } catch (e) {
       windows.value = windows.value.map(w => originals.get(w.id) || w)

@@ -32,6 +32,32 @@
 .layout__main--flush {
   padding: 0.35rem;
 }
+
+/* WS status pill (fixed, non-intrusive) */
+.layout__ws-pill {
+  position: fixed;
+  bottom: 1rem;
+  right: 1rem;
+  z-index: 900;
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.3rem 0.65rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  border-radius: var(--radius-full);
+  background: var(--warning-bg);
+  color: var(--warning-text);
+  box-shadow: var(--shadow-sm);
+  pointer-events: none;
+}
+.layout__ws-pill--off {
+  background: var(--error-bg);
+  color: var(--error-text);
+}
+.ws-fade-enter-active, .ws-fade-leave-active { transition: opacity 0.3s; }
+.ws-fade-enter-from, .ws-fade-leave-to { opacity: 0; }
+
 .layout__overlay {
   display: none;
 }
