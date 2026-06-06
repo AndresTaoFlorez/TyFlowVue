@@ -81,16 +81,17 @@ export const CaseRepository = {
     return data
   },
 
-  async reassign({ caseId, currentSpecialistId, newSpecialistId, reason, workWindowId, newSupportLevelId, note }) {
+  async reassign({ caseId, currentSpecialistId, newSpecialistId, reason, workWindowId, newSupportLevelId, newSupportCategoryId, note }) {
     const body = {
       case_id: caseId,
       current_specialist_id: currentSpecialistId,
       new_specialist_id: newSpecialistId,
       reason: reason || 'reassignment_same_level',
     }
-    if (workWindowId) body.work_window_id = workWindowId
-    if (newSupportLevelId) body.new_support_level_id = newSupportLevelId
-    if (note) body.note = note
+    if (workWindowId)          body.work_window_id          = workWindowId
+    if (newSupportLevelId)     body.new_support_level_id    = newSupportLevelId
+    if (newSupportCategoryId)  body.new_support_category_id = newSupportCategoryId
+    if (note)                  body.note                    = note
 
     const { data } = await client.post('/cases/reassign', body)
     return data
