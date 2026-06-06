@@ -448,6 +448,10 @@ export const useCalendarStore = defineStore('calendar', () => {
     return conflict || null
   }
 
+  function _isEnded(w) {
+    return w.endsAt && new Date(w.endsAt) < new Date()
+  }
+
   function _todayISO() {
     return fmtDateISO(new Date())
   }
@@ -679,6 +683,7 @@ export const useCalendarStore = defineStore('calendar', () => {
     for (const id of ids) {
       const orig = _findOriginal(id)
       if (!orig) continue
+      if (_isEnded(orig)) throw { userMessage: 'No se pueden mover ventanas finalizadas.' }
       if (orig.isInShift) {
         throw { userMessage: 'No se puede mover una ventana en turno activo.' }
       }
@@ -741,6 +746,7 @@ export const useCalendarStore = defineStore('calendar', () => {
     for (const id of ids) {
       const orig = _findOriginal(id)
       if (!orig) continue
+      if (_isEnded(orig)) throw { userMessage: 'No se pueden modificar ventanas finalizadas.' }
       if (direction === 'top' && orig.isInShift) {
         throw { userMessage: 'No se puede cambiar el inicio de una ventana en turno activo. Solo se permite ajustar el fin.' }
       }
@@ -959,6 +965,7 @@ export const useCalendarStore = defineStore('calendar', () => {
   }
 
   async function updateWindow(w, payload) {
+    if (_isEnded(w)) throw { userMessage: 'No se puede modificar una ventana finalizada.' }
     const snapshot = [...windows.value]
     const updated = await updateWorkWindowUseCase(w, payload)
     if (payload.targetDate && payload.targetDate !== w.scheduledDate) {
@@ -980,6 +987,7 @@ export const useCalendarStore = defineStore('calendar', () => {
   async function resizeWindow({ window: w, startTime, endTime }) {
     const original = _findOriginal(w.id)
     if (!original) return
+    if (_isEnded(original)) throw { userMessage: 'No se puede modificar una ventana finalizada.' }
     if (startTime && original.isInShift) {
       throw { userMessage: 'No se puede cambiar el inicio de una ventana en turno activo. Solo se permite ajustar el fin.' }
     }
@@ -1018,6 +1026,7 @@ export const useCalendarStore = defineStore('calendar', () => {
     for (const gw of group.windows) {
       const orig = _findOriginal(gw.id)
       if (!orig) continue
+      if (_isEnded(orig)) throw { userMessage: 'No se puede modificar un grupo con ventanas finalizadas.' }
       if (startTime && orig.isInShift) {
         throw { userMessage: 'No se puede cambiar el inicio de una ventana en turno activo. Solo se permite ajustar el fin.' }
       }
@@ -1063,6 +1072,7 @@ export const useCalendarStore = defineStore('calendar', () => {
   async function rescheduleWindow({ window: w, targetDate, startTime, endTime }) {
     const original = _findOriginal(w.id)
     if (!original) return
+    if (_isEnded(original)) throw { userMessage: 'No se puede mover una ventana finalizada.' }
     if (original.isInShift) {
       throw { userMessage: 'No se puede mover una ventana en turno activo.' }
     }
@@ -1100,6 +1110,7 @@ export const useCalendarStore = defineStore('calendar', () => {
     for (const gw of group.windows) {
       const orig = _findOriginal(gw.id)
       if (!orig) continue
+      if (_isEnded(orig)) throw { userMessage: 'No se puede mover un grupo con ventanas finalizadas.' }
       if (orig.isInShift) {
         throw { userMessage: 'No se puede mover una ventana en turno activo.' }
       }
