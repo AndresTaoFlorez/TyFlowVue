@@ -64,7 +64,7 @@ const router = createRouter({
           path: 'casos',
           name: 'casos',
           component: CasosView,
-          meta: { requiresAdmin: true, title: 'Casos' },
+          meta: { title: 'Casos' },
         },
         {
           path: 'settings',

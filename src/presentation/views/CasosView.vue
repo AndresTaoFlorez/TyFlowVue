@@ -2,6 +2,7 @@
 import { ref, onMounted } from 'vue'
 import { useCasesStore } from '@/presentation/stores/useCasesStore'
 import { useUserStore } from '@/presentation/stores/useUserStore'
+import { useAuthStore } from '@/presentation/stores/useAuthStore'
 import { useCasesRealtime } from '@/presentation/composables/useCasesRealtime'
 import CaseFiltersBar from '@/presentation/components/CaseFiltersBar.vue'
 import CaseListTable from '@/presentation/components/CaseListTable.vue'
@@ -11,6 +12,7 @@ import CaseCreateModal from '@/presentation/components/CaseCreateModal.vue'
 
 const store = useCasesStore()
 const userStore = useUserStore()
+const authStore = useAuthStore()
 const activeTab = ref('lista')
 
 async function runAutopilot() {
@@ -31,7 +33,12 @@ useCasesRealtime()
 
 onMounted(async () => {
   await userStore.loadSelects()
-  await store.loadCases()
+  if (!authStore.isAdmin && authStore.profile?.specialistId) {
+    // Specialist: pre-filter to own cases, show all statuses
+    await store.loadCases({ specialistId: authStore.profile.specialistId, status: null })
+  } else {
+    await store.loadCases()
+  }
 })
 </script>
 
@@ -41,6 +48,7 @@ onMounted(async () => {
     <nav class="cv__tabs">
       <button
         v-for="tab in tabs"
+        v-show="tab.id !== 'cargas' || authStore.isAdmin"
         :key="tab.id"
         class="cv__tab"
         :class="{ 'cv__tab--active': activeTab === tab.id }"
@@ -55,30 +63,32 @@ onMounted(async () => {
 
       <!-- Right-side actions -->
       <div class="cv__tabs-end">
-        <!-- Autopilot progress pill -->
-        <div v-if="store.autopilotState.running" class="cv__autopilot-pill">
-          <i class="bx bx-loader-alt bx-spin"></i>
-          <span v-if="store.autopilotState.total">
-            {{ store.autopilotState.processed }}/{{ store.autopilotState.total }}
-          </span>
-          <span v-else>Autopilot...</span>
-        </div>
+        <template v-if="authStore.isAdmin">
+          <!-- Autopilot progress pill -->
+          <div v-if="store.autopilotState.running" class="cv__autopilot-pill">
+            <i class="bx bx-loader-alt bx-spin"></i>
+            <span v-if="store.autopilotState.total">
+              {{ store.autopilotState.processed }}/{{ store.autopilotState.total }}
+            </span>
+            <span v-else>Autopilot...</span>
+          </div>
 
-        <!-- Autopilot trigger button -->
-        <button
-          class="cv__autopilot-btn"
-          :disabled="store.autopilotState.running"
-          :title="store.autopilotState.running ? 'Autopilot en progreso' : 'Lanzar WDD Autopilot'"
-          @click="runAutopilot"
-        >
-          <i class="bx bx-bot"></i>
-          <span class="cv__create-label">Autopilot</span>
-        </button>
+          <!-- Autopilot trigger button -->
+          <button
+            class="cv__autopilot-btn"
+            :disabled="store.autopilotState.running"
+            :title="store.autopilotState.running ? 'Autopilot en progreso' : 'Lanzar WDD Autopilot'"
+            @click="runAutopilot"
+          >
+            <i class="bx bx-bot"></i>
+            <span class="cv__create-label">Autopilot</span>
+          </button>
 
-        <button class="cv__create-btn" @click="store.showCreateModal = true">
-          <i class="bx bx-plus"></i>
-          <span class="cv__create-label">Nuevo caso</span>
-        </button>
+          <button class="cv__create-btn" @click="store.showCreateModal = true">
+            <i class="bx bx-plus"></i>
+            <span class="cv__create-label">Nuevo caso</span>
+          </button>
+        </template>
       </div>
     </nav>
 
@@ -88,8 +98,8 @@ onMounted(async () => {
       <CaseListTable />
     </div>
 
-    <!-- Cargas -->
-    <div v-show="activeTab === 'cargas'" class="cv__scroll">
+    <!-- Cargas (admin only) -->
+    <div v-show="activeTab === 'cargas' && authStore.isAdmin" class="cv__scroll">
       <CaseLoadsView />
     </div>
 

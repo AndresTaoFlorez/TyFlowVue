@@ -54,7 +54,7 @@ const handleLogout = () => {
           <span class="sidebar__label">Calendario</span>
         </RouterLink>
       </li>
-      <li v-if="authStore.isAdmin" class="sidebar__item">
+      <li class="sidebar__item">
         <RouterLink :to="{ name: 'casos' }" class="sidebar__link" active-class="sidebar__link--active" @click="$emit('navigate')">
           <i class='bx bx-task sidebar__icon'></i>
           <span class="sidebar__label">Casos</span>
