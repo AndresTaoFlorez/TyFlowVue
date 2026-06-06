@@ -469,6 +469,14 @@ export const useCalendarStore = defineStore('calendar', () => {
 
   // ---- CRUD Actions ----
   async function createWindows(data) {
+    const now = new Date()
+    for (const item of data) {
+      const endDate = item.endDate || item.scheduledDate || _todayISO()
+      const endsAt = WorkWindow.toTimestampTz(endDate, item.endTime || '23:59')
+      if (endsAt && new Date(endsAt) < now) {
+        throw { userMessage: 'No se pueden crear ventanas en horarios pasados.' }
+      }
+    }
     const snapshot = [...windows.value]
 
     // Optimistic: add placeholder windows immediately
@@ -837,6 +845,7 @@ export const useCalendarStore = defineStore('calendar', () => {
     const dateList = Array.isArray(dates) ? dates : [dates]
     const snapshot = [...windows.value]
 
+    const now = new Date()
     const eraseS = _timeToMinutes(eraseStartTime)
     const eraseE = _timeToMinutes(eraseEndTime)
 
@@ -848,6 +857,7 @@ export const useCalendarStore = defineStore('calendar', () => {
     for (const date of dateList) {
       const onDate = windows.value.filter(w => w.scheduledDate === date)
       for (const w of onDate) {
+        if (_isEnded(w)) continue  // skip sealed windows
         const wS = _timeToMinutes(w.startTime)
         const wE = _timeToMinutes(w.endTime)
         if (eraseE <= wS || eraseS >= wE) continue
