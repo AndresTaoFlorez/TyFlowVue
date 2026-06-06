@@ -97,10 +97,11 @@ export const CaseRepository = {
     return data
   },
 
-  async fetchWorkloads(applicationId) {
-    const { data } = await client.get('/specialists/workload', {
-      params: { application_id: applicationId },
-    })
+  async fetchWorkloads(applicationId, { supportLevelId, supportCategoryId } = {}) {
+    const params = { application_id: applicationId }
+    if (supportLevelId)    params.support_level_id    = supportLevelId
+    if (supportCategoryId) params.support_category_id = supportCategoryId
+    const { data } = await client.get('/specialists/workload', { params })
     return Array.isArray(data) ? data : data.items ?? data.data ?? []
   },
 }

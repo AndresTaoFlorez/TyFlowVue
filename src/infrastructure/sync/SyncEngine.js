@@ -80,10 +80,11 @@ export class SyncEngine {
 
   /**
    * Lee del cache y rehidrata cada objeto como instancia de la entidad.
-   * Si el cache no existe o está corrupto, devuelve [].
+   * Si cacheKey es null (estado sesión-only) o el cache no existe, devuelve [].
    * @returns {Entity[]}
    */
   loadFromCache() {
+    if (!this._cacheKey) return []
     try {
       const raw = JSON.parse(localStorage.getItem(this._cacheKey)) || []
       return raw.map(this._hydrate)
@@ -94,16 +95,20 @@ export class SyncEngine {
 
   /**
    * Persiste el array actual al cache de localStorage.
+   * Si cacheKey es null, no persiste (estado sesión-only).
    * @param {Entity[]} items
    */
   writeToCache(items) {
+    if (!this._cacheKey) return
     localStorage.setItem(this._cacheKey, JSON.stringify(items))
   }
 
   /**
    * Elimina el cache de localStorage.
+   * Si cacheKey es null, no hace nada.
    */
   clearCache() {
+    if (!this._cacheKey) return
     localStorage.removeItem(this._cacheKey)
   }
 
@@ -211,6 +216,44 @@ export class SyncEngine {
   replaceAll(stateRef, items) {
     stateRef.value = items
     this.writeToCache(items)
+  }
+
+  /**
+   * Inserta un item al inicio del state y persiste al cache.
+   * Marca el item con _localUpdatedAt para protegerlo del próximo sync CRDT.
+   *
+   * Uso típico: evento realtime `case.created`.
+   *
+   * @param {import('vue').Ref<Entity[]>} stateRef
+   * @param {Entity} item
+   * @returns {Entity} - La entidad marcada con timestamp local
+   */
+  insertLocal(stateRef, item) {
+    const marked = this._markLocal(item)
+    stateRef.value = [marked, ...stateRef.value]
+    this.writeToCache(stateRef.value)
+    return marked
+  }
+
+  /**
+   * Elimina un item del state por ID y persiste al cache.
+   *
+   * Uso típico: eventos realtime `case.assigned` (caso sale de "open"),
+   * `case.updated` (caso ya no coincide con los filtros activos).
+   *
+   * @param {import('vue').Ref<Entity[]>} stateRef
+   * @param {string} id - ID del registro a eliminar
+   * @returns {boolean} - true si encontró y eliminó el item
+   */
+  removeLocal(stateRef, id) {
+    const idx = stateRef.value.findIndex(item => this._getId(item) === id)
+    if (idx === -1) return false
+    stateRef.value = [
+      ...stateRef.value.slice(0, idx),
+      ...stateRef.value.slice(idx + 1),
+    ]
+    this.writeToCache(stateRef.value)
+    return true
   }
 
   // ──────────────────────────────────────────────

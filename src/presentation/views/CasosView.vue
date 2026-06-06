@@ -22,10 +22,7 @@ useCasesRealtime()
 
 onMounted(async () => {
   await userStore.loadSelects()
-  store.loadCases()
-  if (userStore.applications.length > 0) {
-    store.loadWorkloads(userStore.applications[0].id)
-  }
+  await store.loadCases()
 })
 </script>
 

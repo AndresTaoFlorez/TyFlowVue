@@ -64,15 +64,22 @@ const { availableLevels, availableCategories, loadingLevels, loadingCategories }
     { immediate: true },
   )
 
-// App changed → load workloads
-watch(() => form.value.applicationId, (appId) => {
-  panelWorkloads.value = []
-  if (appId) {
-    store.loadWorkloads(appId).then(() => {
-      panelWorkloads.value = [...store.specialistWorkloads]
-    })
-  }
-}, { immediate: true })
+// App/level/category changed → reload workloads filtered to the exact combination
+watch(
+  () => [form.value.applicationId, form.value.supportLevelId, form.value.supportCategoryId],
+  ([appId, levelId, catId]) => {
+    panelWorkloads.value = []
+    if (appId) {
+      store.loadWorkloads(appId, {
+        supportLevelId: levelId || null,
+        supportCategoryId: catId || null,
+      }).then(() => {
+        panelWorkloads.value = [...store.specialistWorkloads]
+      })
+    }
+  },
+  { immediate: true }
+)
 
 // Info computed
 const selectedAppName = computed(() => {

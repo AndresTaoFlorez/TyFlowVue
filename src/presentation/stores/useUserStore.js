@@ -57,6 +57,7 @@ export const useUserStore = defineStore('users', () => {
   const specialistAppLevels = ref([])
   const loadingSpecialistPivots = ref(false)
 
+
   async function loadUsers() {
     const isFirstLoad = users.value.length === 0
     if (isFirstLoad) loading.value = true

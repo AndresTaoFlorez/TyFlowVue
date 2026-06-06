@@ -1,38 +1,36 @@
 <script setup>
+import { ref, watch, onUnmounted } from 'vue'
 import { useCasesStore } from '@/presentation/stores/useCasesStore'
 
 const store = useCasesStore()
 
-function selectCase(index) {
-  store.openDetail(index)
+const scrollEl = ref(null)
+const sentinel = ref(null)
+let observer = null
+
+function setupObserver() {
+  observer?.disconnect()
+  observer = null
+  if (!sentinel.value || !scrollEl.value) return
+  observer = new IntersectionObserver(
+    ([entry]) => {
+      if (entry.isIntersecting && store.hasMore && !store.loadingMore && !store.loading) {
+        store.loadPage(store.pagination.page + 1)
+      }
+    },
+    { root: scrollEl.value, rootMargin: '300px' }
+  )
+  observer.observe(sentinel.value)
 }
 
-function prevPage() {
-  if (store.pagination.page > 1) store.loadPage(store.pagination.page - 1)
-}
-
-function nextPage() {
-  const maxPage = Math.ceil(store.pagination.total / store.pagination.pageSize)
-  if (store.pagination.page < maxPage) store.loadPage(store.pagination.page + 1)
-}
+watch([sentinel, scrollEl], setupObserver)
+onUnmounted(() => observer?.disconnect())
 </script>
 
 <template>
   <div class="ct">
-    <!-- Loading -->
-    <div v-if="store.loading" class="ct__empty">
-      <i class="bx bx-loader-alt bx-spin"></i>
-      <span>Cargando casos...</span>
-    </div>
-
-    <!-- Empty -->
-    <div v-else-if="store.cases.length === 0" class="ct__empty">
-      <i class="bx bx-inbox"></i>
-      <span>Sin casos para mostrar</span>
-    </div>
-
-    <!-- Table -->
-    <div v-else class="ct__scroll">
+    <!-- Skeleton — filter change or first load with empty cache -->
+    <div v-if="store.loading" class="ct__scroll">
       <table class="ct__table">
         <thead>
           <tr>
@@ -45,12 +43,55 @@ function nextPage() {
           </tr>
         </thead>
         <tbody>
-          <tr v-for="(c, idx) in store.cases" :key="c.id" class="ct__row" @click="selectCase(idx)">
+          <tr v-for="i in 12" :key="i" class="ct__row ct__row--skel">
+            <td><span class="skel skel--id"></span></td>
+            <td><span class="skel" :style="{ width: [72, 55, 80, 60, 90, 48, 75, 63, 85, 52, 70, 65][i - 1] + '%' }"></span></td>
+            <td><span class="skel skel--badge"></span></td>
+            <td><span class="skel skel--badge" style="width:52px"></span></td>
+            <td><span class="skel skel--badge" style="width:68px"></span></td>
+            <td><span class="skel skel--time"></span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Empty state -->
+    <div v-else-if="store.cases.length === 0 && !store.listError" class="ct__empty">
+      <i class="bx bx-inbox"></i>
+      <span>Sin casos para mostrar</span>
+    </div>
+
+    <!-- Error state -->
+    <div v-else-if="store.listError" class="ct__empty ct__empty--error">
+      <i class="bx bx-error-circle"></i>
+      <span>{{ store.listError }}</span>
+    </div>
+
+    <!-- Table with infinite scroll -->
+    <div v-else ref="scrollEl" class="ct__scroll">
+      <table class="ct__table">
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Asunto</th>
+            <th>Origen</th>
+            <th>Prioridad</th>
+            <th>Estado</th>
+            <th>Creado</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr
+            v-for="(c, idx) in store.cases"
+            :key="c.id"
+            class="ct__row"
+            @click="store.openDetail(idx)"
+          >
             <td class="ct__id">{{ c.shortId }}</td>
             <td class="ct__subject">{{ c.subject }}</td>
             <td>
               <span class="ct__badge" :style="{ background: c.originBg, color: c.originColor }">
-                <i :class="'bx ' + c.originIcon" style="font-size: 0.7rem"></i>
+                <i :class="'bx ' + c.originIcon" style="font-size:0.7rem"></i>
                 {{ c.originLabel }}
               </span>
             </td>
@@ -68,19 +109,18 @@ function nextPage() {
           </tr>
         </tbody>
       </table>
-    </div>
 
-    <!-- Pagination -->
-    <div v-if="store.pagination.total > store.pagination.pageSize" class="ct__pag">
-      <button class="ct__pag-btn" :disabled="store.pagination.page <= 1" @click="prevPage">
-        <i class="bx bx-chevron-left"></i>
-      </button>
-      <span class="ct__pag-info">
-        Página {{ store.pagination.page }} de {{ Math.ceil(store.pagination.total / store.pagination.pageSize) }}
-      </span>
-      <button class="ct__pag-btn" :disabled="store.pagination.page >= Math.ceil(store.pagination.total / store.pagination.pageSize)" @click="nextPage">
-        <i class="bx bx-chevron-right"></i>
-      </button>
+      <!-- Sentinel + load-more indicator -->
+      <div ref="sentinel" class="ct__sentinel">
+        <div v-if="store.loadingMore" class="ct__load-more">
+          <span class="ct__load-more-dot"></span>
+          <span class="ct__load-more-dot"></span>
+          <span class="ct__load-more-dot"></span>
+        </div>
+        <div v-else-if="!store.hasMore && store.cases.length > 0" class="ct__end">
+          · fin de la lista ·
+        </div>
+      </div>
     </div>
   </div>
 </template>
@@ -91,6 +131,7 @@ function nextPage() {
   flex-direction: column;
   flex: 1;
   overflow: hidden;
+  position: relative;
 }
 
 .ct__scroll {
@@ -98,6 +139,7 @@ function nextPage() {
   overflow: auto;
 }
 
+/* ── Table ── */
 .ct__table {
   width: 100%;
   border-collapse: collapse;
@@ -133,6 +175,9 @@ function nextPage() {
 
 .ct__row:hover { background: var(--bg-card); }
 
+.ct__row--skel { cursor: default; }
+.ct__row--skel:hover { background: transparent; }
+
 .ct__id {
   font-weight: 700;
   font-size: 0.75rem;
@@ -165,6 +210,31 @@ function nextPage() {
   white-space: nowrap;
 }
 
+/* ── Skeleton shimmer ── */
+@keyframes shimmer {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+.skel {
+  display: block;
+  height: 11px;
+  border-radius: var(--radius-sm);
+  background: linear-gradient(
+    90deg,
+    var(--border-light) 25%,
+    color-mix(in srgb, var(--bg-card) 80%, var(--border-light)) 50%,
+    var(--border-light) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
+}
+
+.skel--id    { width: 44px; }
+.skel--badge { width: 64px; height: 18px; }
+.skel--time  { width: 48px; }
+
+/* ── Empty / Error ── */
 .ct__empty {
   flex: 1;
   display: flex;
@@ -177,41 +247,49 @@ function nextPage() {
 }
 
 .ct__empty i { font-size: 2rem; opacity: 0.35; }
+.ct__empty--error i { color: var(--error, #e53e3e); opacity: 0.7; }
+.ct__empty--error { color: var(--error, #e53e3e); }
 
-/* Pagination */
-.ct__pag {
+/* ── Sentinel & load-more ── */
+.ct__sentinel {
   display: flex;
-  align-items: center;
   justify-content: center;
-  gap: 0.75rem;
-  padding: 0.6rem 1rem;
-  border-top: 1px solid var(--border-light);
-  flex-shrink: 0;
+  padding: 1rem 0;
+  min-height: 1px;
 }
 
-.ct__pag-btn {
+.ct__load-more {
   display: flex;
+  gap: 6px;
   align-items: center;
-  justify-content: center;
-  width: 30px;
-  height: 30px;
-  border-radius: var(--radius-md);
-  border: 1px solid var(--border-light);
-  background: var(--bg-main);
-  color: var(--text-primary);
-  cursor: pointer;
-  transition: all 0.12s;
 }
 
-.ct__pag-btn:hover:not(:disabled) { border-color: var(--primary-500); color: var(--primary-500); }
-.ct__pag-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+.ct__load-more-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--primary-500);
+  opacity: 0.5;
+  animation: bounce-dot 1.2s ease-in-out infinite;
+}
 
-.ct__pag-info {
-  font-size: 0.75rem;
-  font-weight: 600;
+.ct__load-more-dot:nth-child(1) { animation-delay: 0s; }
+.ct__load-more-dot:nth-child(2) { animation-delay: 0.2s; }
+.ct__load-more-dot:nth-child(3) { animation-delay: 0.4s; }
+
+@keyframes bounce-dot {
+  0%, 80%, 100% { transform: scale(0.8); opacity: 0.4; }
+  40%            { transform: scale(1.3); opacity: 1; }
+}
+
+.ct__end {
+  font-size: 0.68rem;
   color: var(--text-secondary);
+  opacity: 0.5;
+  letter-spacing: 0.05em;
 }
 
+/* ── Responsive ── */
 @media (max-width: 768px) {
   .ct__table th:nth-child(6),
   .ct__table td:nth-child(6) { display: none; }

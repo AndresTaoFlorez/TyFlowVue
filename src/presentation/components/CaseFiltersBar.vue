@@ -71,7 +71,9 @@ function setFilter(key, value) {
     </select>
 
     <!-- Count -->
-    <span class="fb__count">{{ store.caseCount }} caso{{ store.caseCount !== 1 ? 's' : '' }}</span>
+    <span v-if="store.caseCount > 0" class="fb__count">
+      {{ store.caseCount }} caso{{ store.caseCount !== 1 ? 's' : '' }}
+    </span>
   </div>
 </template>
 
@@ -134,8 +136,12 @@ function setFilter(key, value) {
 
 .fb__count {
   margin-left: auto;
-  font-size: 0.72rem;
-  font-weight: 600;
+  padding: 0.2rem 0.65rem;
+  background: var(--bg-card);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-full);
+  font-size: 0.7rem;
+  font-weight: 700;
   color: var(--text-secondary);
   white-space: nowrap;
 }

@@ -8,6 +8,7 @@ import UserTable from '@/presentation/components/UserTable.vue'
 import UserCardGrid from '@/presentation/components/UserCardGrid.vue'
 import ToastNotification from '@/presentation/components/ToastNotification.vue'
 import SpecialistFields from '@/presentation/components/SpecialistFields.vue'
+import SpecialistCategoryConfig from '@/presentation/components/SpecialistCategoryConfig.vue'
 import ChipSelect from '@/presentation/components/ChipSelect.vue'
 import { usePendingFields } from '@/presentation/composables/usePendingFields'
 
@@ -80,8 +81,7 @@ const formulario = ref({
   email: '',
   password: '',
   roleIds: [],
-  supportLevelIds: [],
-  applicationIds: [],
+  applicationLevels: [],
 })
 
 const editandoUser = ref(null)
@@ -106,8 +106,7 @@ const abrirCrear = async () => {
     email: '',
     password: '',
     roleIds: [],
-    supportLevelIds: [],
-    applicationIds: [],
+    applicationLevels: [],
   }
   mostrarModal.value = true
   await userStore.loadSelects(true)
@@ -132,13 +131,6 @@ const abrirEditar = async (user) => {
     await userStore.loadSelects(true)
     emailOriginal.value = user.email || ''
 
-    const supportLevelIds = resolverIds(user.supportLevelNames, userStore.supportLevels)
-    const applicationIds = user.applicationAssignments.map(a => a.application_id)
-    const applicationLevels = user.applicationAssignments.map(a => ({
-      application_id: a.application_id,
-      support_level_id: a.support_level_id,
-    }))
-
     formulario.value = {
       firstName: user.firstName || '',
       secondName: user.secondName || '',
@@ -147,9 +139,10 @@ const abrirEditar = async (user) => {
       documentNumber: user.documentNumber || '',
       email: user.email || '',
       roleIds: resolverIds(user.roleNames, userStore.roles),
-      supportLevelIds,
-      applicationIds,
-      applicationLevels,
+      applicationLevels: user.applicationAssignments.map(a => ({
+        application_id: a.application_id,
+        support_level_id: a.support_level_id,
+      })),
     }
     // Si el usuario ya es specialist en la BD, asegurar que el rol esté marcado
     if (user.specialistId && specialistRoleId.value && !formulario.value.roleIds.includes(specialistRoleId.value)) {
@@ -187,9 +180,15 @@ const validarFormulario = () => {
     errores.value.roles = 'Debe seleccionar al menos un rol.'
     esValido = false
   }
-  if (esSpecialista.value && formulario.value.supportLevelIds.length === 0) {
-    errores.value.supportLevels = 'Debe seleccionar al menos un nivel de soporte.'
-    esValido = false
+  if (esSpecialista.value) {
+    const levels = formulario.value.applicationLevels
+    if (levels.length === 0) {
+      errores.value.applicationLevels = 'Agrega al menos una aplicación con su nivel de soporte.'
+      esValido = false
+    } else if (levels.some(al => !al.application_id || !al.support_level_id)) {
+      errores.value.applicationLevels = 'Completa todas las asignaciones o elimina las incompletas.'
+      esValido = false
+    }
   }
   return esValido
 }
@@ -222,13 +221,14 @@ const guardarUsuario = async () => {
   try {
     const esEdicion = modoEdicion.value
 
+    let resultado = null
     if (esEdicion) {
-      await userStore.updateUser(editandoUserId.value, formulario.value, {
+      resultado = await userStore.updateUser(editandoUserId.value, formulario.value, {
         emailChanged: emailCambio.value,
         skipReload: true,
       })
     } else {
-      await userStore.createUser(formulario.value, { skipReload: true })
+      resultado = await userStore.createUser(formulario.value, { skipReload: true })
     }
 
     if (!cambioEmailPropio) await userStore.loadUsers()
@@ -430,13 +430,22 @@ onUnmounted(() => {
               <SpecialistFields
                 :support-levels="userStore.supportLevels"
                 :applications="userStore.applications"
-                :selected-support-level-ids="formulario.supportLevelIds"
-                :selected-application-ids="formulario.applicationIds"
+                v-model="formulario.applicationLevels"
                 :loading="userStore.loadingSelects"
                 :disabled="modoVista || cargando"
-                :support-level-error="errores.supportLevels"
-                @update:selected-support-level-ids="formulario.supportLevelIds = $event"
-                @update:selected-application-ids="formulario.applicationIds = $event"
+                :error="errores.applicationLevels"
+              />
+            </div>
+            <div
+              v-if="esSpecialista && formulario.applicationLevels.some(al => al.application_id && al.support_level_id)"
+              class="form-group form-group--full"
+            >
+              <label class="form-label">
+                Categorías habilitadas
+                <span class="form-hint">Según las aplicaciones y niveles asignados</span>
+              </label>
+              <SpecialistCategoryConfig
+                :application-levels="formulario.applicationLevels.filter(al => al.application_id && al.support_level_id)"
               />
             </div>
           </div>
@@ -694,8 +703,17 @@ onUnmounted(() => {
   grid-column: 1 / -1;
 }
 
-.form-group label {
+.form-group label,
+.form-label {
   font-size: 0.85rem; font-weight: 600; color: var(--text-secondary); margin-bottom: 0.3rem; display: block;
+}
+
+.form-hint {
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 400;
+  color: var(--text-secondary);
+  margin-top: 0.1rem;
 }
 
 .form-input {

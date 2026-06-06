@@ -1,13 +1,20 @@
 <script setup>
-import { ref, computed, watch } from 'vue'
+import { ref, computed } from 'vue'
 import { useSettingsStore } from '@/presentation/stores/useSettingsStore'
 import { useUserStore } from '@/presentation/stores/useUserStore'
 
 const store = useSettingsStore()
 const userStore = useUserStore()
 
-const feedback = ref(null)
 const saving = ref(false)
+const toast = ref(null)  // { type: 'success'|'error', text }
+let toastTimer = null
+
+function showToast(type, text) {
+  clearTimeout(toastTimer)
+  toast.value = { type, text }
+  toastTimer = setTimeout(() => { toast.value = null }, 3000)
+}
 
 // ── Create forms ──
 const showNewLevel = ref(false)
@@ -27,121 +34,140 @@ const editCatDesc = ref('')
 
 const applications = computed(() => userStore.applications ?? [])
 
-// IDs of levels linked to selected app
-const linkedLevelIds = computed(() =>
-  store.appLevelPivots.map(p => p.support_level_id)
-)
+// ── Pending local state (batch save) ──
+const pendingLevelIds = ref(null)    // null = no pending changes
+const pendingCategoryIds = ref(null) // null = no pending changes
 
-// IDs of categories linked to selected level
-const linkedCategoryIds = computed(() =>
-  store.levelCategoryPivots.map(p => p.support_category_id)
-)
-
-// Expanded level (to show its categories)
 const expandedLevelId = ref(null)
+
+// Committed pivot IDs
+const committedLevelIds = computed(() => store.appLevelPivots.map(p => p.support_level_id))
+const committedCategoryIds = computed(() => store.levelCategoryPivots.map(p => p.support_category_id))
+
+// Effective IDs shown in UI (pending or committed)
+const effectiveLevelIds = computed(() => pendingLevelIds.value ?? committedLevelIds.value)
+const effectiveCategoryIds = computed(() => pendingCategoryIds.value ?? committedCategoryIds.value)
+
+const hasLevelChanges = computed(() => pendingLevelIds.value !== null)
+const hasCategoryChanges = computed(() => pendingCategoryIds.value !== null)
 
 function selectApp(appId) {
   store.loadAppLevels(appId)
+  pendingLevelIds.value = null
+  pendingCategoryIds.value = null
   expandedLevelId.value = null
-  feedback.value = null
+  toast.value = null
 }
 
 function expandLevel(levelId) {
   if (expandedLevelId.value === levelId) {
     expandedLevelId.value = null
+    pendingCategoryIds.value = null
     return
   }
+  pendingCategoryIds.value = null
   expandedLevelId.value = levelId
   store.loadLevelCategories(levelId)
 }
 
-// ── Toggle level link for app ──
-async function toggleLevel(levelId) {
-  saving.value = true
-  feedback.value = null
-  const current = [...linkedLevelIds.value]
+// ── Local toggles (no API call) ──
+function toggleLevel(levelId) {
+  const current = [...effectiveLevelIds.value]
   const idx = current.indexOf(levelId)
   if (idx !== -1) {
     current.splice(idx, 1)
-    if (expandedLevelId.value === levelId) expandedLevelId.value = null
+    if (expandedLevelId.value === levelId) {
+      expandedLevelId.value = null
+      pendingCategoryIds.value = null
+    }
   } else {
     current.push(levelId)
   }
-  try {
-    await store.syncAppLevels(store.selectedAppId, current)
-    feedback.value = { type: 'success', text: 'Niveles actualizados.' }
-  } catch {
-    feedback.value = { type: 'error', text: store.error || 'Error sincronizando' }
-  } finally {
-    saving.value = false
-  }
+  pendingLevelIds.value = current
 }
 
-// ── Toggle category link for level ──
-async function toggleCategory(categoryId) {
-  saving.value = true
-  feedback.value = null
-  const current = [...linkedCategoryIds.value]
+function toggleCategory(categoryId) {
+  const current = [...effectiveCategoryIds.value]
   const idx = current.indexOf(categoryId)
   if (idx !== -1) current.splice(idx, 1)
   else current.push(categoryId)
+  pendingCategoryIds.value = current
+}
+
+// ── Batch save ──
+async function saveLevels() {
+  if (!pendingLevelIds.value || !store.selectedAppId) return
+  saving.value = true
   try {
-    await store.syncLevelCategories(expandedLevelId.value, current)
-    feedback.value = { type: 'success', text: 'Categorías actualizadas.' }
+    await store.syncAppLevels(store.selectedAppId, pendingLevelIds.value)
+    pendingLevelIds.value = null
+    showToast('success', 'Niveles guardados correctamente.')
   } catch {
-    feedback.value = { type: 'error', text: store.error || 'Error sincronizando' }
+    showToast('error', store.error || 'Error guardando niveles')
   } finally {
     saving.value = false
   }
 }
 
-// ── Create new level (entity + link) ──
+async function saveCategories() {
+  if (!pendingCategoryIds.value || !expandedLevelId.value) return
+  saving.value = true
+  try {
+    await store.syncLevelCategories(expandedLevelId.value, pendingCategoryIds.value)
+    pendingCategoryIds.value = null
+    showToast('success', 'Categorías guardadas correctamente.')
+  } catch {
+    showToast('error', store.error || 'Error guardando categorías')
+  } finally {
+    saving.value = false
+  }
+}
+
+// ── Create new level ──
 async function handleCreateLevel() {
   if (!newLevelName.value.trim()) return
   saving.value = true
-  feedback.value = null
   try {
     const created = await store.createSupportLevel({
       name: newLevelName.value.trim(),
       description: newLevelDesc.value.trim() || null,
     })
-    // Auto-link to current app
     if (store.selectedAppId) {
-      const ids = [...linkedLevelIds.value, created.id]
+      const ids = [...effectiveLevelIds.value, created.id]
       await store.syncAppLevels(store.selectedAppId, ids)
+      pendingLevelIds.value = null
     }
     newLevelName.value = ''
     newLevelDesc.value = ''
     showNewLevel.value = false
-    feedback.value = { type: 'success', text: 'Nivel creado y vinculado.' }
+    showToast('success', 'Nivel creado y vinculado.')
   } catch (e) {
-    feedback.value = { type: 'error', text: e.response?.data?.detail || e.message || 'Error creando nivel' }
+    showToast('error', e.response?.data?.detail || e.message || 'Error creando nivel')
   } finally {
     saving.value = false
   }
 }
 
-// ── Create new category (entity + link) ──
+// ── Create new category ──
 async function handleCreateCategory() {
   if (!newCatName.value.trim()) return
   saving.value = true
-  feedback.value = null
   try {
     const created = await store.createSupportCategory({
       name: newCatName.value.trim(),
       description: newCatDesc.value.trim() || null,
     })
-    // Auto-link to current level
     if (expandedLevelId.value) {
-      const ids = [...linkedCategoryIds.value, created.id]
+      const ids = [...effectiveCategoryIds.value, created.id]
       await store.syncLevelCategories(expandedLevelId.value, ids)
+      pendingCategoryIds.value = null
     }
     newCatName.value = ''
     newCatDesc.value = ''
     showNewCategory.value = false
-    feedback.value = { type: 'success', text: 'Categoría creada y vinculada.' }
+    showToast('success', 'Categoría creada y vinculada.')
   } catch (e) {
-    feedback.value = { type: 'error', text: e.response?.data?.detail || e.message || 'Error creando categoría' }
+    showToast('error', e.response?.data?.detail || e.message || 'Error creando categoría')
   } finally {
     saving.value = false
   }
@@ -163,9 +189,9 @@ async function saveEditLevel(id) {
       description: editLevelDesc.value.trim() || null,
     })
     editingLevelId.value = null
-    feedback.value = { type: 'success', text: 'Nivel actualizado.' }
+    showToast('success', 'Nivel actualizado.')
   } catch (e) {
-    feedback.value = { type: 'error', text: e.response?.data?.detail || e.message || 'Error' }
+    showToast('error', e.response?.data?.detail || e.message || 'Error')
   } finally {
     saving.value = false
   }
@@ -187,25 +213,29 @@ async function saveEditCat(id) {
       description: editCatDesc.value.trim() || null,
     })
     editingCatId.value = null
-    feedback.value = { type: 'success', text: 'Categoría actualizada.' }
+    showToast('success', 'Categoría actualizada.')
   } catch (e) {
-    feedback.value = { type: 'error', text: e.response?.data?.detail || e.message || 'Error' }
+    showToast('error', e.response?.data?.detail || e.message || 'Error')
   } finally {
     saving.value = false
   }
-}
-
-function levelName(id) {
-  return store.supportLevels.find(l => l.id === id)?.name ?? id.slice(0, 8)
-}
-
-function categoryName(id) {
-  return store.supportCategories.find(c => c.id === id)?.name ?? id.slice(0, 8)
 }
 </script>
 
 <template>
   <section class="sh">
+    <!-- Fixed toast — no layout shift -->
+    <Transition name="sh-toast">
+      <div
+        v-if="toast"
+        class="sh__toast"
+        :class="toast.type === 'success' ? 'sh__toast--ok' : 'sh__toast--err'"
+      >
+        <i :class="toast.type === 'success' ? 'bx bx-check-circle' : 'bx bx-error-circle'"></i>
+        {{ toast.text }}
+      </div>
+    </Transition>
+
     <div class="sh__header">
       <div>
         <h2 class="sh__heading">Jerarquía de Soporte</h2>
@@ -213,17 +243,13 @@ function categoryName(id) {
       </div>
     </div>
 
-    <!-- Feedback -->
-    <div v-if="feedback" class="sh__feedback" :class="feedback.type === 'success' ? 'sh__feedback--ok' : 'sh__feedback--err'">
-      <i :class="feedback.type === 'success' ? 'bx bx-check-circle' : 'bx bx-error-circle'"></i>
-      {{ feedback.text }}
-      <button class="sh__feedback-close" @click="feedback = null"><i class="bx bx-x"></i></button>
-    </div>
-
     <!-- Step 1: Select Application -->
     <div class="sh__step">
       <label class="sh__step-label"><i class="bx bx-cube"></i> Aplicación</label>
-      <select class="sh__select" :value="store.selectedAppId ?? ''" @change="selectApp($event.target.value || null)">
+      <div v-if="userStore.loadingSelects" class="sh__loading">
+        <i class="bx bx-loader-alt bx-spin"></i> Cargando...
+      </div>
+      <select v-else class="sh__select" :value="store.selectedAppId ?? ''" @change="selectApp($event.target.value || null)">
         <option value="">— Seleccionar aplicación —</option>
         <option v-for="app in applications" :key="app.id" :value="app.id">{{ app.name }}</option>
       </select>
@@ -234,10 +260,22 @@ function categoryName(id) {
       <div class="sh__section">
         <div class="sh__section-header">
           <span class="sh__section-title"><i class="bx bx-layer"></i> Niveles de soporte</span>
-          <button class="sh__add-btn" @click="showNewLevel = !showNewLevel">
-            <i class="bx" :class="showNewLevel ? 'bx-x' : 'bx-plus'"></i>
-            {{ showNewLevel ? 'Cancelar' : 'Nuevo' }}
-          </button>
+          <div class="sh__section-actions">
+            <!-- Guardar niveles -->
+            <button
+              v-if="hasLevelChanges"
+              class="sh__save-levels-btn"
+              :disabled="saving"
+              @click="saveLevels"
+            >
+              <i class="bx" :class="saving ? 'bx-loader-alt bx-spin' : 'bx-save'"></i>
+              Guardar
+            </button>
+            <button class="sh__add-btn" @click="showNewLevel = !showNewLevel">
+              <i class="bx" :class="showNewLevel ? 'bx-x' : 'bx-plus'"></i>
+              {{ showNewLevel ? 'Cancelar' : 'Nuevo' }}
+            </button>
+          </div>
         </div>
 
         <!-- Create level form -->
@@ -256,7 +294,7 @@ function categoryName(id) {
         <!-- All levels with toggle -->
         <div class="sh__items">
           <div v-for="lv in store.supportLevels" :key="lv.id" class="sh__item-group">
-            <div class="sh__item" :class="{ 'sh__item--linked': linkedLevelIds.includes(lv.id) }">
+            <div class="sh__item" :class="{ 'sh__item--linked': effectiveLevelIds.includes(lv.id), 'sh__item--pending': pendingLevelIds !== null && effectiveLevelIds.includes(lv.id) !== committedLevelIds.includes(lv.id) }">
               <!-- Edit mode -->
               <template v-if="editingLevelId === lv.id">
                 <div class="sh__edit-row">
@@ -270,25 +308,46 @@ function categoryName(id) {
               </template>
               <!-- Display mode -->
               <template v-else>
-                <button class="sh__toggle" @click="toggleLevel(lv.id)" :disabled="saving">
-                  <i class="bx" :class="linkedLevelIds.includes(lv.id) ? 'bx-check-square' : 'bx-square'"></i>
+                <button class="sh__toggle" @click="toggleLevel(lv.id)">
+                  <i class="bx" :class="effectiveLevelIds.includes(lv.id) ? 'bx-check-square' : 'bx-square'"></i>
                 </button>
-                <div class="sh__item-info" @click="linkedLevelIds.includes(lv.id) ? expandLevel(lv.id) : null" :class="{ 'sh__item-info--clickable': linkedLevelIds.includes(lv.id) }">
+                <div
+                  class="sh__item-info"
+                  :class="{ 'sh__item-info--clickable': effectiveLevelIds.includes(lv.id) }"
+                  @click="effectiveLevelIds.includes(lv.id) ? expandLevel(lv.id) : null"
+                >
                   <span class="sh__item-name">{{ lv.name }}</span>
                   <span v-if="lv.description" class="sh__item-desc">{{ lv.description }}</span>
                 </div>
                 <button class="sh__icon-btn" @click="startEditLevel(lv)"><i class="bx bx-pencil"></i></button>
-                <i v-if="linkedLevelIds.includes(lv.id)" class="bx sh__chevron" :class="expandedLevelId === lv.id ? 'bx-chevron-up' : 'bx-chevron-down'" @click="expandLevel(lv.id)"></i>
+                <i
+                  v-if="effectiveLevelIds.includes(lv.id)"
+                  class="bx sh__chevron"
+                  :class="expandedLevelId === lv.id ? 'bx-chevron-up' : 'bx-chevron-down'"
+                  @click="expandLevel(lv.id)"
+                ></i>
               </template>
             </div>
 
             <!-- Expanded: categories for this level -->
-            <div v-if="expandedLevelId === lv.id && linkedLevelIds.includes(lv.id)" class="sh__sub">
+            <div v-if="expandedLevelId === lv.id && effectiveLevelIds.includes(lv.id)" class="sh__sub">
               <div class="sh__sub-header">
                 <span class="sh__sub-title"><i class="bx bx-category"></i> Categorías de "{{ lv.name }}"</span>
-                <button class="sh__add-btn sh__add-btn--sm" @click="showNewCategory = !showNewCategory">
-                  <i class="bx" :class="showNewCategory ? 'bx-x' : 'bx-plus'"></i>
-                </button>
+                <div class="sh__section-actions">
+                  <!-- Guardar categorías -->
+                  <button
+                    v-if="hasCategoryChanges"
+                    class="sh__save-levels-btn sh__save-levels-btn--sm"
+                    :disabled="saving"
+                    @click="saveCategories"
+                  >
+                    <i class="bx" :class="saving ? 'bx-loader-alt bx-spin' : 'bx-save'"></i>
+                    Guardar
+                  </button>
+                  <button class="sh__add-btn sh__add-btn--sm" @click="showNewCategory = !showNewCategory">
+                    <i class="bx" :class="showNewCategory ? 'bx-x' : 'bx-plus'"></i>
+                  </button>
+                </div>
               </div>
 
               <!-- Create category form -->
@@ -305,7 +364,12 @@ function categoryName(id) {
               </div>
 
               <div class="sh__items sh__items--nested">
-                <div v-for="cat in store.supportCategories" :key="cat.id" class="sh__item" :class="{ 'sh__item--linked': linkedCategoryIds.includes(cat.id) }">
+                <div
+                  v-for="cat in store.supportCategories"
+                  :key="cat.id"
+                  class="sh__item"
+                  :class="{ 'sh__item--linked': effectiveCategoryIds.includes(cat.id) }"
+                >
                   <!-- Edit mode -->
                   <template v-if="editingCatId === cat.id">
                     <div class="sh__edit-row">
@@ -319,8 +383,8 @@ function categoryName(id) {
                   </template>
                   <!-- Display mode -->
                   <template v-else>
-                    <button class="sh__toggle" @click="toggleCategory(cat.id)" :disabled="saving">
-                      <i class="bx" :class="linkedCategoryIds.includes(cat.id) ? 'bx-check-square' : 'bx-square'"></i>
+                    <button class="sh__toggle" @click="toggleCategory(cat.id)">
+                      <i class="bx" :class="effectiveCategoryIds.includes(cat.id) ? 'bx-check-square' : 'bx-square'"></i>
                     </button>
                     <div class="sh__item-info">
                       <span class="sh__item-name">{{ cat.name }}</span>
@@ -334,7 +398,7 @@ function categoryName(id) {
           </div>
         </div>
 
-        <div v-if="store.supportLevels.length === 0" class="sh__empty">
+        <div v-if="!store.loadingPivots && store.supportLevels.length === 0" class="sh__empty">
           No hay niveles de soporte. Crea uno primero.
         </div>
       </div>
@@ -351,15 +415,28 @@ function categoryName(id) {
 .sh__heading { font-size: 1.1rem; font-weight: 700; color: var(--text-primary); margin-bottom: 0.25rem; }
 .sh__desc { font-size: 0.82rem; color: var(--text-secondary); }
 
-/* Feedback */
-.sh__feedback {
-  display: flex; align-items: center; gap: 0.4rem;
-  padding: 0.5rem 0.75rem; border-radius: var(--radius-md);
-  font-size: 0.8rem; font-weight: 600; margin-bottom: 0.85rem;
+/* Fixed toast — no layout shift */
+.sh__toast {
+  position: fixed;
+  bottom: 1.5rem;
+  right: 1.5rem;
+  z-index: 999;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.55rem 0.9rem;
+  border-radius: var(--radius-md);
+  font-size: 0.8rem;
+  font-weight: 600;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  pointer-events: none;
 }
-.sh__feedback--ok { background: var(--success-bg); color: var(--success-text); }
-.sh__feedback--err { background: var(--error-bg); color: var(--error-text); }
-.sh__feedback-close { margin-left: auto; background: none; border: none; color: inherit; cursor: pointer; font-size: 1rem; }
+.sh__toast--ok { background: var(--success-bg); color: var(--success-text); }
+.sh__toast--err { background: var(--error-bg); color: var(--error-text); }
+
+.sh-toast-enter-active, .sh-toast-leave-active { transition: opacity 0.2s, transform 0.2s; }
+.sh-toast-enter-from { opacity: 0; transform: translateY(8px); }
+.sh-toast-leave-to { opacity: 0; transform: translateY(8px); }
 
 /* Step */
 .sh__step { margin-bottom: 1rem; }
@@ -386,13 +463,29 @@ function categoryName(id) {
   font-size: 0.78rem; font-weight: 700; color: var(--text-secondary);
   text-transform: uppercase; letter-spacing: 0.04em;
 }
-.sh__add-btn {
+.sh__section-actions {
+  display: flex; align-items: center; gap: 0.4rem;
+}
+
+.sh__save-levels-btn {
   display: flex; align-items: center; gap: 0.2rem;
   padding: 0.3rem 0.6rem; background: var(--primary-500); color: white;
   font-size: 0.72rem; font-weight: 600; border: none; border-radius: var(--radius-md);
   cursor: pointer; transition: background 0.12s;
 }
-.sh__add-btn:hover { background: var(--primary-600); }
+.sh__save-levels-btn:hover:not(:disabled) { background: var(--primary-600); }
+.sh__save-levels-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.sh__save-levels-btn--sm { padding: 0.2rem 0.45rem; font-size: 0.68rem; }
+
+.sh__add-btn {
+  display: flex; align-items: center; gap: 0.2rem;
+  padding: 0.3rem 0.6rem;
+  background: var(--bg-card); color: var(--text-secondary);
+  font-size: 0.72rem; font-weight: 600;
+  border: 1px solid var(--border-light); border-radius: var(--radius-md);
+  cursor: pointer; transition: all 0.12s;
+}
+.sh__add-btn:hover { border-color: var(--primary-500); color: var(--primary-500); }
 .sh__add-btn--sm { padding: 0.2rem 0.45rem; font-size: 0.68rem; }
 
 /* Inline form */
@@ -421,7 +514,6 @@ function categoryName(id) {
 /* Items list */
 .sh__items { display: flex; flex-direction: column; gap: 0.25rem; }
 .sh__items--nested { margin-top: 0.35rem; }
-
 .sh__item-group { display: flex; flex-direction: column; }
 
 .sh__item {
@@ -430,7 +522,8 @@ function categoryName(id) {
   background: var(--bg-card); border: 1px solid var(--border-light);
   border-radius: var(--radius-md); transition: border-color 0.12s;
 }
-.sh__item--linked { border-color: var(--primary-500); border-left: 3px solid var(--primary-500); }
+.sh__item--linked { border-left: 3px solid var(--primary-500); }
+.sh__item--pending { border-left: 3px solid var(--primary-500); opacity: 0.75; }
 
 .sh__toggle {
   background: none; border: none; cursor: pointer;
@@ -462,8 +555,7 @@ function categoryName(id) {
 
 .sh__chevron {
   font-size: 1rem; color: var(--text-secondary);
-  cursor: pointer; flex-shrink: 0;
-  transition: color 0.12s;
+  cursor: pointer; flex-shrink: 0; transition: color 0.12s;
 }
 .sh__chevron:hover { color: var(--text-primary); }
 
@@ -507,5 +599,6 @@ function categoryName(id) {
   .sh__inline-form { flex-wrap: wrap; }
   .sh__input--sm { flex: 1; }
   .sh__sub { margin-left: 0.75rem; padding: 0.5rem; }
+  .sh__toast { bottom: 0.75rem; right: 0.75rem; left: 0.75rem; }
 }
 </style>
