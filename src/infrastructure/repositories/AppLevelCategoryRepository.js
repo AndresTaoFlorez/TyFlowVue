@@ -5,7 +5,7 @@ export const AppLevelCategoryRepository = {
     const { data } = await client.get('/application-level-categories', {
       params: { application_id: applicationId, support_level_id: supportLevelId },
     })
-    return Array.isArray(data) ? data : data.items ?? data.data ?? []
+    return Array.isArray(data) ? data : data.data ?? data.items ?? []
   },
 
   async assign(applicationId, supportLevelId, supportCategoryId) {
@@ -23,7 +23,7 @@ export const AppLevelCategoryRepository = {
     }, {
       params: { application_id: applicationId, support_level_id: supportLevelId },
     })
-    return Array.isArray(data) ? data : data.items ?? data.data ?? []
+    return Array.isArray(data) ? data : data.data ?? data.items ?? []
   },
 
   async remove(recordId) {

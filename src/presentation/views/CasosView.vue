@@ -13,6 +13,15 @@ const store = useCasesStore()
 const userStore = useUserStore()
 const activeTab = ref('lista')
 
+async function runAutopilot() {
+  try {
+    await store.triggerAutopilot()
+  } catch (e) {
+    // 409 or other — store doesn't set actionError for autopilot, show alert
+    alert(e.message || 'Error lanzando autopilot')
+  }
+}
+
 const tabs = [
   { id: 'lista', label: 'Lista', icon: 'bx-list-ul' },
   { id: 'cargas', label: 'Cargas', icon: 'bx-bar-chart-alt-2' },
@@ -44,20 +53,43 @@ onMounted(async () => {
         </span>
       </button>
 
-      <button class="cv__create-btn" @click="store.showCreateModal = true">
-        <i class="bx bx-plus"></i>
-        <span class="cv__create-label">Nuevo caso</span>
-      </button>
+      <!-- Right-side actions -->
+      <div class="cv__tabs-end">
+        <!-- Autopilot progress pill -->
+        <div v-if="store.autopilotState.running" class="cv__autopilot-pill">
+          <i class="bx bx-loader-alt bx-spin"></i>
+          <span v-if="store.autopilotState.total">
+            {{ store.autopilotState.processed }}/{{ store.autopilotState.total }}
+          </span>
+          <span v-else>Autopilot...</span>
+        </div>
+
+        <!-- Autopilot trigger button -->
+        <button
+          class="cv__autopilot-btn"
+          :disabled="store.autopilotState.running"
+          :title="store.autopilotState.running ? 'Autopilot en progreso' : 'Lanzar WDD Autopilot'"
+          @click="runAutopilot"
+        >
+          <i class="bx bx-bot"></i>
+          <span class="cv__create-label">Autopilot</span>
+        </button>
+
+        <button class="cv__create-btn" @click="store.showCreateModal = true">
+          <i class="bx bx-plus"></i>
+          <span class="cv__create-label">Nuevo caso</span>
+        </button>
+      </div>
     </nav>
 
     <!-- Lista: filters + table -->
-    <template v-if="activeTab === 'lista'">
+    <div v-show="activeTab === 'lista'" class="cv__lista">
       <CaseFiltersBar />
       <CaseListTable />
-    </template>
+    </div>
 
     <!-- Cargas -->
-    <div v-else class="cv__scroll">
+    <div v-show="activeTab === 'cargas'" class="cv__scroll">
       <CaseLoadsView />
     </div>
 
@@ -123,12 +155,54 @@ onMounted(async () => {
   font-weight: 700;
 }
 
+/* Right-side tab actions group */
+.cv__tabs-end {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-left: auto;
+}
+
+/* Autopilot */
+.cv__autopilot-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.4rem 0.75rem;
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.12s;
+  white-space: nowrap;
+}
+.cv__autopilot-btn:hover:not(:disabled) { border-color: var(--primary-500); color: var(--primary-500); }
+.cv__autopilot-btn:disabled { opacity: 0.55; cursor: not-allowed; }
+.cv__autopilot-btn i { font-size: 1rem; }
+
+.cv__autopilot-pill {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.25rem 0.6rem;
+  background: rgba(42, 199, 143, 0.1);
+  border: 1px solid rgba(42, 199, 143, 0.3);
+  border-radius: var(--radius-full);
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: var(--primary-600);
+  white-space: nowrap;
+}
+.cv__autopilot-pill i { font-size: 0.8rem; }
+
 /* Create button */
 .cv__create-btn {
   display: flex;
   align-items: center;
   gap: 0.3rem;
-  margin-left: auto;
   padding: 0.4rem 0.75rem;
   background: var(--primary-500);
   color: white;
@@ -143,7 +217,15 @@ onMounted(async () => {
 .cv__create-btn:hover { background: var(--primary-600); }
 .cv__create-btn i { font-size: 1rem; }
 
-/* Scrollable tab content */
+/* Tab content panels */
+.cv__lista {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
 .cv__scroll {
   flex: 1;
   overflow-y: auto;

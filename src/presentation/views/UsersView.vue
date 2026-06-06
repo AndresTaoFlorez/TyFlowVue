@@ -241,7 +241,7 @@ const guardarUsuario = async () => {
     }
 
     await sccRef.value?.commitPending()
-    if (!cambioEmailPropio) await userStore.loadUsers()
+    if (!cambioEmailPropio) await userStore.loadUsers({ force: true })
     cerrarModal()
 
     if (cambioEmailPropio) {

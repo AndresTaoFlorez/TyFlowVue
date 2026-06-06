@@ -161,7 +161,7 @@ const guardar = async () => {
     }
 
     markPending(formularioOriginal.value, formulario.value)
-    await Promise.all([authStore.fetchProfile(), userStore.loadUsers()])
+    await Promise.all([authStore.fetchProfile(), userStore.loadUsers({ force: true })])
     clearPending()
     toastMessage.value = 'Perfil actualizado correctamente.'
     toastVisible.value = true

@@ -10,7 +10,7 @@ export const STATUS_OPTIONS = ['open', 'assigned', 'in_progress', 'resolved', 'c
 
 export const STATUS_TRANSITIONS = {
   open: ['closed'],
-  assigned: ['in_progress', 'open', 'closed'],
+  assigned: ['in_progress', 'closed'],
   in_progress: ['resolved', 'closed'],
   resolved: ['closed', 'in_progress'],
   closed: ['open'],

@@ -10,7 +10,7 @@ export const SpecialistRepository = {
 
   async fetchAppLevels(specialistId) {
     const { data } = await client.get(`/specialists/${specialistId}/app-levels`)
-    return Array.isArray(data) ? data : data.items ?? data.data ?? []
+    return Array.isArray(data) ? data : data.data ?? data.items ?? []
   },
 
   async assignAppLevel(specialistId, applicationId, supportLevelId) {
@@ -25,7 +25,7 @@ export const SpecialistRepository = {
     const { data } = await client.put(`/specialists/${specialistId}/app-levels/sync`, {
       entries,
     })
-    return Array.isArray(data) ? data : data.items ?? data.data ?? []
+    return Array.isArray(data) ? data : data.data ?? data.items ?? []
   },
 
   async removeAppLevel(recordId) {

@@ -134,8 +134,21 @@ export const useUserStore = defineStore('users', () => {
 
   async function updateUser(userId, userData, options = {}) {
     const updated = await updateUserUseCase(userId, userData, options)
-    // CRDT: marcar actualización local para protegerla del próximo sync
-    if (updated) usersSync.updateLocal(users, userId, new User(updated))
+    // Replace directly WITHOUT _localUpdatedAt: PATCH response may not include
+    // computed fields (application_assignments, support_level_names). Storing it
+    // with CRDT protection would block the next sync from overwriting with full data.
+    if (updated) {
+      const fresh = new User(updated)
+      const idx = users.value.findIndex(u => u.id === userId)
+      if (idx !== -1) {
+        users.value = [
+          ...users.value.slice(0, idx),
+          fresh,
+          ...users.value.slice(idx + 1),
+        ]
+        usersSync.writeToCache(users.value)
+      }
+    }
     if (!options.skipReload) usersSync.forceSync(users)
     return updated
   }

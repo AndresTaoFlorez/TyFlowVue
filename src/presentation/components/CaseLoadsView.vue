@@ -1,11 +1,14 @@
 <script setup>
-import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useUserStore } from '@/presentation/stores/useUserStore'
+import { useCasesStore } from '@/presentation/stores/useCasesStore'
 import { fetchSpecialistWorkloadsUseCase } from '@/application/use-cases/cases/FetchSpecialistWorkloadsUseCase'
 import { fetchCasesUseCase } from '@/application/use-cases/cases/FetchCasesUseCase'
-import { STATUS_LABELS, PRIORITY_LABELS } from '@/domain/entities/Case'
+import { STATUS_LABELS, PRIORITY_LABELS, STATUS_TRANSITIONS } from '@/domain/entities/Case'
+import CaseReassignModal from '@/presentation/components/CaseReassignModal.vue'
 
 const userStore = useUserStore()
+const store = useCasesStore()
 const applications = computed(() => userStore.applications ?? [])
 
 const loading = ref(false)
@@ -16,6 +19,8 @@ const selectedSpecialist = ref(null)
 const selectedCase       = ref(null)
 const specialistCases    = ref([])
 const loadingCases       = ref(false)
+const showReassign       = ref(false)
+const changingStatus     = ref(false)
 
 // ── Mobile (Outlook-style) ────────────────────────────
 const isMobile = ref(window.innerWidth < 768)
@@ -96,6 +101,7 @@ async function selectSpecialist(s) {
   if (selectedSpecialist.value?.specialist_id === s.specialist_id) return
   selectedSpecialist.value = s
   selectedCase.value = null
+  showReassign.value = false
   specialistCases.value = []
   loadingCases.value = true
   if (isMobile.value) mobilePanel.value = 1
@@ -111,7 +117,49 @@ async function selectSpecialist(s) {
 
 function selectCase(c) {
   selectedCase.value = c
+  showReassign.value = false
   if (isMobile.value) mobilePanel.value = 2
+}
+
+// ── Status options for selected case ──────────────────
+const statusOptions = computed(() => {
+  const current = selectedCase.value?.status
+  if (!current) return []
+  return [current, ...(STATUS_TRANSITIONS[current] ?? [])]
+})
+
+// ── Change case status ────────────────────────────────
+async function changeStatus(newStatus) {
+  if (!selectedCase.value) return
+  changingStatus.value = true
+  try {
+    const updated = await store.updateCaseStatus(selectedCase.value.id, newStatus)
+    selectedCase.value = updated
+    const idx = specialistCases.value.findIndex(c => c.id === updated.id)
+    if (idx !== -1) {
+      specialistCases.value = [
+        ...specialistCases.value.slice(0, idx),
+        updated,
+        ...specialistCases.value.slice(idx + 1),
+      ]
+    }
+  } finally {
+    changingStatus.value = false
+  }
+}
+
+// ── Reassign done ─────────────────────────────────────
+async function onReassignDone() {
+  showReassign.value = false
+  if (!selectedSpecialist.value) return
+  loadingCases.value = true
+  try {
+    const result = await fetchCasesUseCase({ specialistId: selectedSpecialist.value.specialist_id, pageSize: 200 })
+    specialistCases.value = result.data ?? []
+    const refreshed = specialistCases.value.find(c => c.id === selectedCase.value?.id)
+    selectedCase.value = refreshed ?? selectedCase.value
+  } catch { /* silent */ }
+  finally { loadingCases.value = false }
 }
 
 // ── Cases grouped by status ───────────────────────────
@@ -494,6 +542,28 @@ onUnmounted(() => window.removeEventListener('resize', onResize))
             </div>
           </div>
 
+          <!-- Action bar -->
+          <div class="cl-detail-actions">
+            <button
+              v-if="selectedCase.isReassignable"
+              class="cl-detail-btn"
+              @click="showReassign = true"
+            >
+              <i class="bx bx-transfer"></i> Reasignar
+            </button>
+            <div class="cl-detail-status-group">
+              <span class="cl-detail-status-label">Estado:</span>
+              <select
+                class="cl-detail-status-select"
+                :value="selectedCase.status"
+                :disabled="changingStatus"
+                @change="changeStatus($event.target.value)"
+              >
+                <option v-for="s in statusOptions" :key="s" :value="s">{{ STATUS_LABELS[s] }}</option>
+              </select>
+            </div>
+          </div>
+
           <h2 class="cl-detail-subject">{{ selectedCase.subject || '(sin asunto)' }}</h2>
 
           <div v-if="selectedCase.description" class="cl-detail-section">
@@ -558,6 +628,14 @@ onUnmounted(() => window.removeEventListener('resize', onResize))
       </main>
 
     </div><!-- end cl-split -->
+
+    <!-- Reassign modal (shared desktop+mobile) -->
+    <CaseReassignModal
+      v-if="showReassign && selectedCase"
+      :case-data="selectedCase"
+      @close="showReassign = false"
+      @done="onReassignDone"
+    />
 
     <!-- ══ MOBILE (Outlook-style, 3 tabs) ════════════════ -->
     <div v-show="isMobile" class="cl-mobile">
@@ -654,6 +732,18 @@ onUnmounted(() => window.removeEventListener('resize', onResize))
             <div class="cl-detail-badges">
               <span class="cl-detail-badge" :style="{ color: STATUS_COLORS[selectedCase.status], background: STATUS_BG[selectedCase.status] }">{{ STATUS_LABELS[selectedCase.status] }}</span>
               <span v-if="selectedCase.priority" class="cl-detail-badge" :style="{ color: `var(--priority-${selectedCase.priority})`, background: `var(--priority-${selectedCase.priority}-bg)` }">{{ PRIORITY_LABELS[selectedCase.priority] }}</span>
+            </div>
+          </div>
+          <!-- Action bar -->
+          <div class="cl-detail-actions">
+            <button v-if="selectedCase.isReassignable" class="cl-detail-btn" @click="showReassign = true">
+              <i class="bx bx-transfer"></i> Reasignar
+            </button>
+            <div class="cl-detail-status-group">
+              <span class="cl-detail-status-label">Estado:</span>
+              <select class="cl-detail-status-select" :value="selectedCase.status" :disabled="changingStatus" @change="changeStatus($event.target.value)">
+                <option v-for="s in statusOptions" :key="s" :value="s">{{ STATUS_LABELS[s] }}</option>
+              </select>
             </div>
           </div>
           <h2 class="cl-detail-subject">{{ selectedCase.subject || '(sin asunto)' }}</h2>
@@ -1137,6 +1227,56 @@ onUnmounted(() => window.removeEventListener('resize', onResize))
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+/* ── Case detail actions ─────────────────────────────── */
+.cl-detail-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.cl-detail-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.35rem 0.7rem;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-light);
+  background: var(--bg-card);
+  color: var(--text-primary);
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.12s;
+}
+.cl-detail-btn:hover { border-color: var(--primary-500); color: var(--primary-500); }
+
+.cl-detail-status-group {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  margin-left: auto;
+}
+
+.cl-detail-status-label {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.cl-detail-status-select {
+  padding: 0.3rem 0.45rem;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  font-size: 0.72rem;
+  color: var(--text-primary);
+  background: var(--bg-main);
+  cursor: pointer;
+  outline: none;
+}
+.cl-detail-status-select:focus { border-color: var(--primary-500); }
+.cl-detail-status-select:disabled { opacity: 0.6; cursor: not-allowed; }
 
 /* ── Case detail (panel 3) ───────────────────────────── */
 .cl-detail-header {

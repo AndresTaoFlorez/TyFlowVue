@@ -9,6 +9,7 @@ import { updateCaseStatusUseCase } from '@/application/use-cases/cases/UpdateCas
 import { assignCaseWddUseCase } from '@/application/use-cases/cases/AssignCaseWddUseCase'
 import { assignCaseManualUseCase } from '@/application/use-cases/cases/AssignCaseManualUseCase'
 import { reassignCaseUseCase } from '@/application/use-cases/cases/ReassignCaseUseCase'
+import { assignCaseWddAutopilotUseCase } from '@/application/use-cases/cases/AssignCaseWddAutopilotUseCase'
 import { fetchSpecialistWorkloadsUseCase } from '@/application/use-cases/cases/FetchSpecialistWorkloadsUseCase'
 import { Case } from '@/domain/entities/Case'
 import { useUserStore } from '@/presentation/stores/useUserStore'
@@ -50,6 +51,9 @@ export const useCasesStore = defineStore('cases', () => {
   const listError = ref(null)
   const detailError = ref(null)
   const actionError = ref(null)
+
+  // ── Autopilot state ──
+  const autopilotState = ref({ running: false, jobId: null, processed: 0, total: null })
 
   // ── Modal state ──
   const showDetailModal = ref(false)
@@ -301,6 +305,17 @@ export const useCasesStore = defineStore('cases', () => {
     }
   }
 
+  async function triggerAutopilot() {
+    try {
+      const result = await assignCaseWddAutopilotUseCase()
+      autopilotState.value = { running: true, jobId: result.job_id, processed: 0, total: null }
+      return result
+    } catch (e) {
+      if (e.response?.status === 409) throw new Error('Ya hay un job de autopilot en progreso')
+      throw e
+    }
+  }
+
   const _workloadCache = new Map()
 
   async function loadWorkloads(applicationId, { supportLevelId, supportCategoryId } = {}) {
@@ -390,6 +405,19 @@ export const useCasesStore = defineStore('cases', () => {
       })
   }
 
+  function onAutopilotStartedRT(data) {
+    autopilotState.value = { running: true, jobId: data.job_id ?? autopilotState.value.jobId, processed: 0, total: data.total ?? null }
+  }
+
+  function onAutopilotProgressRT(data) {
+    autopilotState.value = { ...autopilotState.value, running: true, processed: data.processed ?? 0, total: data.total ?? autopilotState.value.total }
+  }
+
+  function onAutopilotCompletedRT(data) {
+    autopilotState.value = { running: false, jobId: null, processed: 0, total: null }
+    loadCases()
+  }
+
   function onCaseUpdatedRT(data) {
     const idx = cases.value.findIndex(c => c.id === data.case_id)
     let removedFromList = false
@@ -418,11 +446,13 @@ export const useCasesStore = defineStore('cases', () => {
     loading, loadingMore, loadingDetail, assigning, listError, detailError, actionError,
     showDetailModal, showCreateModal,
     caseCount, hasMore, workloadsByLevel, hasPrev, hasNext,
+    autopilotState,
     loadCases, loadPage, loadCaseById,
     openDetail, openDetailById, closeDetail, goToPrev, goToNext,
     createCase, updateCase, updateCaseStatus,
-    assignWdd, assignManual, reassign,
+    assignWdd, assignManual, reassign, triggerAutopilot,
     loadWorkloads,
     onCaseCreatedRT, onCaseAssignedRT, onCaseReassignedRT, onCaseUpdatedRT,
+    onAutopilotStartedRT, onAutopilotProgressRT, onAutopilotCompletedRT,
   }
 })

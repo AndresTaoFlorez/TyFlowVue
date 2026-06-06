@@ -12,7 +12,7 @@ export const SpecialistCategoryExclusionsRepository = {
       `/specialists/${specialistId}/category-exclusions`,
       { params }
     )
-    return Array.isArray(data) ? data : data.items ?? data.data ?? []
+    return Array.isArray(data) ? data : data.data ?? data.items ?? []
   },
 
   /**
