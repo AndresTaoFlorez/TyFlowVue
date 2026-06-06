@@ -3,6 +3,7 @@ import { computed } from 'vue'
 
 const props = defineProps({
   caseData: { type: Object, required: true },
+  specialistName: { type: String, default: null },
 })
 
 const steps = computed(() => {
@@ -43,6 +44,7 @@ function fmtDate(iso) {
       <div v-if="i < steps.length - 1" class="tl__line"></div>
       <div class="tl__info">
         <span class="tl__label">{{ s.label }}</span>
+        <span v-if="s.key === 'assigned' && specialistName" class="tl__specialist">{{ specialistName }}</span>
         <span v-if="s.time" class="tl__time">{{ fmtDate(s.time) }}</span>
       </div>
     </div>
@@ -56,6 +58,7 @@ function fmtDate(iso) {
   gap: 0;
   padding: 0.75rem 0;
   overflow-x: auto;
+  flex-shrink: 0;
 }
 
 .tl__step {
@@ -102,6 +105,17 @@ function fmtDate(iso) {
   font-size: 0.7rem;
   font-weight: 600;
   color: var(--text-secondary);
+}
+
+.tl__specialist {
+  font-size: 0.62rem;
+  font-weight: 600;
+  color: var(--primary-600, #1fa672);
+  margin-top: 0.1rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 90px;
 }
 
 .tl__time {

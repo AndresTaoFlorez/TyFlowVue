@@ -1,7 +1,8 @@
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useCasesStore } from '@/presentation/stores/useCasesStore'
 import { useUserStore } from '@/presentation/stores/useUserStore'
+import { UserRepository } from '@/infrastructure/repositories/UserRepository'
 
 const props = defineProps({
   caseData: { type: Object, required: true },
@@ -21,15 +22,49 @@ const form = ref({
 
 const submitting = ref(false)
 const error = ref(null)
+const loadingSpecialists = ref(false)
+const appUsers = ref([])
 
-const specialists = computed(() =>
-  store.specialistWorkloads.filter(s => s.specialist_id !== props.caseData.specialistId)
-)
+// Load workloads + users for the case's application on open
+onMounted(async () => {
+  const appId = props.caseData.applicationId
+  if (!appId) return
+  loadingSpecialists.value = true
+  try {
+    const [users] = await Promise.all([
+      UserRepository.fetchByApplication(appId),
+      store.loadWorkloads(appId),
+    ])
+    appUsers.value = users
+  } catch { /* silent */ }
+  finally { loadingSpecialists.value = false }
+})
+
+// Specialists for this app, excluding the currently assigned one
+// Enriched with workload data for case count display
+const specialists = computed(() => {
+  const excluded = props.caseData.specialistId
+  return appUsers.value
+    .filter(u => u.specialistId && u.specialistId !== excluded)
+    .map(u => {
+      const w = store.specialistWorkloads.find(wl => wl.specialist_id === u.specialistId)
+      return {
+        specialist_id: u.specialistId,
+        full_name: u.fullName,
+        current_count: w?.current_count ?? null,
+        is_available: w?.is_available ?? false,
+      }
+    })
+    .sort((a, b) => (a.current_count ?? 999) - (b.current_count ?? 999))
+})
+
 const supportLevels = computed(() => userStore.supportLevels ?? [])
 
 const currentSpecialist = computed(() => {
-  const s = store.specialistWorkloads.find(s => s.specialist_id === props.caseData.specialistId)
-  return s?.full_name ?? props.caseData.specialistId?.slice(0, 8) ?? '—'
+  const u = appUsers.value.find(u => u.specialistId === props.caseData.specialistId)
+  if (u) return u.fullName
+  const w = store.specialistWorkloads.find(s => s.specialist_id === props.caseData.specialistId)
+  return w?.full_name ?? props.caseData.specialistId?.slice(0, 8) ?? '—'
 })
 
 async function handleReassign() {
@@ -71,10 +106,10 @@ async function handleReassign() {
 
         <div class="rm__field">
           <label class="rm__label">Nuevo especialista *</label>
-          <select v-model="form.newSpecialistId" class="rm__select">
-            <option value="">— Seleccionar —</option>
+          <select v-model="form.newSpecialistId" class="rm__select" :disabled="loadingSpecialists">
+            <option value="">{{ loadingSpecialists ? 'Cargando...' : specialists.length ? '— Seleccionar —' : '— Sin especialistas disponibles —' }}</option>
             <option v-for="s in specialists" :key="s.specialist_id" :value="s.specialist_id">
-              {{ s.full_name }} ({{ s.current_count ?? 0 }} casos)
+              {{ s.full_name }}{{ s.current_count !== null ? ` (${s.current_count} caso${s.current_count !== 1 ? 's' : ''})` : '' }}{{ !s.is_available ? ' · sin turno' : '' }}
             </option>
           </select>
         </div>

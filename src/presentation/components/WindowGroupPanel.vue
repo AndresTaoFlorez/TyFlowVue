@@ -50,7 +50,7 @@ function onItemContext(w, e) {
     { label: w.isActive ? 'Inhabilitar' : 'Habilitar', icon: w.isActive ? 'bx-block' : 'bx-check-circle', action: 'toggle' },
     ...(inheritItem ? [inheritItem] : []),
     { label: 'Copiar ventana', icon: 'bx-copy', action: 'copy' },
-    { label: 'Cortar ventana', icon: 'bx-cut', action: 'cut' },
+    ...(isFutureWindow ? [{ label: 'Cortar ventana', icon: 'bx-cut', action: 'cut' }] : []),
     { label: 'Eliminar', icon: 'bx-trash', action: 'delete', danger: true },
   ]
   ctx.value = { visible: true, x: e.clientX, y: e.clientY, items, target: w }
@@ -115,6 +115,18 @@ function onCtxAction(action) {
               {{ inheritLabel(w) }}
             </span>
           </div>
+          <div class="item__counts">
+            <span class="item__count item__count--open" title="Apertura">
+              <i class="bx bx-log-in-circle"></i> {{ w.openingCount ?? 0 }}
+            </span>
+            <span class="item__count item__count--current" title="Actual">
+              <i class="bx bx-radio-circle-marked"></i> {{ w.currentCount ?? 0 }}
+            </span>
+            <span v-if="w.closingCount != null" class="item__count item__count--close" title="Cierre">
+              <i class="bx bx-log-out-circle"></i> {{ w.closingCount }}
+            </span>
+          </div>
+
           <div class="item__actions">
             <button
               class="item__btn"
@@ -250,10 +262,12 @@ function onCtxAction(action) {
   align-items: center;
   justify-content: space-between;
   padding: 0.65rem 0.75rem;
+  padding-top: 1.4rem;
   border-radius: var(--radius-md);
   margin-bottom: 0.25rem;
   border-left: 3px solid var(--item-color, var(--primary-500));
   transition: background 0.1s, opacity 0.15s;
+  position: relative;
 }
 
 .item:hover { background: var(--bg-card); }
@@ -357,6 +371,44 @@ function onCtxAction(action) {
   background: rgba(239, 68, 68, 0.08);
 }
 
+.item__counts {
+  position: absolute;
+  top: 0.3rem;
+  right: 0.4rem;
+  display: flex;
+  align-items: center;
+  gap: 0.2rem;
+}
+
+.item__count {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.15rem;
+  font-size: 0.58rem;
+  font-weight: 700;
+  padding: 0.08rem 0.28rem;
+  border-radius: 3px;
+  line-height: 1.3;
+  white-space: nowrap;
+}
+
+.item__count i { font-size: 0.72rem; }
+
+.item__count--open {
+  background: rgba(42, 199, 143, 0.12);
+  color: var(--primary-600, #1fa672);
+}
+
+.item__count--current {
+  background: rgba(99, 102, 241, 0.12);
+  color: #6366f1;
+}
+
+.item__count--close {
+  background: rgba(245, 158, 11, 0.12);
+  color: #b45309;
+}
+
 .item__actions {
   display: flex;
   gap: 0.25rem;
@@ -388,6 +440,17 @@ function onCtxAction(action) {
   .panel {
     max-width: calc(100% - 2rem);
     border-radius: var(--radius-md);
+  }
+
+  .item__counts { gap: 0.15rem; }
+
+  /* On small screens: hide text, keep only icon */
+  .item__count {
+    padding: 0.08rem 0.2rem;
+    font-size: 0;        /* hide number text */
+  }
+  .item__count i {
+    font-size: 0.8rem;   /* keep icon visible */
   }
 }
 </style>

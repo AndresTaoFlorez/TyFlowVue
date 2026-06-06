@@ -17,7 +17,7 @@ const userStore = useUserStore()
 const c = computed(() => store.selectedCase)
 
 const {
-  assignMode, toggleAssign, showReassign,
+  showAssign, toggleAssign, showReassign,
   statusOptions, statusLabels,
   applicationName, supportLevelName, specialistName, categoryName,
   changeStatus, fmtDate,
@@ -38,7 +38,7 @@ function goBack() {
 }
 
 function onAssignDone() {
-  assignMode.value = null
+  showAssign.value = false
   store.loadCaseById(route.params.id)
 }
 
@@ -82,18 +82,13 @@ function onReassignDone() {
       </div>
 
       <!-- Timeline -->
-      <CaseStatusTimeline :case-data="c" />
+      <CaseStatusTimeline :case-data="c" :specialist-name="specialistName" />
 
       <!-- Action bar -->
       <div class="cd__actions">
-        <template v-if="c.isAssignable">
-          <button class="cd__action" :class="{ 'cd__action--active': assignMode === 'wdd' }" @click="toggleAssign('wdd')">
-            <i class="bx bx-bot"></i> WDD Auto
-          </button>
-          <button class="cd__action" :class="{ 'cd__action--active': assignMode === 'manual' }" @click="toggleAssign('manual')">
-            <i class="bx bx-user-plus"></i> Manual
-          </button>
-        </template>
+        <button v-if="c.isAssignable" class="cd__action" :class="{ 'cd__action--active': showAssign }" @click="toggleAssign()">
+          <i class="bx bx-user-plus"></i> Asignar
+        </button>
         <button v-if="c.isReassignable" class="cd__action" @click="showReassign = true">
           <i class="bx bx-transfer"></i> Reasignar
         </button>
@@ -108,46 +103,33 @@ function onReassignDone() {
       </div>
 
       <!-- Assign panel inline -->
-      <CaseAssignPanel v-if="assignMode" :case-id="c.id" :mode="assignMode" @done="onAssignDone" />
+      <CaseAssignPanel v-if="showAssign" :case-id="c.id" @done="onAssignDone" />
 
       <!-- Body -->
       <div class="cd__body">
-        <div class="cd__section">
-          <h4 class="cd__section-title">Detalles</h4>
-          <div class="cd__grid">
-            <div class="cd__detail">
-              <span class="cd__detail-label">Aplicación</span>
-              <span class="cd__detail-value">{{ applicationName ?? '—' }}</span>
-            </div>
-            <div class="cd__detail">
-              <span class="cd__detail-label">Nivel</span>
-              <span class="cd__detail-value">{{ supportLevelName ?? '—' }}</span>
-            </div>
-            <div class="cd__detail">
-              <span class="cd__detail-label">Categoría</span>
-              <span class="cd__detail-value">{{ categoryName ?? '—' }}</span>
-            </div>
-            <div class="cd__detail">
-              <span class="cd__detail-label">Especialista</span>
-              <span class="cd__detail-value">{{ specialistName ?? '—' }}</span>
-            </div>
-            <div class="cd__detail">
-              <span class="cd__detail-label">Creado</span>
-              <span class="cd__detail-value">{{ fmtDate(c.createdAt) }}</span>
-            </div>
-            <div class="cd__detail">
-              <span class="cd__detail-label">Asignado</span>
-              <span class="cd__detail-value">{{ fmtDate(c.assignedAt) }}</span>
-            </div>
-            <div class="cd__detail">
-              <span class="cd__detail-label">Resuelto</span>
-              <span class="cd__detail-value">{{ fmtDate(c.resolvedAt) }}</span>
-            </div>
+        <div class="cd__dates">
+          <div class="cd__detail">
+            <span class="cd__detail-label">Creado</span>
+            <span class="cd__detail-value">{{ fmtDate(c.createdAt) }}</span>
+          </div>
+          <div class="cd__detail">
+            <span class="cd__detail-label">Asignado</span>
+            <span class="cd__detail-value">{{ fmtDate(c.assignedAt) ?? '—' }}</span>
+          </div>
+          <div v-if="specialistName" class="cd__detail">
+            <span class="cd__detail-label">Especialista</span>
+            <span class="cd__detail-value cd__detail-value--specialist">
+              <i class="bx bx-user-check"></i> {{ specialistName }}
+            </span>
+          </div>
+          <div class="cd__detail">
+            <span class="cd__detail-label">Resuelto</span>
+            <span class="cd__detail-value">{{ fmtDate(c.resolvedAt) ?? '—' }}</span>
           </div>
         </div>
 
-        <div v-if="c.description" class="cd__section">
-          <h4 class="cd__section-title">Descripción</h4>
+        <div v-if="c.description" class="cd__desc-block">
+          <span class="cd__detail-label">Descripción</span>
           <p class="cd__description">{{ c.description }}</p>
         </div>
       </div>
@@ -318,19 +300,16 @@ function onReassignDone() {
   gap: 1.25rem;
 }
 
-.cd__section-title {
-  font-size: 0.78rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--text-secondary);
-  margin-bottom: 0.6rem;
+.cd__dates {
+  display: flex;
+  gap: 1.5rem;
+  flex-wrap: wrap;
 }
 
-.cd__grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-  gap: 0.75rem;
+.cd__desc-block {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
 }
 
 .cd__detail {
@@ -353,16 +332,24 @@ function onReassignDone() {
   font-weight: 500;
 }
 
+.cd__detail-value--specialist {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  color: var(--primary-600, #1fa672);
+  font-weight: 600;
+}
+
 .cd__description {
   font-size: 0.85rem;
   color: var(--text-primary);
   line-height: 1.55;
   white-space: pre-wrap;
+  margin: 0;
 }
 
 @media (max-width: 768px) {
   .cd { padding: 0.85rem; }
   .cd__title { font-size: 1rem; }
-  .cd__grid { grid-template-columns: 1fr 1fr; }
 }
 </style>

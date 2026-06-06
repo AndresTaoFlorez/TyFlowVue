@@ -3,12 +3,16 @@ import { useUserStore } from '@/presentation/stores/useUserStore'
 import { fetchApplicationSupportLevelsUseCase } from '@/application/use-cases/applications/FetchApplicationSupportLevelsUseCase'
 import { fetchAppLevelCategoriesUseCase } from '@/application/use-cases/applications/FetchAppLevelCategoriesUseCase'
 
+// Module-level caches — survive composable unmount, shared across all instances
+const _levelsCache = new Map()     // appId → Level[]
+const _catsCache   = new Map()     // `${appId}_${levelId}` → Category[]
+
 /**
  * Encapsulates the App → SupportLevel → SupportCategory cascading select pattern.
  *
- * @param {import('vue').Ref<string>} applicationIdRef - reactive ref to the selected application ID
- * @param {import('vue').Ref<string>} supportLevelIdRef - reactive ref to the selected support level ID
- * @param {import('vue').Ref<string>} supportCategoryIdRef - reactive ref to the selected support category ID
+ * @param {import('vue').Ref<string>} applicationIdRef
+ * @param {import('vue').Ref<string>} supportLevelIdRef
+ * @param {import('vue').Ref<string>} supportCategoryIdRef
  * @param {{ immediate?: boolean }} [options]
  */
 export function useCascadingSelects(applicationIdRef, supportLevelIdRef, supportCategoryIdRef, options = {}) {
@@ -23,14 +27,22 @@ export function useCascadingSelects(applicationIdRef, supportLevelIdRef, support
   watch(applicationIdRef, async (appId) => {
     supportLevelIdRef.value = ''
     supportCategoryIdRef.value = ''
-    availableLevels.value = []
     availableCategories.value = []
+    availableLevels.value = []
     if (!appId) return
+
+    if (_levelsCache.has(appId)) {
+      availableLevels.value = _levelsCache.get(appId)
+      return
+    }
+
     loadingLevels.value = true
     try {
       const pivots = await fetchApplicationSupportLevelsUseCase(appId)
       const ids = pivots.map(p => p.support_level_id)
-      availableLevels.value = (userStore.supportLevels ?? []).filter(l => ids.includes(l.id))
+      const levels = (userStore.supportLevels ?? []).filter(l => ids.includes(l.id))
+      _levelsCache.set(appId, levels)
+      availableLevels.value = levels
     } catch { /* silent */ }
     finally { loadingLevels.value = false }
   }, { immediate: options.immediate ?? false })
@@ -41,11 +53,20 @@ export function useCascadingSelects(applicationIdRef, supportLevelIdRef, support
     availableCategories.value = []
     const appId = applicationIdRef.value
     if (!levelId || !appId) return
+
+    const cacheKey = `${appId}_${levelId}`
+    if (_catsCache.has(cacheKey)) {
+      availableCategories.value = _catsCache.get(cacheKey)
+      return
+    }
+
     loadingCategories.value = true
     try {
       const pivots = await fetchAppLevelCategoriesUseCase(appId, levelId)
       const ids = pivots.map(p => p.support_category_id)
-      availableCategories.value = (userStore.supportCategories ?? []).filter(c => ids.includes(c.id))
+      const cats = (userStore.supportCategories ?? []).filter(c => ids.includes(c.id))
+      _catsCache.set(cacheKey, cats)
+      availableCategories.value = cats
     } catch { /* silent */ }
     finally { loadingCategories.value = false }
   })

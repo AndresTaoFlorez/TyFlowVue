@@ -1,4 +1,4 @@
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { useCasesStore } from '@/presentation/stores/useCasesStore'
 import { useUserStore } from '@/presentation/stores/useUserStore'
 import { STATUS_LABELS, STATUS_TRANSITIONS } from '@/domain/entities/Case'
@@ -14,8 +14,14 @@ export function useCaseDetail(caseRef) {
   const store = useCasesStore()
   const userStore = useUserStore()
 
-  const assignMode = ref(null) // null | 'wdd' | 'manual'
+  const showAssign = ref(false)
   const showReassign = ref(false)
+
+  // Collapse assign/reassign panels whenever the active case changes
+  watch(() => caseRef.value?.id, () => {
+    showAssign.value = false
+    showReassign.value = false
+  })
 
   const statusOptions = computed(() => {
     const current = caseRef.value?.status
@@ -26,8 +32,11 @@ export function useCaseDetail(caseRef) {
 
   const specialistName = computed(() => {
     if (!caseRef.value?.specialistId) return null
-    const s = store.specialistWorkloads.find(w => w.specialist_id === caseRef.value.specialistId)
-    return s?.full_name ?? caseRef.value.specialistId.slice(0, 8)
+    const sid = caseRef.value.specialistId
+    const w = store.specialistWorkloads.find(s => s.specialist_id === sid)
+    if (w?.full_name) return w.full_name
+    const u = userStore.users.find(u => u.specialistId === sid)
+    return u?.fullName ?? null
   })
 
   const applicationName = computed(() => {
@@ -52,12 +61,12 @@ export function useCaseDetail(caseRef) {
     await store.updateCaseStatus(caseRef.value.id, newStatus)
   }
 
-  function toggleAssign(mode) {
-    assignMode.value = assignMode.value === mode ? null : mode
+  function toggleAssign() {
+    showAssign.value = !showAssign.value
   }
 
   function onAssignDone() {
-    assignMode.value = null
+    showAssign.value = false
     if (caseRef.value) store.loadCaseById(caseRef.value.id)
   }
 
@@ -67,7 +76,7 @@ export function useCaseDetail(caseRef) {
   }
 
   return {
-    assignMode,
+    showAssign,
     toggleAssign,
     showReassign,
     statusOptions,

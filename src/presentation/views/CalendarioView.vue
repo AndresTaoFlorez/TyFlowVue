@@ -117,7 +117,7 @@ function onWindowContext({ window: w, x, y }) {
     ...(!isEndedWindow ? [{ label: w.isActive ? 'Inhabilitar' : 'Habilitar', icon: w.isActive ? 'bx-block' : 'bx-check-circle', action: 'toggle' }] : []),
     ...(inheritItem ? [inheritItem] : []),
     { label: 'Copiar ventana', icon: 'bx-copy', action: 'copy' },
-    { label: 'Cortar ventana', icon: 'bx-cut', action: 'cut' },
+    ...(isFutureWindow ? [{ label: 'Cortar ventana', icon: 'bx-cut', action: 'cut' }] : []),
     ...(clipboard.value ? [{ label: 'Pegar aquí', icon: 'bx-paste', action: 'paste-on-window' }] : []),
     { label: 'Copiar ID', icon: 'bx-hash', action: 'copy-id' },
     { label: 'Eliminar', icon: 'bx-trash', action: 'delete', danger: true },
@@ -126,11 +126,12 @@ function onWindowContext({ window: w, x, y }) {
 }
 
 function onGroupContext({ group, x, y }) {
+  const allGroupFuture = group.windows.every(w => w.startsAt && new Date(w.startsAt) > new Date())
   const items = [
     { label: 'Ver grupo', icon: 'bx-expand-alt', action: 'view-group' },
     { label: 'Agregar especialista', icon: 'bx-user-plus', action: 'add-to-group' },
     { label: 'Copiar grupo', icon: 'bx-copy', action: 'copy-group' },
-    { label: 'Cortar grupo', icon: 'bx-cut', action: 'cut-group' },
+    ...(allGroupFuture ? [{ label: 'Cortar grupo', icon: 'bx-cut', action: 'cut-group' }] : []),
     ...(clipboard.value ? [{ label: 'Pegar aquí', icon: 'bx-paste', action: 'paste-on-group' }] : []),
     { label: 'Eliminar grupo', icon: 'bx-trash', action: 'delete-group', danger: true },
   ]

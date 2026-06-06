@@ -11,27 +11,39 @@ import { fetchSupportCategoriesUseCase } from '@/application/use-cases/support-c
 import { fetchApplicationsUseCase } from '@/application/use-cases/applications/FetchApplicationsUseCase'
 import { listSpecialistAppLevelsUseCase } from '@/application/use-cases/specialists/ListSpecialistAppLevelsUseCase'
 import { syncSpecialistAppLevelsUseCase } from '@/application/use-cases/specialists/SyncSpecialistAppLevelsUseCase'
+import { SpecialistRepository } from '@/infrastructure/repositories/SpecialistRepository'
 import { Application } from '@/domain/entities/Application'
+import { User } from '@/domain/entities/User'
 import { SyncEngine } from '@/infrastructure/sync/SyncEngine'
 
 const CACHE_VERSION = 'v2'
 const CACHE_KEYS = {
-  roles: `tyflow_roles_${CACHE_VERSION}`,
-  supportLevels: `tyflow_support_levels_${CACHE_VERSION}`,
-  supportCategories: `tyflow_support_categories_${CACHE_VERSION}`,
-  applications: `tyflow_applications_${CACHE_VERSION}`,
+  users:            `tyflow_users_${CACHE_VERSION}`,
+  roles:            `tyflow_roles_${CACHE_VERSION}`,
+  supportLevels:    `tyflow_support_levels_${CACHE_VERSION}`,
+  supportCategories:`tyflow_support_categories_${CACHE_VERSION}`,
+  applications:     `tyflow_applications_${CACHE_VERSION}`,
 }
 
 // Limpiar claves de versiones anteriores
 ;['tyflow_roles', 'tyflow_support_levels', 'tyflow_specialists',
   'tyflow_specialists_v2'].forEach(k => localStorage.removeItem(k))
 
-// ── SyncEngines por dataset ──
+// ── SyncEngines por dataset (módulo-level: singleton, persiste entre mounts) ──
+const usersSync = new SyncEngine({
+  cacheKey:    CACHE_KEYS.users,
+  hydrate:     (raw) => new User(raw),
+  fetchRemote: () => fetchUsersUseCase(),
+  getId:       (u) => u.id,
+  syncTtlMs:   60_000,   // 1 minuto — usuarios cambian con más frecuencia
+})
+
 const appSync = new SyncEngine({
-  cacheKey: CACHE_KEYS.applications,
-  hydrate: (raw) => new Application(raw),
+  cacheKey:    CACHE_KEYS.applications,
+  hydrate:     (raw) => new Application(raw),
   fetchRemote: () => fetchApplicationsUseCase(),
-  getId: (item) => item.id,
+  getId:       (item) => item.id,
+  syncTtlMs:   5 * 60_000, // 5 minutos — apps cambian muy poco
 })
 
 function readCache(key) {
@@ -44,7 +56,7 @@ function writeCache(key, data) {
 }
 
 export const useUserStore = defineStore('users', () => {
-  const users = ref([])
+  const users = ref(usersSync.loadFromCache())
   const roles = ref(readCache(CACHE_KEYS.roles))
   const supportLevels = ref(readCache(CACHE_KEYS.supportLevels))
   const supportCategories = ref(readCache(CACHE_KEYS.supportCategories))
@@ -57,13 +69,17 @@ export const useUserStore = defineStore('users', () => {
   const specialistAppLevels = ref([])
   const loadingSpecialistPivots = ref(false)
 
+  // ── Specialist full profile (for edit modal) ──
+  const specialistProfile = ref(null)
+  const loadingSpecialistProfile = ref(false)
 
-  async function loadUsers() {
-    const isFirstLoad = users.value.length === 0
-    if (isFirstLoad) loading.value = true
-    error.value = null
+
+  async function loadUsers({ force = false } = {}) {
+    if (users.value.length === 0) loading.value = true
     try {
-      users.value = await fetchUsersUseCase()
+      // SyncEngine decide: si el TTL no expiró y hay datos, no va al backend.
+      // Si necesita sync, hace merge CRDT (local reciente gana, backend gana si es más viejo).
+      await usersSync.syncInBackground(users, { force })
     } catch (e) {
       error.value = e.message
     } finally {
@@ -71,23 +87,28 @@ export const useUserStore = defineStore('users', () => {
     }
   }
 
+  let _loadSelectsPromise = null
+
   async function loadSelects(force = false) {
-    const hasCached = roles.value.length > 0 && supportLevels.value.length > 0 && supportCategories.value.length > 0 && applications.value.length > 0
+    const hasCached = roles.value.length > 0 && supportLevels.value.length > 0
+      && supportCategories.value.length > 0 && applications.value.length > 0
 
     if (!force && hasCached) {
-      // Cache disponible → UI inmediata, sync en background
+      // Cache disponible → UI inmediata, sync en background (deduplicado en SyncEngine)
       appSync.syncInBackground(applications)
       return
     }
 
+    // Si ya hay un fetch en vuelo, esperar el mismo en lugar de duplicarlo
+    if (_loadSelectsPromise) return _loadSelectsPromise
+
     loadingSelects.value = true
-    try {
-      const [rolesData, supportLevelsData, supportCategoriesData, applicationsData] = await Promise.all([
-        fetchRolesUseCase(),
-        fetchSupportLevelsUseCase(),
-        fetchSupportCategoriesUseCase(),
-        fetchApplicationsUseCase(),
-      ])
+    _loadSelectsPromise = Promise.all([
+      fetchRolesUseCase(),
+      fetchSupportLevelsUseCase(),
+      fetchSupportCategoriesUseCase(),
+      fetchApplicationsUseCase(),
+    ]).then(([rolesData, supportLevelsData, supportCategoriesData, applicationsData]) => {
       roles.value = rolesData
       supportLevels.value = supportLevelsData
       supportCategories.value = supportCategoriesData
@@ -95,39 +116,56 @@ export const useUserStore = defineStore('users', () => {
       writeCache(CACHE_KEYS.supportLevels, supportLevelsData)
       writeCache(CACHE_KEYS.supportCategories, supportCategoriesData)
       appSync.replaceAll(applications, applicationsData)
-    } finally {
+    }).finally(() => {
       loadingSelects.value = false
-    }
+      _loadSelectsPromise = null
+    })
+
+    return _loadSelectsPromise
   }
 
   async function createUser(userData, options = {}) {
     const newUser = await createUserUseCase(userData)
-    if (!options.skipReload) await loadUsers()
+    // Insertar optimista + forzar sync para que el cache refleje el nuevo usuario
+    usersSync.insertLocal(users, new User(newUser))
+    if (!options.skipReload) usersSync.forceSync(users)
     return newUser
   }
 
   async function updateUser(userId, userData, options = {}) {
     const updated = await updateUserUseCase(userId, userData, options)
-    if (!options.skipReload) await loadUsers()
+    // CRDT: marcar actualización local para protegerla del próximo sync
+    if (updated) usersSync.updateLocal(users, userId, new User(updated))
+    if (!options.skipReload) usersSync.forceSync(users)
     return updated
   }
 
   async function toggleStatus(userId) {
     const user = users.value.find((u) => u.id === userId)
     const updated = await toggleUserStatusUseCase(userId, user?.isActive ?? true)
-    const idx = users.value.findIndex((u) => u.id === userId)
-    if (idx !== -1) {
-      users.value[idx].isActive = updated.isActive
-    }
+    // Mutación optimista vía SyncEngine — marca _localUpdatedAt para CRDT
+    usersSync.updateLocal(users, userId, new User({ ...updated }))
     return updated
   }
 
   async function deleteUser(userId) {
     await deleteUserUseCase(userId)
-    users.value = users.value.filter((u) => u.id !== userId)
+    usersSync.removeLocal(users, userId)
   }
 
   // ── Specialist ↔ App-Level (unified) ──
+
+  async function loadSpecialistProfile(specialistId) {
+    if (!specialistId) { specialistProfile.value = null; return }
+    loadingSpecialistProfile.value = true
+    try {
+      specialistProfile.value = await SpecialistRepository.fetchById(specialistId)
+    } catch {
+      specialistProfile.value = null
+    } finally {
+      loadingSpecialistProfile.value = false
+    }
+  }
 
   async function loadSpecialistAppLevels(specialistId) {
     if (!specialistId) { specialistAppLevels.value = []; return }
@@ -167,6 +205,7 @@ export const useUserStore = defineStore('users', () => {
     supportLevels.value = []
     supportCategories.value = []
     applications.value = []
+    usersSync.clearCache()
     appSync.clearCache()
     localStorage.removeItem(CACHE_KEYS.roles)
     localStorage.removeItem(CACHE_KEYS.supportLevels)
@@ -185,6 +224,10 @@ export const useUserStore = defineStore('users', () => {
     // Specialist app-levels
     specialistAppLevels,
     loadingSpecialistPivots,
+    // Specialist full profile
+    specialistProfile,
+    loadingSpecialistProfile,
+    loadSpecialistProfile,
     // Actions
     loadUsers,
     loadSelects,

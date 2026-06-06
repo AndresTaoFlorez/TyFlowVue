@@ -66,12 +66,15 @@ export class SyncEngine {
    * @param {Function} config.getId - (item: Entity) => string — extrae el ID único
    * @param {number} [config.recentWindowMs=30000] - Ventana en ms donde el local gana sobre el backend
    */
-  constructor({ cacheKey, hydrate, fetchRemote, getId, recentWindowMs }) {
+  constructor({ cacheKey, hydrate, fetchRemote, getId, recentWindowMs, syncTtlMs }) {
     this._cacheKey = cacheKey
     this._hydrate = hydrate
     this._fetchRemote = fetchRemote
     this._getId = getId
     this._recentWindowMs = recentWindowMs ?? DEFAULT_RECENT_WINDOW_MS
+    this._syncTtlMs    = syncTtlMs ?? 5 * 60_000  // 5 min default — skip sync if fresher
+    this._syncPromise  = null  // deduplicates concurrent in-flight syncs
+    this._lastSyncAt   = null  // epoch ms of last completed sync
   }
 
   // ──────────────────────────────────────────────
@@ -127,15 +130,48 @@ export class SyncEngine {
    * @param {import('vue').Ref<Entity[]>} stateRef - Ref reactivo de Pinia
    * @returns {Promise<void>}
    */
-  async syncInBackground(stateRef) {
-    try {
-      const remote = await this._fetchRemote()
-      const merged = this.merge(stateRef.value, remote)
-      stateRef.value = merged
-      this.writeToCache(merged)
-    } catch {
-      // Silent fail — el cache local se preserva
-    }
+  /**
+   * Sincroniza en background respetando TTL y deduplicación.
+   *
+   * - Si hay un sync en vuelo → todos los callers esperan el mismo promise (no duplica requests).
+   * - Si el último sync fue hace menos de `syncTtlMs` → no hace nada (datos frescos).
+   * - Si expiró el TTL → fetch, merge CRDT, actualiza state + cache.
+   *
+   * Llamar desde `loadX()` cada vez que se quiere "mantener fresco" un dataset.
+   * El SyncEngine decide por sí mismo si realmente necesita ir al backend.
+   *
+   * @param {import('vue').Ref<Entity[]>} stateRef
+   * @param {{ force?: boolean }} [opts]
+   */
+  async syncInBackground(stateRef, { force = false } = {}) {
+    if (this._syncPromise) return this._syncPromise
+
+    const now = Date.now()
+    if (!force && this._lastSyncAt && now - this._lastSyncAt < this._syncTtlMs) return
+
+    this._syncPromise = (async () => {
+      try {
+        const remote = await this._fetchRemote()
+        const merged = this.merge(stateRef.value, remote)
+        stateRef.value = merged
+        this.writeToCache(merged)
+        this._lastSyncAt = Date.now()
+      } catch {
+        // Silent fail — el cache local se preserva
+      } finally {
+        this._syncPromise = null
+      }
+    })()
+    return this._syncPromise
+  }
+
+  /**
+   * Fuerza un sync ignorando el TTL. Usar después de mutaciones que necesitan
+   * reflejar el estado real del backend (ej: después de crear/eliminar un registro).
+   */
+  async forceSync(stateRef) {
+    this._lastSyncAt = null
+    return this.syncInBackground(stateRef, { force: true })
   }
 
   /**

@@ -61,12 +61,11 @@ export const CaseRepository = {
   },
 
   async assignWdd({ caseId, applicationId, supportLevelId, supportCategoryId }) {
-    const { data } = await client.post('/cases/assign/wdd', {
-      case_id: caseId,
-      application_id: applicationId,
-      support_level_id: supportLevelId,
-      support_category_id: supportCategoryId,
-    })
+    const body = { case_id: caseId }
+    if (applicationId)      body.application_id      = applicationId
+    if (supportLevelId)     body.support_level_id    = supportLevelId
+    if (supportCategoryId)  body.support_category_id = supportCategoryId
+    const { data } = await client.post('/cases/assign/wdd', body)
     return data
   },
 

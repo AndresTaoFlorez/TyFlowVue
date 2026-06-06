@@ -1,173 +1,183 @@
 <script setup>
 import { ref, computed, watch } from 'vue'
 import { useCasesStore } from '@/presentation/stores/useCasesStore'
-import { useUserStore } from '@/presentation/stores/useUserStore'
-import { useCascadingSelects } from '@/presentation/composables/useCascadingSelects'
-import { UserRepository } from '@/infrastructure/repositories/UserRepository'
+import { CaseAssignContextRepository } from '@/infrastructure/repositories/CaseAssignContextRepository'
+
+// Module-level context cache — keyed by caseId (phase-1 only; phase-2 is keyed by caseId+levelId)
+const _ctxCache = new Map() // `${caseId}` or `${caseId}_${levelId}` → context
 
 const props = defineProps({
   caseId: { type: String, required: true },
-  mode: { type: String, required: true }, // 'wdd' | 'manual'
 })
 
 const emit = defineEmits(['done'])
 
 const store = useCasesStore()
-const userStore = useUserStore()
-
 const _case = store.selectedCase
 
 const form = ref({
-  applicationId: _case?.applicationId ?? '',
-  supportLevelId: '',
-  supportCategoryId: '',
-  specialistId: '',
-  reason: '',
+  supportLevelId:    _case?.supportLevelId ?? '',
+  supportCategoryId: '', // restored after phase-2 loads categories
+  specialistId:      '',
+  reason:            '',
 })
 
-const submitting = ref(false)
-const error = ref(null)
+const submitting  = ref(null)  // null | 'wdd' | 'manual'
+const error       = ref(null)
+const activeMode  = ref('wdd') // 'wdd' | 'manual'
 
-const applications = computed(() => userStore.applications ?? [])
+// Context state
+const availableLevels     = ref([])
+const availableCategories = ref([])
+const specialists         = ref([])
+const loadingCtx          = ref(false)
 
-// Keep case's original values to restore once options load
-const _pendingLevel = _case?.supportLevelId ?? null
+// ── Phase 1: load on mount ──
+async function loadPhase1() {
+  const cacheKey = props.caseId
+  if (_ctxCache.has(cacheKey)) {
+    const cached = _ctxCache.get(cacheKey)
+    availableLevels.value = cached.supportLevels
+    specialists.value     = cached.specialists
+    _restorePendingLevel()
+    return
+  }
+
+  loadingCtx.value = true
+  try {
+    const ctx = await CaseAssignContextRepository.fetchContext(props.caseId)
+    _ctxCache.set(cacheKey, ctx)
+    availableLevels.value = ctx.supportLevels
+    specialists.value     = ctx.specialists
+    _restorePendingLevel()
+  } catch { /* silent */ }
+  finally { loadingCtx.value = false }
+}
+
+// ── Phase 2: reload when level changes (immediate fires for pre-filled level on mount) ──
+watch(() => form.value.supportLevelId, async (levelId) => {
+  form.value.supportCategoryId = ''
+  availableCategories.value    = []
+
+  if (!levelId) {
+    // revert to phase-1 full specialist list
+    const cached = _ctxCache.get(props.caseId)
+    if (cached) specialists.value = cached.specialists
+    return
+  }
+
+  const cacheKey = `${props.caseId}_${levelId}`
+  if (_ctxCache.has(cacheKey)) {
+    const cached = _ctxCache.get(cacheKey)
+    availableCategories.value = cached.supportCategories
+    specialists.value         = cached.specialists
+    _restorePendingCategory()
+    return
+  }
+
+  loadingCtx.value = true
+  try {
+    const ctx = await CaseAssignContextRepository.fetchContext(props.caseId, levelId)
+    _ctxCache.set(cacheKey, ctx)
+    availableCategories.value = ctx.supportCategories
+    specialists.value         = ctx.specialists
+    _restorePendingCategory()
+  } catch { /* silent */ }
+  finally { loadingCtx.value = false }
+}, { immediate: true })
+
+// Restore pre-existing case values once options arrive
+const _pendingLevel    = _case?.supportLevelId    ?? null
 const _pendingCategory = _case?.supportCategoryId ?? null
 
-// Cascading selects: App → SupportLevels → Categories (drives the form dropdowns)
-const { availableLevels, availableCategories, loadingLevels, loadingCategories } =
-  useCascadingSelects(
-    computed(() => form.value.applicationId),
-    computed({
-      get: () => form.value.supportLevelId,
-      set: v => { form.value.supportLevelId = v },
-    }),
-    computed({
-      get: () => form.value.supportCategoryId,
-      set: v => { form.value.supportCategoryId = v },
-    }),
-    { immediate: true },
-  )
-
-// Once levels load, restore the case's pre-existing level (if it's in the list)
-watch(availableLevels, (levels) => {
-  if (_pendingLevel && !form.value.supportLevelId && levels.some(l => l.id === _pendingLevel)) {
+function _restorePendingLevel() {
+  if (_pendingLevel && !form.value.supportLevelId &&
+      availableLevels.value.some(l => l.id === _pendingLevel)) {
     form.value.supportLevelId = _pendingLevel
   }
-})
+}
 
-// Once categories load, restore the case's pre-existing category (if it's in the list)
-watch(availableCategories, (cats) => {
-  if (_pendingCategory && !form.value.supportCategoryId && cats.some(c => c.id === _pendingCategory)) {
+function _restorePendingCategory() {
+  if (_pendingCategory && !form.value.supportCategoryId &&
+      availableCategories.value.some(c => c.id === _pendingCategory)) {
     form.value.supportCategoryId = _pendingCategory
   }
-})
+}
 
-// ── Specialist loading & filtering ──
+// Start phase 1
+loadPhase1()
 
-// All specialists who have any assignment in the selected app
-const appUsers = ref([])
-const loadingUsers = ref(false)
-
-// When app changes: reload specialists and workloads for that app
-watch(
-  () => form.value.applicationId,
-  async (appId) => {
-    appUsers.value = []
-    form.value.specialistId = ''
-    if (!appId) return
-    loadingUsers.value = true
-    try {
-      const [users] = await Promise.all([
-        UserRepository.fetchByApplication(appId),
-        store.loadWorkloads(appId),
-      ])
-      appUsers.value = users
-    } catch { /* silent */ }
-    finally { loadingUsers.value = false }
-  },
-  { immediate: true }
-)
-
-// Specialists filtered to those who handle the selected (app, level) combination.
-// Recomputes automatically when supportLevelId changes (reactive).
-const eligibleUsers = computed(() => {
-  const appId = form.value.applicationId
-  const levelId = form.value.supportLevelId
-  if (!levelId) return appUsers.value
-  return appUsers.value.filter(u =>
-    u.applicationAssignments.some(a =>
-      a.application_id === appId && a.support_level_id === levelId
-    )
-  )
-})
-
-const eligibleIds = computed(() =>
-  new Set(eligibleUsers.value.map(u => u.specialistId).filter(Boolean))
-)
-
-// Workloads cross-referenced with eligible specialists (for availability info)
-const eligibleWorkloads = computed(() =>
-  store.specialistWorkloads.filter(w => eligibleIds.value.has(w.specialist_id))
-)
-
-// For the manual dropdown: eligible users enriched with workload data, sorted by load
+// ── Specialist display ──
 const specialistsForDropdown = computed(() =>
-  eligibleUsers.value
-    .map(u => {
-      const w = store.specialistWorkloads.find(wl => wl.specialist_id === u.specialistId)
-      return {
-        specialist_id: u.specialistId,
-        full_name: u.fullName,
-        current_count: w?.current_count ?? null,
-        is_available: w?.is_available ?? false,
-      }
-    })
-    .sort((a, b) => (a.current_count ?? 999) - (b.current_count ?? 999))
+  [...specialists.value].sort((a, b) => (a.current_count ?? 999) - (b.current_count ?? 999))
 )
 
-const isLoading = computed(() => loadingLevels.value || loadingUsers.value)
-const eligibleCount  = computed(() => eligibleUsers.value.length)
-const availableCount = computed(() => eligibleWorkloads.value.filter(w => w.is_available).length)
+const eligibleCount  = computed(() => specialists.value.length)
+const availableCount = computed(() => specialists.value.filter(s => s.is_available).length)
+const isLoading      = computed(() => loadingCtx.value)
 
-async function handleAssign() {
-  submitting.value = true
+// ── Actions ──
+async function handleWdd() {
+  submitting.value = 'wdd'
   error.value = null
   try {
-    if (props.mode === 'wdd') {
-      await store.assignWdd({
-        caseId: props.caseId,
-        applicationId: form.value.applicationId,
-        supportLevelId: form.value.supportLevelId || null,
-        supportCategoryId: form.value.supportCategoryId || null,
-      })
-    } else {
-      await store.assignManual({
-        caseId: props.caseId,
-        specialistId: form.value.specialistId,
-        reason: form.value.reason.trim() || null,
-      })
-    }
+    await store.assignWdd({
+      caseId:           props.caseId,
+      applicationId:    _case?.applicationId ?? null,
+      supportLevelId:   form.value.supportLevelId    || null,
+      supportCategoryId: form.value.supportCategoryId || null,
+    })
     emit('done')
   } catch (e) {
     error.value = store.actionError || e.message || 'Error asignando caso'
   } finally {
-    submitting.value = false
+    submitting.value = null
   }
 }
 
-const canSubmit = computed(() => {
-  if (submitting.value) return false
-  if (props.mode === 'wdd') return !!form.value.applicationId
-  return !!form.value.specialistId
-})
+async function handleManual() {
+  submitting.value = 'manual'
+  error.value = null
+  try {
+    await store.assignManual({
+      caseId:      props.caseId,
+      specialistId: form.value.specialistId,
+      reason:      form.value.reason.trim() || null,
+    })
+    emit('done')
+  } catch (e) {
+    error.value = store.actionError || e.message || 'Error asignando caso'
+  } finally {
+    submitting.value = null
+  }
+}
+
+const canSubmitWdd    = computed(() => !submitting.value)
+const canSubmitManual = computed(() => !submitting.value && !!form.value.specialistId)
 </script>
 
 <template>
   <div class="ap">
 
-    <!-- Info badges: show ONLY specialists matching the current (app, level) selection -->
-    <div v-if="form.applicationId && !isLoading" class="ap__info">
+    <!-- Level / Category -->
+    <div class="ap__field">
+      <label class="ap__label">Nivel de soporte</label>
+      <select v-model="form.supportLevelId" class="ap__select" :disabled="isLoading">
+        <option value="">{{ isLoading ? 'Cargando...' : availableLevels.length ? '— Ninguno —' : '— Sin niveles —' }}</option>
+        <option v-for="lv in availableLevels" :key="lv.id" :value="lv.id">{{ lv.name }}</option>
+      </select>
+    </div>
+
+    <div class="ap__field">
+      <label class="ap__label">Categoría</label>
+      <select v-model="form.supportCategoryId" class="ap__select" :disabled="!form.supportLevelId || isLoading">
+        <option value="">{{ isLoading ? 'Cargando...' : availableCategories.length ? '— Ninguna —' : '— Seleccione nivel —' }}</option>
+        <option v-for="cat in availableCategories" :key="cat.id" :value="cat.id">{{ cat.name }}</option>
+      </select>
+    </div>
+
+    <!-- Specialist info chips -->
+    <div v-if="!isLoading" class="ap__info">
       <span class="ap__info-chip">
         <i class="bx bx-user-check"></i>
         {{ eligibleCount }} especialista{{ eligibleCount !== 1 ? 's' : '' }} elegible{{ eligibleCount !== 1 ? 's' : '' }}
@@ -177,53 +187,41 @@ const canSubmit = computed(() => {
         {{ availableCount }} con turno activo
       </span>
     </div>
-    <div v-else-if="isLoading" class="ap__info">
+    <div v-else class="ap__info">
       <span class="ap__info-chip"><i class="bx bx-loader-alt bx-spin"></i> Cargando...</span>
     </div>
 
-    <!-- WDD form -->
-    <template v-if="mode === 'wdd'">
-      <div class="ap__field">
-        <label class="ap__label">Aplicación *</label>
-        <select v-model="form.applicationId" class="ap__select">
-          <option value="">— Seleccionar —</option>
-          <option v-for="app in applications" :key="app.id" :value="app.id">{{ app.name }}</option>
-        </select>
-      </div>
+    <!-- Mode tabs -->
+    <div class="ap__tabs">
+      <button
+        class="ap__tab"
+        :class="{ 'ap__tab--active': activeMode === 'wdd' }"
+        :disabled="!!submitting"
+        @click="activeMode = 'wdd'"
+      >
+        <i class="bx bx-bot"></i> WDD Auto
+      </button>
+      <button
+        class="ap__tab"
+        :class="{ 'ap__tab--active': activeMode === 'manual' }"
+        :disabled="!!submitting"
+        @click="activeMode = 'manual'"
+      >
+        <i class="bx bx-user-plus"></i> Manual
+      </button>
+    </div>
 
-      <div class="ap__field">
-        <label class="ap__label">Nivel de soporte</label>
-        <select v-model="form.supportLevelId" class="ap__select" :disabled="!form.applicationId || loadingLevels">
-          <option value="">{{ loadingLevels ? 'Cargando...' : availableLevels.length ? '— Ninguno —' : '— Seleccione app —' }}</option>
-          <option v-for="lv in availableLevels" :key="lv.id" :value="lv.id">{{ lv.name }}</option>
-        </select>
-      </div>
-
-      <div class="ap__field">
-        <label class="ap__label">Categoría</label>
-        <select v-model="form.supportCategoryId" class="ap__select" :disabled="!form.supportLevelId || loadingCategories">
-          <option value="">{{ loadingCategories ? 'Cargando...' : availableCategories.length ? '— Ninguna —' : '— Seleccione nivel —' }}</option>
-          <option v-for="cat in availableCategories" :key="cat.id" :value="cat.id">{{ cat.name }}</option>
-        </select>
-      </div>
-
-      <!-- WDD notice when no eligible specialists -->
-      <p v-if="!isLoading && form.supportLevelId && eligibleCount === 0" class="ap__warn">
-        <i class="bx bx-error-circle"></i>
-        Sin especialistas para este nivel en la aplicación.
-      </p>
+    <!-- WDD mode -->
+    <template v-if="activeMode === 'wdd'">
+      <button class="ap__btn ap__btn--wdd" :disabled="!canSubmitWdd" @click="handleWdd">
+        <i v-if="submitting === 'wdd'" class="bx bx-loader-alt bx-spin"></i>
+        <i v-else class="bx bx-check"></i>
+        {{ submitting === 'wdd' ? 'Asignando...' : 'Confirmar WDD Auto' }}
+      </button>
     </template>
 
-    <!-- Manual form -->
-    <template v-else>
-      <div class="ap__field">
-        <label class="ap__label">Nivel de soporte <span class="ap__label-hint">(para filtrar especialistas)</span></label>
-        <select v-model="form.supportLevelId" class="ap__select" :disabled="!form.applicationId || loadingLevels">
-          <option value="">{{ loadingLevels ? 'Cargando...' : '— Todos los niveles —' }}</option>
-          <option v-for="lv in availableLevels" :key="lv.id" :value="lv.id">{{ lv.name }}</option>
-        </select>
-      </div>
-
+    <!-- Manual mode -->
+    <template v-if="activeMode === 'manual'">
       <div class="ap__field">
         <label class="ap__label">Especialista *</label>
         <select v-model="form.specialistId" class="ap__select" :disabled="isLoading || eligibleCount === 0">
@@ -234,26 +232,31 @@ const canSubmit = computed(() => {
             {{ s.full_name }}{{ s.current_count !== null ? ` (${s.current_count} caso${s.current_count !== 1 ? 's' : ''})` : '' }}{{ !s.is_available ? ' · sin turno' : '' }}
           </option>
         </select>
-        <span v-if="!isLoading && eligibleCount === 0 && form.applicationId" class="ap__hint">
-          {{ form.supportLevelId ? 'Ningún especialista asignado a este nivel.' : 'Selecciona un nivel para filtrar, o se mostrarán todos.' }}
+        <span v-if="!isLoading && eligibleCount === 0" class="ap__hint">
+          <template v-if="!form.supportLevelId">Selecciona un nivel para filtrar.</template>
+          <template v-else-if="_pendingCategory">
+            Ningún especialista disponible — puede que todos hayan excluido esta categoría.
+          </template>
+          <template v-else>Ningún especialista en este nivel.</template>
         </span>
       </div>
 
       <div class="ap__field">
-        <label class="ap__label">Razón</label>
-        <input v-model="form.reason" type="text" class="ap__input" placeholder="Motivo (opcional)" />
+        <label class="ap__label">Razón <span class="ap__label-hint">(opcional)</span></label>
+        <input v-model="form.reason" type="text" class="ap__input" placeholder="Motivo de asignación manual" />
       </div>
+
+      <button class="ap__btn ap__btn--manual" :disabled="!canSubmitManual" @click="handleManual">
+        <i v-if="submitting === 'manual'" class="bx bx-loader-alt bx-spin"></i>
+        <i v-else class="bx bx-check"></i>
+        {{ submitting === 'manual' ? 'Asignando...' : 'Confirmar asignación manual' }}
+      </button>
     </template>
 
+    <!-- Error -->
     <div v-if="error" class="ap__error">
       <i class="bx bx-error-circle"></i> {{ error }}
     </div>
-
-    <button class="ap__submit" :disabled="!canSubmit" @click="handleAssign">
-      <i v-if="submitting" class="bx bx-loader-alt bx-spin"></i>
-      <i v-else class="bx bx-check"></i>
-      {{ submitting ? 'Asignando...' : 'Confirmar asignación' }}
-    </button>
   </div>
 </template>
 
@@ -328,16 +331,77 @@ const canSubmit = computed(() => {
   font-style: italic;
 }
 
-.ap__warn {
+.ap__tabs {
+  display: flex;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.ap__tab {
+  flex: 1;
   display: flex;
   align-items: center;
-  gap: 0.25rem;
-  font-size: 0.72rem;
-  color: var(--warning-text, #b45309);
-  background: var(--warning-bg, #fef3c7);
-  border-radius: var(--radius-md);
-  padding: 0.35rem 0.55rem;
+  justify-content: center;
+  gap: 0.3rem;
+  padding: 0.4rem 0.6rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  background: var(--bg-main);
+  color: var(--text-secondary);
+  border: none;
+  cursor: pointer;
+  transition: all 0.12s;
 }
+
+.ap__tab + .ap__tab {
+  border-left: 1px solid var(--border-light);
+}
+
+.ap__tab--active {
+  background: var(--primary-500);
+  color: white;
+}
+.ap__tab--active + .ap__tab,
+.ap__tab + .ap__tab--active {
+  border-left-color: var(--primary-500);
+}
+
+.ap__tab:hover:not(.ap__tab--active):not(:disabled) {
+  background: var(--bg-card);
+  color: var(--text-primary);
+}
+
+.ap__tab:disabled { opacity: 0.55; cursor: not-allowed; }
+
+.ap__btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.3rem;
+  padding: 0.48rem;
+  font-weight: 700;
+  font-size: 0.78rem;
+  border-radius: var(--radius-md);
+  border: none;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+
+.ap__btn--wdd {
+  background: var(--primary-500);
+  color: white;
+}
+.ap__btn--wdd:hover:not(:disabled) { background: var(--primary-600); }
+
+.ap__btn--manual {
+  background: #6366f1;
+  color: white;
+}
+.ap__btn--manual:hover:not(:disabled) { background: #4f46e5; }
+
+.ap__btn:disabled { opacity: 0.55; cursor: not-allowed; }
 
 .ap__error {
   display: flex;
@@ -350,23 +414,4 @@ const canSubmit = computed(() => {
   font-size: 0.75rem;
   font-weight: 600;
 }
-
-.ap__submit {
-  padding: 0.5rem;
-  background: var(--primary-500);
-  color: white;
-  font-weight: 700;
-  font-size: 0.78rem;
-  border-radius: var(--radius-md);
-  border: none;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.3rem;
-  transition: background 0.12s;
-}
-
-.ap__submit:hover:not(:disabled) { background: var(--primary-600); }
-.ap__submit:disabled { opacity: 0.55; cursor: not-allowed; }
 </style>

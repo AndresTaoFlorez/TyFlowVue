@@ -1,6 +1,11 @@
 import client from '@/infrastructure/http/client'
 
 export const SpecialistRepository = {
+  async fetchById(specialistId) {
+    const { data } = await client.get(`/specialists/${specialistId}`)
+    return data
+  },
+
   // ── Specialist ↔ App-Level (unified) ──
 
   async fetchAppLevels(specialistId) {

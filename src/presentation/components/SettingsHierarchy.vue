@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useSettingsStore } from '@/presentation/stores/useSettingsStore'
 import { useUserStore } from '@/presentation/stores/useUserStore'
 
@@ -51,10 +51,95 @@ const effectiveCategoryIds = computed(() => pendingCategoryIds.value ?? committe
 const hasLevelChanges = computed(() => pendingLevelIds.value !== null)
 const hasCategoryChanges = computed(() => pendingCategoryIds.value !== null)
 
+// ── Bulk select computeds ──
+const allLevelsSelected = computed(() =>
+  store.supportLevels.length > 0 &&
+  store.supportLevels.every(lv => effectiveLevelIds.value.includes(lv.id))
+)
+const noLevelsSelected = computed(() =>
+  store.supportLevels.every(lv => !effectiveLevelIds.value.includes(lv.id))
+)
+const allCategoriesSelected = computed(() =>
+  store.supportCategories.length > 0 &&
+  store.supportCategories.every(cat => effectiveCategoryIds.value.includes(cat.id))
+)
+const noCategoriesSelected = computed(() =>
+  store.supportCategories.every(cat => !effectiveCategoryIds.value.includes(cat.id))
+)
+
+// ── Undo state for bulk ops ──
+const _prevLevelIds    = ref(null)
+const _prevCategoryIds = ref(null)
+let _levelUndoTimer    = null
+let _catUndoTimer      = null
+
+function _snapshotLevels() {
+  _prevLevelIds.value = [...effectiveLevelIds.value]
+  clearTimeout(_levelUndoTimer)
+  _levelUndoTimer = setTimeout(() => { _prevLevelIds.value = null }, 8_000)
+}
+
+function _snapshotCategories() {
+  _prevCategoryIds.value = [...effectiveCategoryIds.value]
+  clearTimeout(_catUndoTimer)
+  _catUndoTimer = setTimeout(() => { _prevCategoryIds.value = null }, 8_000)
+}
+
+function selectAllLevels() {
+  _snapshotLevels()
+  pendingLevelIds.value = store.supportLevels.map(lv => lv.id)
+}
+function selectNoneLevels() {
+  _snapshotLevels()
+  pendingLevelIds.value = []
+}
+function undoLevels() {
+  if (_prevLevelIds.value === null) return
+  pendingLevelIds.value = _prevLevelIds.value
+  _prevLevelIds.value = null
+  clearTimeout(_levelUndoTimer)
+}
+
+function selectAllCategories() {
+  _snapshotCategories()
+  pendingCategoryIds.value = store.supportCategories.map(cat => cat.id)
+}
+function selectNoneCategories() {
+  _snapshotCategories()
+  pendingCategoryIds.value = []
+}
+function undoCategories() {
+  if (_prevCategoryIds.value === null) return
+  pendingCategoryIds.value = _prevCategoryIds.value
+  _prevCategoryIds.value = null
+  clearTimeout(_catUndoTimer)
+}
+
+function _onKeydown(e) {
+  if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
+    if (_prevCategoryIds.value !== null) {
+      e.preventDefault()
+      undoCategories()
+    } else if (_prevLevelIds.value !== null) {
+      e.preventDefault()
+      undoLevels()
+    }
+  }
+}
+
+onMounted(()  => window.addEventListener('keydown', _onKeydown))
+onUnmounted(() => {
+  window.removeEventListener('keydown', _onKeydown)
+  clearTimeout(_levelUndoTimer)
+  clearTimeout(_catUndoTimer)
+})
+
 function selectApp(appId) {
   store.loadAppLevels(appId)
   pendingLevelIds.value = null
   pendingCategoryIds.value = null
+  _prevLevelIds.value = null
+  _prevCategoryIds.value = null
   expandedLevelId.value = null
   toast.value = null
 }
@@ -63,9 +148,11 @@ function expandLevel(levelId) {
   if (expandedLevelId.value === levelId) {
     expandedLevelId.value = null
     pendingCategoryIds.value = null
+    _prevCategoryIds.value = null
     return
   }
   pendingCategoryIds.value = null
+  _prevCategoryIds.value = null
   expandedLevelId.value = levelId
   store.loadLevelCategories(levelId)
 }
@@ -101,6 +188,7 @@ async function saveLevels() {
   try {
     await store.syncAppLevels(store.selectedAppId, pendingLevelIds.value)
     pendingLevelIds.value = null
+    _prevLevelIds.value = null
     showToast('success', 'Niveles guardados correctamente.')
   } catch {
     showToast('error', store.error || 'Error guardando niveles')
@@ -115,6 +203,7 @@ async function saveCategories() {
   try {
     await store.syncLevelCategories(expandedLevelId.value, pendingCategoryIds.value)
     pendingCategoryIds.value = null
+    _prevCategoryIds.value = null
     showToast('success', 'Categorías guardadas correctamente.')
   } catch {
     showToast('error', store.error || 'Error guardando categorías')
@@ -261,6 +350,11 @@ async function saveEditCat(id) {
         <div class="sh__section-header">
           <span class="sh__section-title"><i class="bx bx-layer"></i> Niveles de soporte</span>
           <div class="sh__section-actions">
+            <div v-if="store.supportLevels.length > 1" class="sh__bulk">
+              <button type="button" class="sh__bulk-btn" :disabled="allLevelsSelected" @click="selectAllLevels">Todos</button>
+              <span class="sh__bulk-sep">/</span>
+              <button type="button" class="sh__bulk-btn" :disabled="noLevelsSelected" @click="selectNoneLevels">Ninguno</button>
+            </div>
             <!-- Guardar niveles -->
             <button
               v-if="hasLevelChanges"
@@ -334,6 +428,11 @@ async function saveEditCat(id) {
               <div class="sh__sub-header">
                 <span class="sh__sub-title"><i class="bx bx-category"></i> Categorías de "{{ lv.name }}"</span>
                 <div class="sh__section-actions">
+                  <div v-if="store.supportCategories.length > 1" class="sh__bulk">
+                    <button type="button" class="sh__bulk-btn sh__bulk-btn--sm" :disabled="allCategoriesSelected" @click="selectAllCategories">Todos</button>
+                    <span class="sh__bulk-sep">/</span>
+                    <button type="button" class="sh__bulk-btn sh__bulk-btn--sm" :disabled="noCategoriesSelected" @click="selectNoneCategories">Ninguno</button>
+                  </div>
                   <!-- Guardar categorías -->
                   <button
                     v-if="hasCategoryChanges"
@@ -394,9 +493,21 @@ async function saveEditCat(id) {
                   </template>
                 </div>
               </div>
+
+              <transition name="undo-fade">
+                <button v-if="_prevCategoryIds !== null" type="button" class="sh__undo-btn" @click="undoCategories">
+                  <i class='bx bx-undo'></i> Deshacer
+                </button>
+              </transition>
             </div>
           </div>
         </div>
+
+        <transition name="undo-fade">
+          <button v-if="_prevLevelIds !== null" type="button" class="sh__undo-btn" @click="undoLevels">
+            <i class='bx bx-undo'></i> Deshacer
+          </button>
+        </transition>
 
         <div v-if="!store.loadingPivots && store.supportLevels.length === 0" class="sh__empty">
           No hay niveles de soporte. Crea uno primero.

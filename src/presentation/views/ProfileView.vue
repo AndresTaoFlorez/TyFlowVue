@@ -6,6 +6,7 @@ import { useUserStore } from '@/presentation/stores/useUserStore'
 import { useRouter } from 'vue-router'
 import ToastNotification from '@/presentation/components/ToastNotification.vue'
 import SpecialistFields from '@/presentation/components/SpecialistFields.vue'
+import SpecialistCategoryConfig from '@/presentation/components/SpecialistCategoryConfig.vue'
 import ChipSelect from '@/presentation/components/ChipSelect.vue'
 import { usePendingFields } from '@/presentation/composables/usePendingFields'
 
@@ -17,6 +18,7 @@ const { isAdmin } = storeToRefs(authStore)
 
 const editando = ref(false)
 const cargando = ref(false)
+const sccRef = ref(null)
 const errores = ref({})
 const emailOriginal = ref('')
 const confirmandoEmail = ref(false)
@@ -32,8 +34,7 @@ const formulario = ref({
   documentNumber: '',
   email: '',
   roleIds: [],
-  supportLevelIds: [],
-  applicationIds: [],
+  applicationLevels: [],
 })
 
 const adminRoleId = computed(() => {
@@ -50,15 +51,13 @@ const esSpecialista = computed(() =>
   specialistRoleId.value !== null && formulario.value.roleIds.includes(specialistRoleId.value)
 )
 
-const profileSupportLevels = computed(() => {
-  return profile.value?.supportLevelNames || []
-})
+const profileSupportLevels = computed(() => profile.value?.supportLevelNames || [])
 
 const resolverIds = (nombres, lista) => {
   if (!nombres || !nombres.length) return []
   const nombresLower = nombres.map(n => n.trim().toLowerCase())
   return lista
-    .filter(item => nombresLower.includes((item.name || '').toLowerCase()))
+    .filter(item => nombresLower.includes((item.displayName || item.name || '').toLowerCase()))
     .map(item => item.id)
 }
 
@@ -69,21 +68,12 @@ const abrirEditar = async () => {
   confirmandoEmail.value = false
 
   try {
-    let roleIds = []
-    let supportLevelIds = []
-    let applicationIds = []
-    let applicationLevels = []
+    await userStore.loadSelects()
 
-    if (isAdmin.value) {
-      await userStore.loadSelects()
-      roleIds = resolverIds(p.roleNames, userStore.roles)
-      supportLevelIds = resolverIds(p.supportLevelNames, userStore.supportLevels)
-      applicationIds = p.applicationAssignments.map(a => a.application_id)
-      applicationLevels = p.applicationAssignments.map(a => ({
-        application_id: a.application_id,
-        support_level_id: a.support_level_id,
-      }))
-    }
+    const applicationLevels = (p.applicationAssignments ?? []).map(a => ({
+      application_id: a.application_id,
+      support_level_id: a.support_level_id,
+    }))
 
     emailOriginal.value = p.email || ''
     formulario.value = {
@@ -93,10 +83,12 @@ const abrirEditar = async () => {
       secondSurname: p.secondSurname || '',
       documentNumber: p.documentNumber || '',
       email: p.email || '',
-      roleIds,
-      supportLevelIds,
-      applicationIds,
+      roleIds: resolverIds(p.roleNames, userStore.roles),
       applicationLevels,
+    }
+    // Ensure specialist role is reflected if the user already has a specialist record
+    if (p.specialistId && specialistRoleId.value && !formulario.value.roleIds.includes(specialistRoleId.value)) {
+      formulario.value.roleIds.push(specialistRoleId.value)
     }
     formularioOriginal.value = JSON.parse(JSON.stringify(formulario.value))
     editando.value = true
@@ -121,18 +113,19 @@ const validarFormulario = () => {
     errores.value.documentNumber = 'Documento demasiado corto.'
     valido = false
   }
-  if (isAdmin.value && !cargandoSelects.value) {
-    if (formulario.value.roleIds.length === 0) {
-      errores.value.roles = 'Debe seleccionar al menos un rol.'
+  if (formulario.value.roleIds.length === 0) {
+    errores.value.roles = 'Debe seleccionar al menos un rol.'
+    valido = false
+  }
+  if (esSpecialista.value) {
+    const levels = formulario.value.applicationLevels
+    if (levels.length === 0) {
+      errores.value.applicationLevels = 'Agrega al menos una aplicación con su nivel de soporte.'
       valido = false
-    } else if (adminRoleId.value && !formulario.value.roleIds.includes(adminRoleId.value)) {
-      errores.value.roles = 'No puedes quitarte el rol de administrador.'
+    } else if (levels.some(al => !al.application_id || !al.support_level_id)) {
+      errores.value.applicationLevels = 'Completa todas las asignaciones o elimina las incompletas.'
       valido = false
     }
-  }
-  if (esSpecialista.value && formulario.value.supportLevelIds.length === 0) {
-    errores.value.supportLevels = 'Debe seleccionar al menos un nivel de soporte.'
-    valido = false
   }
   return valido
 }
@@ -157,6 +150,7 @@ const guardar = async () => {
       emailChanged: cambioEmail,
       skipReload: true,
     })
+    await sccRef.value?.commitPending()
 
     cerrarEditar()
 
@@ -341,35 +335,45 @@ onUnmounted(() => {
               <span v-if="errores.email" class="error-text">{{ errores.email }}</span>
               <span v-else class="hint-text">Si se cambia, tu sesion se cerrara.</span>
             </div>
-            <template v-if="isAdmin">
-              <div class="form-group form-group--full">
-                <ChipSelect
-                  :options="userStore.roles"
-                  v-model="formulario.roleIds"
-                  label="Roles *"
-                  icon="bx-shield"
-                  color="amber"
-                  :loading="userStore.loadingSelects"
-                  :disabled="cargando"
-                  :error="errores.roles"
-                  :locked-ids="adminRoleId ? [adminRoleId] : []"
-                  empty-text="Sin roles disponibles"
-                />
-              </div>
-              <div v-if="esSpecialista" class="form-group form-group--full">
-                <SpecialistFields
-                  :support-levels="userStore.supportLevels"
-                  :applications="userStore.applications"
-                  :selected-support-level-ids="formulario.supportLevelIds"
-                  :selected-application-ids="formulario.applicationIds"
-                  :loading="userStore.loadingSelects"
-                  :disabled="cargando"
-                  :support-level-error="errores.supportLevels"
-                  @update:selected-support-level-ids="formulario.supportLevelIds = $event"
-                  @update:selected-application-ids="formulario.applicationIds = $event"
-                />
-              </div>
-            </template>
+            <div class="form-group form-group--full">
+              <ChipSelect
+                :options="userStore.roles"
+                v-model="formulario.roleIds"
+                label="Roles *"
+                icon="bx-shield"
+                color="amber"
+                :loading="userStore.loadingSelects"
+                :disabled="cargando"
+                :error="errores.roles"
+                :locked-ids="adminRoleId ? [adminRoleId] : []"
+                empty-text="Sin roles disponibles"
+              />
+            </div>
+            <div v-if="esSpecialista" class="form-group form-group--full">
+              <SpecialistFields
+                :support-levels="userStore.supportLevels"
+                :applications="userStore.applications"
+                v-model="formulario.applicationLevels"
+                :loading="userStore.loadingSelects"
+                :disabled="cargando"
+                :error="errores.applicationLevels"
+              />
+            </div>
+            <div
+              v-if="esSpecialista && formulario.applicationLevels.some(al => al.application_id && al.support_level_id)"
+              class="form-group form-group--full"
+            >
+              <label class="form-label">
+                Categorías habilitadas
+                <span class="form-hint">Según las aplicaciones y niveles asignados</span>
+              </label>
+              <SpecialistCategoryConfig
+                ref="sccRef"
+                deferred
+                :application-levels="formulario.applicationLevels.filter(al => al.application_id && al.support_level_id)"
+                :specialist-id="profile?.specialistId ?? null"
+              />
+            </div>
           </div>
 
           <div v-if="errores.general" class="form-error-banner">
@@ -845,5 +849,17 @@ onUnmounted(() => {
   .form-grid {
     grid-template-columns: 1fr;
   }
+}
+
+.form-label {
+  font-size: 0.85rem; font-weight: 600; color: var(--text-secondary); margin-bottom: 0.3rem; display: block;
+}
+
+.form-hint {
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 400;
+  color: var(--text-secondary);
+  margin-top: 0.1rem;
 }
 </style>

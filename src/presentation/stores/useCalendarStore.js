@@ -857,13 +857,15 @@ export const useCalendarStore = defineStore('calendar', () => {
     for (const date of dateList) {
       const onDate = windows.value.filter(w => w.scheduledDate === date)
       for (const w of onDate) {
-        if (_isEnded(w)) continue  // skip sealed windows
+        if (_isEnded(w)) continue  // skip ended windows — both timestamps sealed
         const wS = _timeToMinutes(w.startTime)
         const wE = _timeToMinutes(w.endTime)
         if (eraseE <= wS || eraseS >= wE) continue
         if (eraseS <= wS && eraseE >= wE) {
           allDeletes.push(w)
         } else if (eraseS <= wS) {
+          // This would push starts_at forward — blocked for in-shift windows
+          if (w.isInShift) continue
           allUpdates.push({ window: w, startTime: eraseEndTime, date })
         } else if (eraseE >= wE) {
           allUpdates.push({ window: w, endTime: eraseStartTime, date })

@@ -35,6 +35,7 @@ export class User {
     this.applicationAssignments = Array.isArray(application_assignments) ? application_assignments : []
     this.preferences = preferences
     this._fullName = full_name
+    this._localUpdatedAt = null
   }
 
   get fullName() {
@@ -45,5 +46,29 @@ export class User {
 
   get statusLabel() {
     return this.isActive ? 'ACTIVO' : 'INACTIVO'
+  }
+
+  withLocalUpdate() {
+    const copy = new User({
+      id: this.id,
+      first_name: this.firstName,
+      second_name: this.secondName,
+      first_surname: this.firstSurname,
+      second_surname: this.secondSurname,
+      id_document: this.documentNumber,
+      created_at: this.createdAt,
+      is_active: this.isActive,
+      email: this.email,
+      last_sign_in_at: this.lastSignInAt,
+      full_name: this._fullName,
+      role_names: this.roleNames,
+      specialist_id: this.specialistId,
+      specialist_is_active: this.specialistIsActive,
+      support_level_names: this.supportLevelNames,
+      application_assignments: this.applicationAssignments,
+      preferences: this.preferences,
+    })
+    copy._localUpdatedAt = new Date().toISOString()
+    return copy
   }
 }

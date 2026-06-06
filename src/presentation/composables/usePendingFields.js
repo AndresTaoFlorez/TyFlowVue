@@ -55,15 +55,25 @@ export function usePendingFields() {
   return { hasPending, isPending, markPending, clearPending, hasChanges }
 }
 
+function serialize(v) {
+  if (v == null) return String(v)
+  if (typeof v === 'object') return JSON.stringify(v)
+  return String(v)
+}
+
 function isEqual(a, b) {
   if (a === b) return true
   if (a == null || b == null) return a == b
 
   if (Array.isArray(a) && Array.isArray(b)) {
     if (a.length !== b.length) return false
-    const sa = [...a].sort()
-    const sb = [...b].sort()
+    const sa = [...a].map(serialize).sort()
+    const sb = [...b].map(serialize).sort()
     return sa.every((v, i) => v === sb[i])
+  }
+
+  if (typeof a === 'object' && typeof b === 'object') {
+    return JSON.stringify(a) === JSON.stringify(b)
   }
 
   return String(a) === String(b)

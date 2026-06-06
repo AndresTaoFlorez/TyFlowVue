@@ -64,6 +64,7 @@ const modoEdicion = ref(false)
 const modoVista = ref(false)
 const editandoUserId = ref(null)
 const cargando = ref(false)
+const sccRef = ref(null)
 const toggling = ref(new Set())
 const cargandoEditar = ref(null)
 const emailOriginal = ref('')
@@ -109,7 +110,7 @@ const abrirCrear = async () => {
     applicationLevels: [],
   }
   mostrarModal.value = true
-  await userStore.loadSelects(true)
+  await userStore.loadSelects()
 }
 
 const resolverIds = (nombres, lista) => {
@@ -128,8 +129,18 @@ const abrirEditar = async (user) => {
     modoEdicion.value = user.isActive
     editandoUserId.value = user.id
     editandoUser.value = user
-    await userStore.loadSelects(true)
+    await Promise.all([
+      userStore.loadSelects(),
+      user.specialistId ? userStore.loadSpecialistProfile(user.specialistId) : Promise.resolve(),
+    ])
     emailOriginal.value = user.email || ''
+
+    // Use fresh specialist profile for app-levels if available, else fall back to cached user data
+    const profileAssignments = userStore.specialistProfile?.application_assignments ?? null
+    const appLevels = (profileAssignments ?? user.applicationAssignments).map(a => ({
+      application_id: a.application_id,
+      support_level_id: a.support_level_id,
+    }))
 
     formulario.value = {
       firstName: user.firstName || '',
@@ -139,10 +150,7 @@ const abrirEditar = async (user) => {
       documentNumber: user.documentNumber || '',
       email: user.email || '',
       roleIds: resolverIds(user.roleNames, userStore.roles),
-      applicationLevels: user.applicationAssignments.map(a => ({
-        application_id: a.application_id,
-        support_level_id: a.support_level_id,
-      })),
+      applicationLevels: appLevels,
     }
     // Si el usuario ya es specialist en la BD, asegurar que el rol esté marcado
     if (user.specialistId && specialistRoleId.value && !formulario.value.roleIds.includes(specialistRoleId.value)) {
@@ -163,6 +171,7 @@ const cerrarModal = () => {
   editandoUser.value = null
   confirmandoEmail.value = false
   errores.value = {}
+  userStore.specialistProfile = null
 }
 
 const validarFormulario = () => {
@@ -231,6 +240,7 @@ const guardarUsuario = async () => {
       resultado = await userStore.createUser(formulario.value, { skipReload: true })
     }
 
+    await sccRef.value?.commitPending()
     if (!cambioEmailPropio) await userStore.loadUsers()
     cerrarModal()
 
@@ -445,7 +455,10 @@ onUnmounted(() => {
                 <span class="form-hint">Según las aplicaciones y niveles asignados</span>
               </label>
               <SpecialistCategoryConfig
+                ref="sccRef"
+                deferred
                 :application-levels="formulario.applicationLevels.filter(al => al.application_id && al.support_level_id)"
+                :specialist-id="editandoUser?.specialistId ?? null"
               />
             </div>
           </div>
@@ -482,7 +495,12 @@ onUnmounted(() => {
             </template>
             <template v-else>
               <button type="button" @click="cerrarModal" class="btn-secondary" :disabled="cargando">Cancelar</button>
-              <button type="submit" class="btn-primary" :class="{ 'btn-primary--loading': cargando }" :disabled="cargando">
+              <button
+                type="submit"
+                class="btn-primary"
+                :class="{ 'btn-primary--loading': cargando }"
+                :disabled="cargando || (modoEdicion && !hasChanges(formularioOriginal, formulario))"
+              >
                 <i v-if="cargando" class='bx bx-loader-alt bx-spin'></i>
                 {{ cargando ? 'Guardando...' : (modoEdicion ? 'Actualizar' : 'Guardar Usuario') }}
               </button>

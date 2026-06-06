@@ -1,309 +1,1348 @@
 <script setup>
-import { ref, computed, watch, onMounted } from 'vue'
-import { useCasesStore } from '@/presentation/stores/useCasesStore'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useUserStore } from '@/presentation/stores/useUserStore'
+import { fetchSpecialistWorkloadsUseCase } from '@/application/use-cases/cases/FetchSpecialistWorkloadsUseCase'
+import { fetchCasesUseCase } from '@/application/use-cases/cases/FetchCasesUseCase'
+import { STATUS_LABELS, PRIORITY_LABELS } from '@/domain/entities/Case'
 
-const store = useCasesStore()
 const userStore = useUserStore()
-
-const viewMode = ref('columns') // 'columns' | 'table'
-const filterApp = ref('')
-const MAX_LOAD = 10
-
 const applications = computed(() => userStore.applications ?? [])
-const workloads = computed(() => store.specialistWorkloads)
 
-function loadPct(count) {
-  return Math.min(100, Math.round(((count ?? 0) / MAX_LOAD) * 100))
+const loading = ref(false)
+const lastRefreshAt = ref(null)
+
+// ── Panels state ──────────────────────────────────────
+const selectedSpecialist = ref(null)
+const selectedCase       = ref(null)
+const specialistCases    = ref([])
+const loadingCases       = ref(false)
+
+// ── Mobile (Outlook-style) ────────────────────────────
+const isMobile = ref(window.innerWidth < 768)
+// 0=specialists, 1=cases, 2=detail
+const mobilePanel = ref(0)
+
+function onResize() {
+  isMobile.value = window.innerWidth < 768
+  if (!isMobile.value) mobilePanel.value = 0
 }
 
-function loadColor(pct) {
-  if (pct < 60) return 'var(--load-low)'
-  if (pct < 85) return 'var(--load-mid)'
+// ── Panel 1 (left) — collapsible + resizable ──────────
+const P1_MIN = 200
+const P1_MAX = 380
+const P1_DEFAULT = 260
+const p1Collapsed = ref(localStorage.getItem('tyflow_cl_p1_collapsed') === 'true')
+const p1Width     = ref(parseInt(localStorage.getItem('tyflow_cl_p1_width')) || P1_DEFAULT)
+
+function toggleP1() {
+  p1Collapsed.value = !p1Collapsed.value
+  localStorage.setItem('tyflow_cl_p1_collapsed', String(p1Collapsed.value))
+}
+
+function onP1ResizeStart(e) {
+  e.preventDefault()
+  const startX = e.clientX
+  const startW = p1Width.value
+  document.body.style.cursor = 'col-resize'
+  document.body.style.userSelect = 'none'
+  const onMove = (ev) => {
+    p1Width.value = Math.max(P1_MIN, Math.min(P1_MAX, startW + (ev.clientX - startX)))
+  }
+  const onUp = () => {
+    document.body.style.cursor = ''
+    document.body.style.userSelect = ''
+    document.removeEventListener('mousemove', onMove)
+    document.removeEventListener('mouseup', onUp)
+    localStorage.setItem('tyflow_cl_p1_width', String(p1Width.value))
+  }
+  document.addEventListener('mousemove', onMove)
+  document.addEventListener('mouseup', onUp)
+}
+
+// ── Panel 2 (center) — collapsible + resizable ────────
+const P2_MIN = 240
+const P2_MAX = 520
+const P2_DEFAULT = 320
+const p2Collapsed = ref(localStorage.getItem('tyflow_cl_p2_collapsed') === 'true')
+const p2Width     = ref(parseInt(localStorage.getItem('tyflow_cl_p2_width')) || P2_DEFAULT)
+
+function toggleP2() {
+  p2Collapsed.value = !p2Collapsed.value
+  localStorage.setItem('tyflow_cl_p2_collapsed', String(p2Collapsed.value))
+}
+
+function onP2ResizeStart(e) {
+  e.preventDefault()
+  const startX = e.clientX
+  const startW = p2Width.value
+  document.body.style.cursor = 'col-resize'
+  document.body.style.userSelect = 'none'
+  const onMove = (ev) => {
+    p2Width.value = Math.max(P2_MIN, Math.min(P2_MAX, startW + (ev.clientX - startX)))
+  }
+  const onUp = () => {
+    document.body.style.cursor = ''
+    document.body.style.userSelect = ''
+    document.removeEventListener('mousemove', onMove)
+    document.removeEventListener('mouseup', onUp)
+    localStorage.setItem('tyflow_cl_p2_width', String(p2Width.value))
+  }
+  document.addEventListener('mousemove', onMove)
+  document.addEventListener('mouseup', onUp)
+}
+
+// ── Select specialist ─────────────────────────────────
+async function selectSpecialist(s) {
+  if (selectedSpecialist.value?.specialist_id === s.specialist_id) return
+  selectedSpecialist.value = s
+  selectedCase.value = null
+  specialistCases.value = []
+  loadingCases.value = true
+  if (isMobile.value) mobilePanel.value = 1
+  try {
+    const result = await fetchCasesUseCase({ specialistId: s.specialist_id, pageSize: 200 })
+    specialistCases.value = result.data ?? []
+  } catch {
+    specialistCases.value = []
+  } finally {
+    loadingCases.value = false
+  }
+}
+
+function selectCase(c) {
+  selectedCase.value = c
+  if (isMobile.value) mobilePanel.value = 2
+}
+
+// ── Cases grouped by status ───────────────────────────
+const STATUS_ORDER  = ['assigned', 'in_progress', 'open', 'resolved', 'closed']
+const STATUS_COLORS = {
+  open:        'var(--status-open)',
+  assigned:    'var(--status-assigned)',
+  in_progress: 'var(--status-in-progress)',
+  resolved:    'var(--status-resolved)',
+  closed:      'var(--status-closed)',
+}
+const STATUS_BG = {
+  open:        'var(--status-open-bg)',
+  assigned:    'var(--status-assigned-bg)',
+  in_progress: 'var(--status-in-progress-bg)',
+  resolved:    'var(--status-resolved-bg)',
+  closed:      'var(--status-closed-bg)',
+}
+
+const casesByStatus = computed(() => {
+  const grouped = {}
+  for (const s of STATUS_ORDER) grouped[s] = []
+  for (const c of specialistCases.value) {
+    if (grouped[c.status]) grouped[c.status].push(c)
+    else grouped['open']?.push(c)
+  }
+  return STATUS_ORDER
+    .filter(s => grouped[s]?.length > 0)
+    .map(s => ({ status: s, cases: grouped[s] }))
+})
+
+const panelStats = computed(() => {
+  const active = specialistCases.value.filter(c => c.status === 'assigned' || c.status === 'in_progress').length
+  const open   = specialistCases.value.filter(c => c.status === 'open').length
+  const closed = specialistCases.value.filter(c => c.status === 'closed' || c.status === 'resolved').length
+  return { total: specialistCases.value.length, active, open, closed }
+})
+
+// ── Workload data ─────────────────────────────────────
+const rawByApp = ref(new Map())
+
+async function fetchAll() {
+  if (loading.value) return
+  loading.value = true
+  try {
+    const apps = applications.value
+    const results = await Promise.all(
+      apps.map(app =>
+        fetchSpecialistWorkloadsUseCase(app.id)
+          .then(rows => ({ appId: app.id, rows }))
+          .catch(() => ({ appId: app.id, rows: [] }))
+      )
+    )
+    const map = new Map()
+    for (const { appId, rows } of results) map.set(appId, rows)
+    rawByApp.value = map
+    lastRefreshAt.value = new Date()
+  } finally {
+    loading.value = false
+  }
+}
+
+const bySpecialist = computed(() => {
+  const specs = new Map()
+  for (const [appId, rows] of rawByApp.value) {
+    const app = applications.value.find(a => a.id === appId)
+    for (const row of rows) {
+      if (!specs.has(row.specialist_id)) {
+        specs.set(row.specialist_id, {
+          specialist_id: row.specialist_id,
+          full_name:    row.full_name,
+          totalCases:   0,
+          anyAvailable: false,
+          apps:         [],
+        })
+      }
+      const s = specs.get(row.specialist_id)
+      s.totalCases += row.current_count ?? 0
+      if (row.is_available) s.anyAvailable = true
+      s.apps.push({
+        appId,
+        appName:          app?.name ?? appId,
+        current_count:    row.current_count ?? 0,
+        is_available:     row.is_available,
+        window_starts_at: row.window_starts_at,
+        window_ends_at:   row.window_ends_at,
+      })
+    }
+  }
+  return [...specs.values()].sort((a, b) => {
+    if (a.anyAvailable !== b.anyAvailable) return a.anyAvailable ? -1 : 1
+    return a.totalCases - b.totalCases
+  })
+})
+
+const stats = computed(() => ({
+  total:      bySpecialist.value.length,
+  available:  bySpecialist.value.filter(s => s.anyAvailable).length,
+  totalCases: bySpecialist.value.reduce((sum, s) => sum + s.totalCases, 0),
+}))
+
+// ── Helpers ───────────────────────────────────────────
+function loadColor(count) {
+  if (count <= 3) return 'var(--load-low)'
+  if (count <= 7) return 'var(--load-mid)'
   return 'var(--load-high)'
 }
-
 function initials(name) {
   if (!name) return '?'
   return name.split(' ').slice(0, 2).map(n => n[0]).join('').toUpperCase()
 }
-
 function hslColor(name) {
   let h = 0
   for (const ch of (name || '')) h = ch.charCodeAt(0) + ((h << 5) - h)
-  return `hsl(${Math.abs(h) % 360}, 50%, 42%)`
+  return `hsl(${Math.abs(h) % 360}, 45%, 40%)`
 }
-
 function fmtTime(iso) {
   if (!iso) return ''
   return new Date(iso).toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' })
 }
-
-// Reload workloads when filter changes
-watch(filterApp, (appId) => {
-  if (appId) store.loadWorkloads(appId)
-})
+function fmtDate(iso) {
+  if (!iso) return ''
+  return new Date(iso).toLocaleDateString('es-CO', { day: '2-digit', month: 'short', year: 'numeric' })
+}
+function fmtRefresh(d) {
+  return d ? d.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' }) : ''
+}
+function appName(id) {
+  return applications.value.find(a => a.id === id)?.name ?? '—'
+}
 
 onMounted(() => {
-  if (!filterApp.value && applications.value.length > 0) {
-    filterApp.value = applications.value[0].id
-  }
+  fetchAll()
+  window.addEventListener('resize', onResize)
 })
+onUnmounted(() => window.removeEventListener('resize', onResize))
 </script>
 
 <template>
-  <div class="lv">
-    <!-- Header -->
-    <div class="lv__header">
-      <h3 class="lv__title">Cargas actuales</h3>
-      <div class="lv__controls">
-        <select v-model="filterApp" class="lv__filter">
-          <option value="">Todas las apps</option>
-          <option v-for="app in applications" :key="app.id" :value="app.id">{{ app.name }}</option>
-        </select>
-        <div class="lv__toggle">
-          <button class="lv__toggle-btn" :class="{ 'lv__toggle-btn--on': viewMode === 'columns' }" @click="viewMode = 'columns'">
-            <i class="bx bx-grid-alt"></i>
-          </button>
-          <button class="lv__toggle-btn" :class="{ 'lv__toggle-btn--on': viewMode === 'table' }" @click="viewMode = 'table'">
-            <i class="bx bx-list-ul"></i>
-          </button>
+  <div class="cl-shell">
+
+    <!-- ══ THREE-PANEL SPLIT ══════════════════════════════ -->
+    <div class="cl-split" v-show="!isMobile">
+
+      <!-- Panel 1: Specialists ──────────────────────────── -->
+      <aside
+        class="cl-p1"
+        :class="{ 'cl-p1--collapsed': p1Collapsed }"
+        :style="!p1Collapsed ? { width: p1Width + 'px' } : {}"
+      >
+        <div class="cl-panel-header">
+          <span v-if="!p1Collapsed" class="cl-panel-title">Especialistas</span>
+          <div class="cl-panel-header-actions">
+            <button v-if="!p1Collapsed" class="cl-panel-btn" @click="fetchAll" :disabled="loading" title="Actualizar">
+              <i class="bx bx-refresh" :class="{ 'cl__spin': loading }"></i>
+            </button>
+            <button class="cl-panel-btn cl-panel-btn--ghost" @click="toggleP1" :title="p1Collapsed ? 'Expandir' : 'Colapsar'">
+              <i class="bx" :class="p1Collapsed ? 'bx-chevron-right' : 'bx-chevron-left'"></i>
+            </button>
+          </div>
         </div>
-      </div>
-    </div>
 
-    <div v-if="workloads.length === 0" class="lv__empty">
-      <i class="bx bx-user-x"></i>
-      <p>No hay datos de carga para esta aplicación</p>
-    </div>
+        <!-- Collapsed: avatar dots -->
+        <div v-if="p1Collapsed" class="cl-p1-collapsed-list">
+          <div
+            v-for="s in bySpecialist"
+            :key="s.specialist_id"
+            class="cl-p1-dot"
+            :class="{ 'cl-p1-dot--selected': selectedSpecialist?.specialist_id === s.specialist_id }"
+            :title="s.full_name"
+            @click="selectSpecialist(s)"
+          >
+            <div class="cl-avatar cl-avatar--sm" :style="{ background: hslColor(s.full_name) }">
+              {{ initials(s.full_name) }}
+            </div>
+          </div>
+        </div>
 
-    <!-- Column view -->
-    <div v-else-if="viewMode === 'columns'" class="lv__grid">
-      <div v-for="s in workloads" :key="s.specialist_id" class="lc">
-        <div class="lc__head">
-          <div class="lc__avatar" :style="{ background: hslColor(s.full_name) }">{{ initials(s.full_name) }}</div>
-          <div class="lc__info">
-            <span class="lc__name">{{ s.full_name }}</span>
-            <span class="lc__avail" :class="s.is_available ? 'lc__avail--on' : 'lc__avail--off'">
-              <i class="bx bxs-circle"></i>
-              {{ s.is_available ? 'Disponible' : 'Sin ventana' }}
+        <!-- Expanded: full list -->
+        <div v-else class="cl-p1-list">
+          <!-- Summary -->
+          <div v-if="!loading && bySpecialist.length" class="cl-summary">
+            <span class="cl-summary-stat">
+              <span class="cl-summary-num">{{ stats.available }}</span>
+              <span class="cl-summary-lbl">con turno</span>
+            </span>
+            <span class="cl-summary-sep"></span>
+            <span class="cl-summary-stat">
+              <span class="cl-summary-num">{{ stats.totalCases }}</span>
+              <span class="cl-summary-lbl">casos</span>
             </span>
           </div>
-        </div>
 
-        <div class="lc__bar-wrap">
-          <div class="lc__bar-bg">
-            <div class="lc__bar-fill" :style="{ width: loadPct(s.current_count) + '%', background: loadColor(loadPct(s.current_count)) }"></div>
+          <!-- Info -->
+          <div class="cl-info">
+            <i class="bx bx-info-circle"></i>
+            Solo especialistas con Ventanas vigentes.
           </div>
-          <span class="lc__bar-label" :style="{ color: loadColor(loadPct(s.current_count)) }">
-            {{ s.current_count ?? 0 }}/{{ MAX_LOAD }}
+
+          <!-- Skeleton -->
+          <template v-if="loading">
+            <div v-for="i in 5" :key="i" class="cl-spec-row cl-spec-row--skeleton">
+              <div class="sk sk--circle"></div>
+              <div class="sk sk--lines"><div class="sk sk--line"></div><div class="sk sk--line sk--line-short"></div></div>
+            </div>
+          </template>
+
+          <!-- Empty -->
+          <div v-else-if="bySpecialist.length === 0" class="cl-p1-empty">
+            <i class="bx bx-user-x"></i>
+            <span>Sin datos de carga</span>
+          </div>
+
+          <!-- Specialist rows -->
+          <div
+            v-else
+            v-for="s in bySpecialist"
+            :key="s.specialist_id"
+            class="cl-spec-row"
+            :class="{
+              'cl-spec-row--selected': selectedSpecialist?.specialist_id === s.specialist_id,
+              'cl-spec-row--available': s.anyAvailable,
+            }"
+            @click="selectSpecialist(s)"
+          >
+            <div class="cl-avatar" :style="{ background: hslColor(s.full_name) }">
+              {{ initials(s.full_name) }}
+            </div>
+            <div class="cl-spec-info">
+              <span class="cl-spec-name">{{ s.full_name }}</span>
+              <div class="cl-spec-meta">
+                <span class="cl-spec-badge" :class="s.anyAvailable ? 'cl-spec-badge--on' : 'cl-spec-badge--off'">
+                  <i class="bx bxs-circle"></i>
+                  {{ s.anyAvailable ? 'Con turno' : 'Sin turno' }}
+                </span>
+                <span class="cl-spec-count" :style="{ color: loadColor(s.totalCases) }">
+                  {{ s.totalCases }} caso{{ s.totalCases !== 1 ? 's' : '' }}
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </aside>
+
+      <!-- Resize handle 1→2 -->
+      <div
+        v-if="!p1Collapsed"
+        class="cl-resize-handle"
+        @mousedown="onP1ResizeStart"
+      ></div>
+
+      <!-- Panel 2: Cases ────────────────────────────────── -->
+      <div
+        class="cl-p2"
+        :class="{ 'cl-p2--collapsed': p2Collapsed }"
+        :style="!p2Collapsed ? { width: p2Width + 'px' } : {}"
+      >
+        <div class="cl-panel-header">
+          <span v-if="!p2Collapsed" class="cl-panel-title">
+            {{ selectedSpecialist ? selectedSpecialist.full_name : 'Casos' }}
           </span>
+          <button class="cl-panel-btn cl-panel-btn--ghost" @click="toggleP2" :title="p2Collapsed ? 'Expandir' : 'Colapsar'">
+            <i class="bx" :class="p2Collapsed ? 'bx-chevron-right' : 'bx-chevron-left'"></i>
+          </button>
         </div>
 
-        <div class="lc__meta">
-          <span v-if="s.window_starts_at" class="lc__window">
-            <i class="bx bx-time-five"></i> {{ fmtTime(s.window_starts_at) }} – {{ fmtTime(s.window_ends_at) }}
-          </span>
+        <template v-if="!p2Collapsed">
+          <!-- No specialist selected -->
+          <div v-if="!selectedSpecialist" class="cl-p2-placeholder">
+            <i class="bx bx-user"></i>
+            <span>Selecciona un especialista</span>
+          </div>
+
+          <!-- Loading cases -->
+          <div v-else-if="loadingCases" class="cl-p2-placeholder">
+            <i class="bx bx-loader-alt bx-spin"></i>
+            <span>Cargando casos...</span>
+          </div>
+
+          <!-- Empty cases -->
+          <div v-else-if="specialistCases.length === 0" class="cl-p2-placeholder">
+            <i class="bx bx-folder-open"></i>
+            <span>Sin casos registrados</span>
+          </div>
+
+          <!-- Cases grouped by status -->
+          <div v-else class="cl-p2-body">
+            <!-- Stats row -->
+            <div class="cl-p2-stats">
+              <span class="cl-pstat">
+                <span class="cl-pstat-num">{{ panelStats.total }}</span>
+                <span class="cl-pstat-lbl">total</span>
+              </span>
+              <span class="cl-pstat-sep"></span>
+              <span class="cl-pstat" style="color: var(--status-in-progress)">
+                <span class="cl-pstat-num">{{ panelStats.active }}</span>
+                <span class="cl-pstat-lbl">activos</span>
+              </span>
+              <span class="cl-pstat-sep"></span>
+              <span class="cl-pstat" style="color: var(--status-open)">
+                <span class="cl-pstat-num">{{ panelStats.open }}</span>
+                <span class="cl-pstat-lbl">abiertos</span>
+              </span>
+              <span class="cl-pstat-sep"></span>
+              <span class="cl-pstat">
+                <span class="cl-pstat-num">{{ panelStats.closed }}</span>
+                <span class="cl-pstat-lbl">cerrados</span>
+              </span>
+            </div>
+
+            <!-- Status groups -->
+            <div v-for="group in casesByStatus" :key="group.status">
+              <div
+                class="cl-case-group-label"
+                :style="{ color: STATUS_COLORS[group.status], background: STATUS_BG[group.status] }"
+              >
+                {{ STATUS_LABELS[group.status] }}
+                <span class="cl-case-group-count">{{ group.cases.length }}</span>
+              </div>
+              <div
+                v-for="c in group.cases"
+                :key="c.id"
+                class="cl-case-row"
+                :class="{ 'cl-case-row--selected': selectedCase?.id === c.id }"
+                @click="selectCase(c)"
+              >
+                <div class="cl-case-row-top">
+                  <span class="cl-case-id">{{ c.shortId }}</span>
+                  <span class="cl-case-app">{{ appName(c.applicationId) }}</span>
+                  <span class="cl-case-date">{{ fmtDate(c.assignedAt || c.createdAt) }}</span>
+                </div>
+                <span class="cl-case-subject">{{ c.subject || '(sin asunto)' }}</span>
+              </div>
+            </div>
+          </div>
+        </template>
+
+        <!-- Collapsed: icon list -->
+        <div v-else class="cl-p2-collapsed-list">
+          <div
+            v-for="group in casesByStatus"
+            :key="group.status"
+            class="cl-p2-dot"
+            :title="STATUS_LABELS[group.status] + ': ' + group.cases.length"
+          >
+            <span class="cl-p2-dot-num" :style="{ color: STATUS_COLORS[group.status] }">{{ group.cases.length }}</span>
+          </div>
         </div>
       </div>
-    </div>
 
-    <!-- Table view -->
-    <div v-else class="lv__table-wrap">
-      <table class="lv__table">
-        <thead>
-          <tr>
-            <th>Especialista</th>
-            <th>Disponible</th>
-            <th>Carga</th>
-            <th>Casos</th>
-            <th>Ventana</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="s in workloads" :key="s.specialist_id">
-            <td>
-              <div class="lv__table-spec">
-                <div class="lc__avatar lc__avatar--sm" :style="{ background: hslColor(s.full_name) }">{{ initials(s.full_name) }}</div>
-                {{ s.full_name }}
-              </div>
-            </td>
-            <td>
-              <span class="lv__avail-badge" :class="s.is_available ? 'lv__avail-badge--on' : 'lv__avail-badge--off'">
-                {{ s.is_available ? 'Sí' : 'No' }}
+      <!-- Resize handle 2→3 -->
+      <div
+        v-if="!p2Collapsed"
+        class="cl-resize-handle"
+        @mousedown="onP2ResizeStart"
+      ></div>
+
+      <!-- Panel 3: Case detail ─────────────────────────── -->
+      <main class="cl-p3">
+        <!-- No case selected -->
+        <div v-if="!selectedCase" class="cl-p3-placeholder">
+          <i class="bx bx-file-blank"></i>
+          <span>Selecciona un caso para ver el detalle</span>
+        </div>
+
+        <!-- Case detail -->
+        <div v-else class="cl-p3-body">
+          <div class="cl-detail-header">
+            <div class="cl-detail-id">{{ selectedCase.shortId }}</div>
+            <div class="cl-detail-badges">
+              <span
+                class="cl-detail-badge"
+                :style="{ color: STATUS_COLORS[selectedCase.status], background: STATUS_BG[selectedCase.status] }"
+              >{{ STATUS_LABELS[selectedCase.status] }}</span>
+              <span
+                v-if="selectedCase.priority"
+                class="cl-detail-badge"
+                :style="{ color: `var(--priority-${selectedCase.priority})`, background: `var(--priority-${selectedCase.priority}-bg)` }"
+              >{{ PRIORITY_LABELS[selectedCase.priority] }}</span>
+            </div>
+          </div>
+
+          <h2 class="cl-detail-subject">{{ selectedCase.subject || '(sin asunto)' }}</h2>
+
+          <div v-if="selectedCase.description" class="cl-detail-section">
+            <span class="cl-detail-label">Descripción</span>
+            <p class="cl-detail-desc">{{ selectedCase.description }}</p>
+          </div>
+
+          <div class="cl-detail-grid">
+            <div class="cl-detail-field">
+              <span class="cl-detail-label">Aplicación</span>
+              <span class="cl-detail-value">{{ appName(selectedCase.applicationId) }}</span>
+            </div>
+            <div class="cl-detail-field">
+              <span class="cl-detail-label">Origen</span>
+              <span class="cl-detail-value">
+                <i class="bx" :class="selectedCase.originIcon"></i>
+                {{ selectedCase.originLabel || '—' }}
               </span>
-            </td>
-            <td>
-              <div class="lv__table-bar">
-                <div class="lc__bar-bg" style="width:70px">
-                  <div class="lc__bar-fill" :style="{ width: loadPct(s.current_count) + '%', background: loadColor(loadPct(s.current_count)) }"></div>
+            </div>
+            <div class="cl-detail-field">
+              <span class="cl-detail-label">Creado</span>
+              <span class="cl-detail-value">{{ fmtDate(selectedCase.createdAt) || '—' }}</span>
+            </div>
+            <div v-if="selectedCase.assignedAt" class="cl-detail-field">
+              <span class="cl-detail-label">Asignado</span>
+              <span class="cl-detail-value">{{ fmtDate(selectedCase.assignedAt) }}</span>
+            </div>
+            <div v-if="selectedCase.resolvedAt" class="cl-detail-field">
+              <span class="cl-detail-label">Resuelto</span>
+              <span class="cl-detail-value">{{ fmtDate(selectedCase.resolvedAt) }}</span>
+            </div>
+            <div v-if="selectedCase.closedAt" class="cl-detail-field">
+              <span class="cl-detail-label">Cerrado</span>
+              <span class="cl-detail-value">{{ fmtDate(selectedCase.closedAt) }}</span>
+            </div>
+            <div v-if="selectedCase.waitingTime" class="cl-detail-field">
+              <span class="cl-detail-label">Espera</span>
+              <span class="cl-detail-value">{{ selectedCase.waitingTime }}</span>
+            </div>
+          </div>
+
+          <!-- Specialist apps detail -->
+          <div v-if="selectedSpecialist" class="cl-detail-section">
+            <span class="cl-detail-label">Cargas del especialista</span>
+            <div class="cl-detail-apps">
+              <div v-for="app in selectedSpecialist.apps" :key="app.appId" class="cl-detail-app">
+                <span class="cl-detail-app-name">{{ app.appName }}</span>
+                <div class="cl-detail-app-meta">
+                  <span v-if="app.is_available && app.window_starts_at" class="cl-detail-window">
+                    <i class="bx bx-time-five"></i>
+                    {{ fmtTime(app.window_starts_at) }}–{{ fmtTime(app.window_ends_at) }}
+                  </span>
+                  <span v-else-if="!app.is_available" class="cl-detail-no-window">sin turno</span>
+                  <span class="cl-detail-count" :style="{ color: loadColor(app.current_count) }">
+                    {{ app.current_count }} caso{{ app.current_count !== 1 ? 's' : '' }}
+                  </span>
                 </div>
               </div>
-            </td>
-            <td>{{ s.current_count ?? 0 }}/{{ MAX_LOAD }}</td>
-            <td>
-              <template v-if="s.window_starts_at">{{ fmtTime(s.window_starts_at) }} – {{ fmtTime(s.window_ends_at) }}</template>
-              <span v-else class="lv__table-na">—</span>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-  </div>
+            </div>
+          </div>
+        </div>
+      </main>
+
+    </div><!-- end cl-split -->
+
+    <!-- ══ MOBILE (Outlook-style, 3 tabs) ════════════════ -->
+    <div v-show="isMobile" class="cl-mobile">
+
+      <!-- Panel 0: Specialists -->
+      <div v-show="mobilePanel === 0" class="cl-mobile-panel">
+        <div class="cl-mob-header">
+          <span class="cl-panel-title">Especialistas</span>
+          <button class="cl-panel-btn" @click="fetchAll" :disabled="loading">
+            <i class="bx bx-refresh" :class="{ 'cl__spin': loading }"></i>
+          </button>
+        </div>
+        <div class="cl-info">
+          <i class="bx bx-info-circle"></i>
+          Solo especialistas con Ventanas vigentes.
+        </div>
+        <template v-if="loading">
+          <div v-for="i in 4" :key="i" class="cl-spec-row cl-spec-row--skeleton">
+            <div class="sk sk--circle"></div>
+            <div class="sk sk--lines"><div class="sk sk--line"></div><div class="sk sk--line sk--line-short"></div></div>
+          </div>
+        </template>
+        <div v-else-if="bySpecialist.length === 0" class="cl-p1-empty">
+          <i class="bx bx-user-x"></i><span>Sin datos de carga</span>
+        </div>
+        <div
+          v-else
+          v-for="s in bySpecialist"
+          :key="s.specialist_id"
+          class="cl-spec-row"
+          :class="{ 'cl-spec-row--available': s.anyAvailable }"
+          @click="selectSpecialist(s)"
+        >
+          <div class="cl-avatar" :style="{ background: hslColor(s.full_name) }">{{ initials(s.full_name) }}</div>
+          <div class="cl-spec-info">
+            <span class="cl-spec-name">{{ s.full_name }}</span>
+            <div class="cl-spec-meta">
+              <span class="cl-spec-badge" :class="s.anyAvailable ? 'cl-spec-badge--on' : 'cl-spec-badge--off'">
+                <i class="bx bxs-circle"></i>{{ s.anyAvailable ? 'Con turno' : 'Sin turno' }}
+              </span>
+              <span class="cl-spec-count" :style="{ color: loadColor(s.totalCases) }">
+                {{ s.totalCases }} caso{{ s.totalCases !== 1 ? 's' : '' }}
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Panel 1: Cases -->
+      <div v-show="mobilePanel === 1" class="cl-mobile-panel">
+        <div class="cl-mob-header">
+          <button class="cl-panel-btn" @click="mobilePanel = 0"><i class="bx bx-arrow-back"></i></button>
+          <span class="cl-panel-title">{{ selectedSpecialist?.full_name || 'Casos' }}</span>
+        </div>
+        <div v-if="loadingCases" class="cl-p2-placeholder"><i class="bx bx-loader-alt bx-spin"></i><span>Cargando...</span></div>
+        <div v-else-if="!specialistCases.length" class="cl-p2-placeholder"><i class="bx bx-folder-open"></i><span>Sin casos</span></div>
+        <div v-else class="cl-p2-body">
+          <div class="cl-p2-stats">
+            <span class="cl-pstat"><span class="cl-pstat-num">{{ panelStats.total }}</span><span class="cl-pstat-lbl">total</span></span>
+            <span class="cl-pstat-sep"></span>
+            <span class="cl-pstat"><span class="cl-pstat-num" style="color:var(--status-in-progress)">{{ panelStats.active }}</span><span class="cl-pstat-lbl">activos</span></span>
+          </div>
+          <div v-for="group in casesByStatus" :key="group.status">
+            <div class="cl-case-group-label" :style="{ color: STATUS_COLORS[group.status], background: STATUS_BG[group.status] }">
+              {{ STATUS_LABELS[group.status] }}<span class="cl-case-group-count">{{ group.cases.length }}</span>
+            </div>
+            <div
+              v-for="c in group.cases"
+              :key="c.id"
+              class="cl-case-row"
+              @click="selectCase(c)"
+            >
+              <div class="cl-case-row-top">
+                <span class="cl-case-id">{{ c.shortId }}</span>
+                <span class="cl-case-app">{{ appName(c.applicationId) }}</span>
+                <span class="cl-case-date">{{ fmtDate(c.assignedAt || c.createdAt) }}</span>
+              </div>
+              <span class="cl-case-subject">{{ c.subject || '(sin asunto)' }}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Panel 2: Case detail -->
+      <div v-show="mobilePanel === 2" class="cl-mobile-panel">
+        <div class="cl-mob-header">
+          <button class="cl-panel-btn" @click="mobilePanel = 1"><i class="bx bx-arrow-back"></i></button>
+          <span class="cl-panel-title">{{ selectedCase?.shortId || 'Detalle' }}</span>
+        </div>
+        <div v-if="!selectedCase" class="cl-p3-placeholder"><i class="bx bx-file-blank"></i><span>Selecciona un caso</span></div>
+        <div v-else class="cl-p3-body">
+          <div class="cl-detail-header">
+            <div class="cl-detail-id">{{ selectedCase.shortId }}</div>
+            <div class="cl-detail-badges">
+              <span class="cl-detail-badge" :style="{ color: STATUS_COLORS[selectedCase.status], background: STATUS_BG[selectedCase.status] }">{{ STATUS_LABELS[selectedCase.status] }}</span>
+              <span v-if="selectedCase.priority" class="cl-detail-badge" :style="{ color: `var(--priority-${selectedCase.priority})`, background: `var(--priority-${selectedCase.priority}-bg)` }">{{ PRIORITY_LABELS[selectedCase.priority] }}</span>
+            </div>
+          </div>
+          <h2 class="cl-detail-subject">{{ selectedCase.subject || '(sin asunto)' }}</h2>
+          <div v-if="selectedCase.description" class="cl-detail-section">
+            <span class="cl-detail-label">Descripción</span>
+            <p class="cl-detail-desc">{{ selectedCase.description }}</p>
+          </div>
+          <div class="cl-detail-grid">
+            <div class="cl-detail-field"><span class="cl-detail-label">Aplicación</span><span class="cl-detail-value">{{ appName(selectedCase.applicationId) }}</span></div>
+            <div class="cl-detail-field"><span class="cl-detail-label">Creado</span><span class="cl-detail-value">{{ fmtDate(selectedCase.createdAt) || '—' }}</span></div>
+            <div v-if="selectedCase.assignedAt" class="cl-detail-field"><span class="cl-detail-label">Asignado</span><span class="cl-detail-value">{{ fmtDate(selectedCase.assignedAt) }}</span></div>
+          </div>
+        </div>
+      </div>
+    </div><!-- end cl-mobile -->
+
+    <!-- Mobile bottom tab bar -->
+    <nav v-show="isMobile" class="cl-mob-tabs">
+      <button class="cl-mob-tab" :class="{ 'cl-mob-tab--active': mobilePanel === 0 }" @click="mobilePanel = 0">
+        <i class="bx bx-group"></i><span>Especialistas</span>
+      </button>
+      <button class="cl-mob-tab" :class="{ 'cl-mob-tab--active': mobilePanel === 1 }" @click="mobilePanel = 1" :disabled="!selectedSpecialist">
+        <i class="bx bx-list-ul"></i><span>Casos</span>
+      </button>
+      <button class="cl-mob-tab" :class="{ 'cl-mob-tab--active': mobilePanel === 2 }" @click="mobilePanel = 2" :disabled="!selectedCase">
+        <i class="bx bx-file"></i><span>Detalle</span>
+      </button>
+    </nav>
+
+  </div><!-- end cl-shell -->
 </template>
 
 <style scoped>
-.lv { padding: 1.25rem; }
+/* ── Shell ───────────────────────────────────────────── */
+.cl-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg-main);
+}
 
-.lv__header {
+/* ── Split (desktop) ─────────────────────────────────── */
+.cl-split {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+/* ── Resize handle ───────────────────────────────────── */
+.cl-resize-handle {
+  width: 6px;
+  margin-left: -3px;
+  margin-right: -3px;
+  cursor: col-resize;
+  flex-shrink: 0;
+  position: relative;
+  z-index: 5;
+  background: transparent;
+  border-left: 1px solid var(--border-light);
+  transition: background 0.15s;
+}
+.cl-resize-handle:hover,
+.cl-resize-handle:active { background: rgba(42, 199, 143, 0.4); }
+
+/* ── Panel 1 ─────────────────────────────────────────── */
+.cl-p1 {
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-main);
+  overflow: hidden;
+  flex-shrink: 0;
+  min-width: 200px;
+  max-width: 380px;
+  border-right: 1px solid var(--border-light);
+}
+
+.cl-p1--collapsed {
+  width: 52px !important;
+  min-width: 52px !important;
+  max-width: 52px !important;
+}
+
+.cl-p1-list {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.cl-p1-collapsed-list {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.4rem 0;
+}
+
+.cl-p1-dot {
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  padding: 2px;
+  transition: background 0.1s;
+}
+.cl-p1-dot:hover { background: var(--bg-card); }
+.cl-p1-dot--selected .cl-avatar { outline: 2px solid var(--primary-500); }
+
+.cl-p1-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 2.5rem 1rem;
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+}
+.cl-p1-empty i { font-size: 1.8rem; opacity: 0.3; }
+
+/* ── Panel 2 ─────────────────────────────────────────── */
+.cl-p2 {
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-card);
+  overflow: hidden;
+  flex-shrink: 0;
+  min-width: 240px;
+  max-width: 520px;
+  border-right: 1px solid var(--border-light);
+}
+
+.cl-p2--collapsed {
+  width: 52px !important;
+  min-width: 52px !important;
+  max-width: 52px !important;
+}
+
+.cl-p2-body {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.cl-p2-placeholder {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+  padding: 2rem;
+}
+.cl-p2-placeholder i { font-size: 2rem; opacity: 0.28; }
+
+.cl-p2-collapsed-list {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.4rem 0;
+}
+
+.cl-p2-dot {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 24px;
+}
+
+.cl-p2-dot-num {
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+/* ── Panel 3 ─────────────────────────────────────────── */
+.cl-p3 {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--bg-main);
+}
+
+.cl-p3-placeholder {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  color: var(--text-secondary);
+  font-size: 0.82rem;
+  padding: 2rem;
+}
+.cl-p3-placeholder i { font-size: 2.5rem; opacity: 0.2; }
+
+.cl-p3-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+/* ── Panel header ────────────────────────────────────── */
+.cl-panel-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 1.25rem;
-  flex-wrap: wrap;
-  gap: 0.75rem;
+  padding: 0.4rem 0.5rem 0.3rem;
+  border-bottom: 1px solid var(--border-light);
+  flex-shrink: 0;
 }
 
-.lv__title { font-size: 1.05rem; font-weight: 700; color: var(--text-primary); }
+.cl-panel-title {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 
-.lv__controls { display: flex; align-items: center; gap: 0.65rem; }
+.cl-panel-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.15rem;
+}
 
-.lv__filter {
-  padding: 0.4rem 0.65rem;
+.cl-panel-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 1rem;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+.cl-panel-btn:hover:not(:disabled) { background: var(--bg-card); color: var(--text-primary); }
+.cl-panel-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.cl-panel-btn--ghost { }
+
+/* ── Summary bar ─────────────────────────────────────── */
+.cl-summary {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.45rem 0.75rem;
+  border-bottom: 1px solid var(--border-light);
+  background: var(--bg-card);
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
+
+.cl-summary-stat {
+  display: flex;
+  align-items: baseline;
+  gap: 0.2rem;
+}
+
+.cl-summary-num {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.cl-summary-lbl {
+  font-size: 0.62rem;
+  color: var(--text-secondary);
+}
+
+.cl-summary-sep {
+  width: 1px;
+  height: 0.9rem;
+  background: var(--border-light);
+  flex-shrink: 0;
+}
+
+/* ── Info note ───────────────────────────────────────── */
+.cl-info {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.67rem;
+  color: var(--text-secondary);
+  padding: 0.3rem 0.6rem;
+  border-bottom: 1px solid var(--border-light);
+  flex-shrink: 0;
+}
+.cl-info i { font-size: 0.78rem; color: var(--primary-500); flex-shrink: 0; }
+
+/* ── Skeleton ────────────────────────────────────────── */
+.sk {
+  background: var(--border-light);
+  border-radius: var(--radius-sm);
+  animation: sk-pulse 1.5s ease-in-out infinite;
+}
+.sk--circle { width: 34px; height: 34px; border-radius: 50%; flex-shrink: 0; }
+.sk--lines  { flex: 1; display: flex; flex-direction: column; gap: 0.3rem; }
+.sk--line   { height: 0.52rem; }
+.sk--line-short { width: 60%; }
+@keyframes sk-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+
+/* ── Specialist row ──────────────────────────────────── */
+.cl-spec-row {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.55rem 0.75rem;
+  cursor: pointer;
+  border-bottom: 1px solid var(--border-light);
+  transition: background 0.1s;
+}
+.cl-spec-row:hover { background: var(--bg-card); }
+.cl-spec-row--selected { background: rgba(42, 199, 143, 0.07); border-left: 3px solid var(--primary-500); }
+.cl-spec-row--available { }
+.cl-spec-row--skeleton { pointer-events: none; }
+
+/* ── Avatar ──────────────────────────────────────────── */
+.cl-avatar {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-size: 0.68rem;
+  font-weight: 700;
+  flex-shrink: 0;
+  letter-spacing: 0.03em;
+}
+.cl-avatar--sm {
+  width: 28px;
+  height: 28px;
+  font-size: 0.6rem;
+}
+
+/* ── Specialist info in row ──────────────────────────── */
+.cl-spec-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.cl-spec-name {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cl-spec-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.cl-spec-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.15rem;
+  font-size: 0.58rem;
+  font-weight: 600;
+  padding: 0.07rem 0.3rem;
+  border-radius: var(--radius-full);
+}
+.cl-spec-badge i { font-size: 0.4rem; }
+.cl-spec-badge--on  { background: rgba(42,199,143,0.12); color: var(--load-low); }
+.cl-spec-badge--off { background: var(--bg-main); color: var(--text-secondary); border: 1px solid var(--border-light); }
+
+.cl-spec-count {
+  font-size: 0.68rem;
+  font-weight: 700;
+}
+
+/* ── Cases in panel 2 ────────────────────────────────── */
+.cl-p2-stats {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0.75rem;
+  background: var(--bg-main);
+  border-bottom: 1px solid var(--border-light);
+  flex-shrink: 0;
+}
+
+.cl-pstat {
+  display: flex;
+  align-items: baseline;
+  gap: 0.2rem;
+}
+.cl-pstat-num { font-size: 0.85rem; font-weight: 700; color: var(--text-primary); }
+.cl-pstat-lbl { font-size: 0.6rem; color: var(--text-secondary); }
+.cl-pstat-sep { width: 1px; height: 0.85rem; background: var(--border-light); flex-shrink: 0; }
+
+.cl-case-group-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.62rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 0.18rem 0.75rem;
+}
+
+.cl-case-group-count {
+  font-size: 0.58rem;
+  font-weight: 700;
+  background: rgba(0,0,0,0.1);
+  padding: 0.04rem 0.26rem;
+  border-radius: var(--radius-full);
+}
+
+.cl-case-row {
+  padding: 0.55rem 0.75rem;
+  border-bottom: 1px solid var(--border-light);
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  transition: background 0.1s;
+}
+.cl-case-row:hover { background: var(--bg-card); }
+.cl-case-row--selected { background: rgba(42,199,143,0.07); border-left: 3px solid var(--primary-500); }
+
+.cl-case-row-top {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.cl-case-id {
+  font-size: 0.6rem;
+  font-weight: 700;
+  color: var(--text-secondary);
+  font-family: monospace;
+  flex-shrink: 0;
+}
+
+.cl-case-app {
+  font-size: 0.6rem;
+  color: var(--primary-500);
+  font-weight: 600;
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cl-case-date {
+  font-size: 0.58rem;
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+
+.cl-case-subject {
+  font-size: 0.74rem;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── Case detail (panel 3) ───────────────────────────── */
+.cl-detail-header {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.cl-detail-id {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--text-secondary);
+  font-family: monospace;
+}
+
+.cl-detail-badges {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+}
+
+.cl-detail-badge {
+  font-size: 0.65rem;
+  font-weight: 600;
+  padding: 0.12rem 0.45rem;
+  border-radius: var(--radius-full);
+}
+
+.cl-detail-subject {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  line-height: 1.35;
+}
+
+.cl-detail-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.cl-detail-label {
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-secondary);
+}
+
+.cl-detail-desc {
+  font-size: 0.82rem;
+  color: var(--text-primary);
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+.cl-detail-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem 1rem;
+}
+
+.cl-detail-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.18rem;
+}
+
+.cl-detail-value {
+  font-size: 0.8rem;
+  color: var(--text-primary);
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.cl-detail-apps {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.cl-detail-app {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.45rem 0.65rem;
+  background: var(--bg-card);
   border: 1px solid var(--border-light);
   border-radius: var(--radius-md);
-  font-size: 0.78rem;
-  color: var(--text-primary);
-  background: var(--bg-main);
 }
 
-.lv__toggle {
-  display: flex;
-  gap: 0.15rem;
-  background: var(--bg-card);
-  border-radius: var(--radius-md);
-  padding: 0.15rem;
-}
-
-.lv__toggle-btn {
-  padding: 0.3rem 0.55rem;
-  border-radius: var(--radius-sm);
-  font-size: 0.95rem;
+.cl-detail-app-name {
+  font-size: 0.75rem;
+  font-weight: 600;
   color: var(--text-secondary);
-  background: transparent;
-  cursor: pointer;
-  transition: all 0.12s;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
 }
 
-.lv__toggle-btn--on {
+.cl-detail-app-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-shrink: 0;
+}
+
+.cl-detail-window {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.15rem;
+  font-size: 0.62rem;
+  color: var(--text-secondary);
+}
+.cl-detail-window i { font-size: 0.68rem; }
+
+.cl-detail-no-window {
+  font-size: 0.62rem;
+  color: var(--text-secondary);
+  font-style: italic;
+  opacity: 0.7;
+}
+
+.cl-detail-count {
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+/* ── Spin ────────────────────────────────────────────── */
+.cl__spin { animation: cl-spin 0.75s linear infinite; }
+@keyframes cl-spin { to { transform: rotate(360deg); } }
+
+/* ── Mobile shell ────────────────────────────────────── */
+.cl-mobile {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.cl-mobile-panel {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.cl-mob-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.45rem 0.6rem;
+  border-bottom: 1px solid var(--border-light);
   background: var(--bg-main);
-  color: var(--primary-600);
-  box-shadow: var(--shadow-sm);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  flex-shrink: 0;
 }
 
-.lv__empty {
+/* ── Mobile tab bar ──────────────────────────────────── */
+.cl-mob-tabs {
+  display: flex;
+  border-top: 1px solid var(--border-light);
+  background: var(--bg-main);
+  flex-shrink: 0;
+}
+
+.cl-mob-tab {
+  flex: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 0.5rem;
+  justify-content: center;
+  padding: 0.5rem;
+  gap: 0.18rem;
+  border: none;
+  background: transparent;
   color: var(--text-secondary);
-  padding: 3rem;
-  font-size: 0.88rem;
+  font-size: 0.62rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: color 0.15s;
+  min-height: 52px;
 }
-.lv__empty i { font-size: 2rem; opacity: 0.35; }
+.cl-mob-tab i { font-size: 1.2rem; }
+.cl-mob-tab--active { color: var(--primary-500); }
+.cl-mob-tab:disabled { opacity: 0.35; cursor: not-allowed; }
 
-/* Column grid */
-.lv__grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-  gap: 0.85rem;
+/* ── Responsive ──────────────────────────────────────── */
+@media (max-width: 767px) {
+  .cl-split  { display: none; }
+  .cl-mobile { display: flex; }
+  .cl-mob-tabs { display: flex; }
 }
-
-.lc {
-  background: var(--bg-main);
-  border: 1px solid var(--border-light);
-  border-radius: var(--radius-lg);
-  padding: 0.85rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.55rem;
+@media (min-width: 768px) {
+  .cl-split  { display: flex; }
+  .cl-mobile { display: none; }
+  .cl-mob-tabs { display: none; }
 }
-
-.lc__head { display: flex; align-items: center; gap: 0.55rem; }
-
-.lc__avatar {
-  width: 34px; height: 34px;
-  border-radius: 50%;
-  display: flex; align-items: center; justify-content: center;
-  color: white; font-size: 0.68rem; font-weight: 700;
-  flex-shrink: 0;
-}
-.lc__avatar--sm { width: 28px; height: 28px; font-size: 0.6rem; }
-
-.lc__info { display: flex; flex-direction: column; min-width: 0; }
-.lc__name { font-size: 0.82rem; font-weight: 600; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-
-.lc__avail { font-size: 0.65rem; display: flex; align-items: center; gap: 0.2rem; }
-.lc__avail i { font-size: 0.45rem; }
-.lc__avail--on { color: var(--load-low); }
-.lc__avail--off { color: var(--load-high); }
-
-.lc__bar-wrap { display: flex; align-items: center; gap: 0.5rem; }
-
-.lc__bar-bg {
-  flex: 1;
-  height: 6px;
-  background: var(--border-light);
-  border-radius: var(--radius-full);
-  overflow: hidden;
-}
-
-.lc__bar-fill {
-  height: 100%;
-  border-radius: var(--radius-full);
-  transition: width 0.4s;
-}
-
-.lc__bar-label { font-size: 0.72rem; font-weight: 700; min-width: 28px; text-align: right; }
-
-.lc__meta { font-size: 0.68rem; color: var(--text-secondary); }
-.lc__meta i { font-size: 0.72rem; vertical-align: -1px; margin-right: 0.1rem; }
-
-/* Table */
-.lv__table-wrap { overflow-x: auto; }
-
-.lv__table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 0.82rem;
-}
-
-.lv__table th {
-  text-align: left;
-  padding: 0.6rem 0.75rem;
-  font-weight: 600;
-  color: var(--text-secondary);
-  border-bottom: 2px solid var(--border-light);
-  white-space: nowrap;
-}
-
-.lv__table td {
-  padding: 0.6rem 0.75rem;
-  border-bottom: 1px solid var(--border-light);
-  color: var(--text-primary);
-}
-
-.lv__table-spec { display: flex; align-items: center; gap: 0.5rem; }
-
-.lv__avail-badge {
-  font-size: 0.7rem;
-  font-weight: 600;
-  padding: 0.1rem 0.4rem;
-  border-radius: var(--radius-full);
-}
-.lv__avail-badge--on { background: var(--success-bg); color: var(--success-text); }
-.lv__avail-badge--off { background: var(--error-bg); color: var(--error-text); }
-
-.lv__table-bar { display: flex; align-items: center; }
-.lv__table-na { color: var(--text-secondary); }
 </style>

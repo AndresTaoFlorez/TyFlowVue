@@ -1,6 +1,5 @@
 <script setup>
 import { ref, watch, computed, nextTick } from 'vue'
-import { ampm } from '@/presentation/helpers/formatTime'
 import { fmtDateISO } from '@/presentation/helpers/formatDate'
 
 const props = defineProps({
@@ -51,17 +50,21 @@ const openDropdown = (key) => {
 
 const closeDropdowns = () => { activeDropdown.value = null }
 
+const specsWithApps = computed(() =>
+  props.specialists.filter(s => s.applicationAssignments?.length > 0)
+)
+
 const filteredSpecs = computed(() => {
   const q = dropdownSearch.value.toLowerCase().trim()
-  if (!q) return props.specialists
-  return props.specialists.filter(s => s.fullName.toLowerCase().includes(q))
+  if (!q) return specsWithApps.value
+  return specsWithApps.value.filter(s => s.fullName.toLowerCase().includes(q))
 })
 
 const appsForRow = (rowIdx) => {
   const row = rows.value[rowIdx]
   if (!row?.specialistId) return props.applications
   const spec = props.specialists.find(s => s.specialistId === row.specialistId)
-  if (!spec?.applicationAssignments?.length) return props.applications
+  if (!spec?.applicationAssignments?.length) return []  // no assignments → no valid apps
   const allowedIds = new Set(spec.applicationAssignments.map(a => a.application_id || a.id || a))
   return props.applications.filter(a => allowedIds.has(a.id))
 }
@@ -304,10 +307,8 @@ const handleSubmit = () => {
               <i class='bx bx-time-five'></i>
               <div class="row__time">
                 <input v-model="startTime" type="time" class="time-input" :disabled="creating">
-                <span class="ampm-label">{{ ampm(startTime) }}</span>
                 <span class="time-dash">–</span>
                 <input v-model="endTime" type="time" class="time-input" :disabled="creating">
-                <span class="ampm-label">{{ ampm(endTime) }}</span>
                 <span v-if="durationLabel" class="time-badge">{{ durationLabel }}</span>
               </div>
               <span v-if="timeOrderError" class="row__error">{{ timeOrderError }}</span>
@@ -330,7 +331,6 @@ const handleSubmit = () => {
                       :disabled="creating"
                     >
                     <input v-model="startTime" type="time" class="time-input" :disabled="creating">
-                    <span class="ampm-label">{{ ampm(startTime) }}</span>
                   </div>
                 </div>
               </div>
@@ -347,7 +347,6 @@ const handleSubmit = () => {
                       :disabled="creating"
                     >
                     <input v-model="endTime" type="time" class="time-input" :disabled="creating">
-                    <span class="ampm-label">{{ ampm(endTime) }}</span>
                     <span v-if="durationLabel" class="time-badge">{{ durationLabel }}</span>
                   </div>
                 </div>
@@ -681,7 +680,7 @@ const handleSubmit = () => {
   font-size: 0.85rem;
   font-weight: 600;
   color: var(--text-primary);
-  width: 5.2rem;
+  width: 7.5rem;
   outline: none;
   transition: box-shadow 0.12s;
 }
@@ -693,14 +692,6 @@ const handleSubmit = () => {
 .time-dash {
   color: var(--text-secondary);
   font-size: 0.8rem;
-}
-
-.ampm-label {
-  font-size: 0.6rem;
-  font-weight: 700;
-  color: var(--text-secondary);
-  letter-spacing: 0.02em;
-  flex-shrink: 0;
 }
 
 .time-badge {

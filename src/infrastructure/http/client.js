@@ -64,21 +64,27 @@ client.interceptors.response.use(
   }
 )
 
+// Singleton: si ya hay un refresh en vuelo, todos los 401 concurrentes
+// esperan el mismo promise en lugar de competir con el refresh token.
+let _refreshPromise = null
+
 async function tryRefreshToken() {
+  if (_refreshPromise) return _refreshPromise
+
   const refreshToken = localStorage.getItem(REFRESH_KEY)
   if (!refreshToken) return false
 
-  try {
-    const { data } = await axios.post(
-      `${import.meta.env.VITE_API_URL}/auth/refresh`,
-      { refresh_token: refreshToken }
-    )
-    localStorage.setItem(TOKEN_KEY, data.access_token)
-    localStorage.setItem(REFRESH_KEY, data.refresh_token)
-    return true
-  } catch {
-    return false
-  }
+  _refreshPromise = axios
+    .post(`${import.meta.env.VITE_API_URL}/auth/refresh`, { refresh_token: refreshToken })
+    .then(({ data }) => {
+      localStorage.setItem(TOKEN_KEY, data.access_token)
+      localStorage.setItem(REFRESH_KEY, data.refresh_token)
+      return true
+    })
+    .catch(() => false)
+    .finally(() => { _refreshPromise = null })
+
+  return _refreshPromise
 }
 
 export default client

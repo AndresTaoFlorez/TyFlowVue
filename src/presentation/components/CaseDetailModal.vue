@@ -12,7 +12,7 @@ const userStore = useUserStore()
 
 const c = computed(() => store.selectedCase)
 const {
-  assignMode, toggleAssign, showReassign,
+  showAssign, toggleAssign, showReassign,
   statusOptions, statusLabels,
   applicationName, supportLevelName, specialistName, categoryName,
   changeStatus, fmtDate,
@@ -87,26 +87,13 @@ function onKeydown(e) {
           </div>
 
           <!-- Timeline -->
-          <CaseStatusTimeline :case-data="c" />
+          <CaseStatusTimeline :case-data="c" :specialist-name="specialistName" />
 
           <!-- Action bar -->
           <div class="cdm__actions">
-            <template v-if="c.isAssignable">
-              <button
-                class="cdm__action"
-                :class="{ 'cdm__action--active': assignMode === 'wdd' }"
-                @click="toggleAssign('wdd')"
-              >
-                <i class="bx bx-bot"></i> WDD Auto
-              </button>
-              <button
-                class="cdm__action"
-                :class="{ 'cdm__action--active': assignMode === 'manual' }"
-                @click="toggleAssign('manual')"
-              >
-                <i class="bx bx-user-plus"></i> Manual
-              </button>
-            </template>
+            <button v-if="c.isAssignable" class="cdm__action" :class="{ 'cdm__action--active': showAssign }" @click="toggleAssign()">
+              <i class="bx bx-user-plus"></i> Asignar
+            </button>
             <button v-if="c.isReassignable" class="cdm__action" @click="showReassign = true">
               <i class="bx bx-transfer"></i> Reasignar
             </button>
@@ -119,45 +106,32 @@ function onKeydown(e) {
           </div>
 
           <!-- Assign panel -->
-          <CaseAssignPanel v-if="assignMode" :case-id="c.id" :mode="assignMode" @done="onAssignDone" />
+          <CaseAssignPanel v-if="showAssign" :case-id="c.id" @done="onAssignDone" />
 
-          <!-- Details grid -->
-          <div class="cdm__section">
-            <h4 class="cdm__section-title">Detalles</h4>
-            <div class="cdm__grid">
-              <div class="cdm__detail">
-                <span class="cdm__detail-label">Aplicación</span>
-                <span class="cdm__detail-value">{{ applicationName ?? '—' }}</span>
-              </div>
-              <div class="cdm__detail">
-                <span class="cdm__detail-label">Nivel</span>
-                <span class="cdm__detail-value">{{ supportLevelName ?? '—' }}</span>
-              </div>
-              <div class="cdm__detail">
-                <span class="cdm__detail-label">Categoría</span>
-                <span class="cdm__detail-value">{{ categoryName ?? '—' }}</span>
-              </div>
-              <div class="cdm__detail">
-                <span class="cdm__detail-label">Especialista</span>
-                <span class="cdm__detail-value">{{ specialistName ?? '—' }}</span>
-              </div>
-              <div class="cdm__detail">
-                <span class="cdm__detail-label">Creado</span>
-                <span class="cdm__detail-value">{{ fmtDate(c.createdAt) }}</span>
-              </div>
-              <div class="cdm__detail">
-                <span class="cdm__detail-label">Asignado</span>
-                <span class="cdm__detail-value">{{ fmtDate(c.assignedAt) }}</span>
-              </div>
-              <div class="cdm__detail">
-                <span class="cdm__detail-label">Resuelto</span>
-                <span class="cdm__detail-value">{{ fmtDate(c.resolvedAt) }}</span>
-              </div>
+          <!-- Dates row -->
+          <div class="cdm__dates">
+            <div class="cdm__detail">
+              <span class="cdm__detail-label">Creado</span>
+              <span class="cdm__detail-value">{{ fmtDate(c.createdAt) }}</span>
+            </div>
+            <div class="cdm__detail">
+              <span class="cdm__detail-label">Asignado</span>
+              <span class="cdm__detail-value">{{ fmtDate(c.assignedAt) ?? '—' }}</span>
+            </div>
+            <div v-if="specialistName" class="cdm__detail">
+              <span class="cdm__detail-label">Especialista</span>
+              <span class="cdm__detail-value cdm__detail-value--specialist">
+                <i class="bx bx-user-check"></i> {{ specialistName }}
+              </span>
+            </div>
+            <div class="cdm__detail">
+              <span class="cdm__detail-label">Resuelto</span>
+              <span class="cdm__detail-value">{{ fmtDate(c.resolvedAt) ?? '—' }}</span>
             </div>
           </div>
 
-          <div v-if="c.description" class="cdm__section">
-            <h4 class="cdm__section-title">Descripción</h4>
+          <div v-if="c.description" class="cdm__desc-block">
+            <span class="cdm__detail-label">Descripción</span>
             <p class="cdm__description">{{ c.description }}</p>
           </div>
         </div>
@@ -381,20 +355,11 @@ function onKeydown(e) {
 }
 .cdm__status-select:focus { border-color: var(--primary-500); }
 
-/* Detail grid */
-.cdm__section-title {
-  font-size: 0.72rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--text-secondary);
-  margin-bottom: 0.5rem;
-}
-
-.cdm__grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-  gap: 0.65rem;
+/* Dates row */
+.cdm__dates {
+  display: flex;
+  gap: 1.5rem;
+  flex-wrap: wrap;
 }
 
 .cdm__detail {
@@ -417,11 +382,26 @@ function onKeydown(e) {
   font-weight: 500;
 }
 
+.cdm__detail-value--specialist {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  color: var(--primary-600, #1fa672);
+  font-weight: 600;
+}
+
+.cdm__desc-block {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
 .cdm__description {
   font-size: 0.82rem;
   color: var(--text-primary);
   line-height: 1.55;
   white-space: pre-wrap;
+  margin: 0;
 }
 
 /* Responsive */
@@ -440,6 +420,5 @@ function onKeydown(e) {
     width: 44px;
     height: 44px;
   }
-  .cdm__grid { grid-template-columns: 1fr 1fr; }
 }
 </style>

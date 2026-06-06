@@ -1,4 +1,6 @@
 <script setup>
+import { ref, computed, onMounted, onUnmounted } from 'vue'
+
 const props = defineProps({
   options: { type: Array, required: true },
   modelValue: { type: Array, required: true },
@@ -14,6 +16,9 @@ const props = defineProps({
 
 const emit = defineEmits(['update:modelValue'])
 
+const isSelected = (id) => props.modelValue.includes(id)
+const isLocked   = (id) => props.lockedIds.includes(id)
+
 const toggle = (id) => {
   if (props.lockedIds.includes(id)) return
   const current = [...props.modelValue]
@@ -23,16 +28,75 @@ const toggle = (id) => {
   emit('update:modelValue', current)
 }
 
-const isSelected = (id) => props.modelValue.includes(id)
-const isLocked = (id) => props.lockedIds.includes(id)
+// ── Bulk select / undo ──────────────────────────────────────
+const _prev  = ref(null)  // snapshot before last bulk op; null = nada que deshacer
+let _expireTimer = null
+
+const canBulk = computed(() =>
+  !props.loading && !props.disabled && props.options.length > 1
+)
+
+const allSelected = computed(() =>
+  props.options.every(o => isLocked(o.id) || isSelected(o.id))
+)
+
+const noneSelected = computed(() =>
+  props.modelValue.every(id => props.lockedIds.includes(id))
+)
+
+function _snapshot() {
+  _prev.value = [...props.modelValue]
+  clearTimeout(_expireTimer)
+  _expireTimer = setTimeout(() => { _prev.value = null }, 8_000)
+}
+
+function selectAll() {
+  _snapshot()
+  const free = props.options.filter(o => !isLocked(o.id)).map(o => o.id)
+  const locked = props.lockedIds.filter(id => props.options.some(o => o.id === id))
+  emit('update:modelValue', [...new Set([...locked, ...free])])
+}
+
+function selectNone() {
+  _snapshot()
+  const locked = props.lockedIds.filter(id => props.options.some(o => o.id === id))
+  emit('update:modelValue', locked)
+}
+
+function undoLast() {
+  if (_prev.value === null) return
+  emit('update:modelValue', _prev.value)
+  _prev.value = null
+  clearTimeout(_expireTimer)
+}
+
+function _onKeydown(e) {
+  if (_prev.value !== null && (e.ctrlKey || e.metaKey) && e.key === 'z') {
+    e.preventDefault()
+    undoLast()
+  }
+}
+
+onMounted(()  => window.addEventListener('keydown', _onKeydown))
+onUnmounted(() => {
+  window.removeEventListener('keydown', _onKeydown)
+  clearTimeout(_expireTimer)
+})
 </script>
 
 <template>
   <div class="chip-select" :class="{ 'chip-select--error': error }">
-    <label v-if="label" class="chip-select__label">
-      <i v-if="icon" class='bx' :class="icon"></i>
-      {{ label }}
-    </label>
+    <div v-if="label || canBulk" class="chip-select__header">
+      <label v-if="label" class="chip-select__label">
+        <i v-if="icon" class='bx' :class="icon"></i>
+        {{ label }}
+      </label>
+      <div v-if="canBulk" class="chip-select__bulk">
+        <button type="button" class="chip-bulk-btn" :disabled="allSelected" @click="selectAll">Todos</button>
+        <span class="chip-bulk-sep">/</span>
+        <button type="button" class="chip-bulk-btn" :disabled="noneSelected" @click="selectNone">Ninguno</button>
+      </div>
+    </div>
 
     <div v-if="loading" class="chip-select__loading">
       <i class='bx bx-loader-alt bx-spin'></i> Cargando...
@@ -62,6 +126,12 @@ const isLocked = (id) => props.lockedIds.includes(id)
         {{ opt.displayName || opt.name }}
       </button>
     </div>
+
+    <transition name="undo-fade">
+      <button v-if="_prev !== null" type="button" class="chip-undo-btn" @click="undoLast">
+        <i class='bx bx-undo'></i> Deshacer
+      </button>
+    </transition>
 
     <span v-if="error" class="chip-select__error">{{ error }}</span>
   </div>
@@ -227,5 +297,82 @@ const isLocked = (id) => props.lockedIds.includes(id)
   background: #B45309;
   border-color: #B45309;
   color: white;
+}
+
+/* ---- Header row (label + bulk buttons) ---- */
+.chip-select__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.chip-select__bulk {
+  display: flex;
+  align-items: center;
+  gap: 0.2rem;
+  flex-shrink: 0;
+}
+
+.chip-bulk-btn {
+  background: none;
+  border: none;
+  padding: 0.1rem 0.25rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+  cursor: pointer;
+  border-radius: var(--radius-sm, 4px);
+  transition: color 0.12s ease;
+}
+
+.chip-bulk-btn:hover:not(:disabled) {
+  color: var(--primary-500);
+}
+
+.chip-bulk-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.chip-bulk-sep {
+  font-size: 0.72rem;
+  color: var(--border-medium, #ccc);
+  user-select: none;
+}
+
+/* ---- Undo button ---- */
+.chip-undo-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  background: none;
+  border: none;
+  padding: 0.15rem 0.3rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+  cursor: pointer;
+  border-radius: var(--radius-sm, 4px);
+  transition: color 0.12s ease;
+}
+
+.chip-undo-btn:hover {
+  color: var(--primary-500);
+}
+
+.chip-undo-btn i {
+  font-size: 0.85rem;
+}
+
+/* ---- Undo transition ---- */
+.undo-fade-enter-active,
+.undo-fade-leave-active {
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+.undo-fade-enter-from,
+.undo-fade-leave-to {
+  opacity: 0;
+  transform: translateY(-4px);
 }
 </style>
