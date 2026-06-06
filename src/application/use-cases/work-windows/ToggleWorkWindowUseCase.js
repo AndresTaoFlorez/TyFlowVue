@@ -7,9 +7,8 @@ export async function toggleWorkWindowUseCase(window) {
   }
 
   try {
-    const results = await WorkWindowRepository.toggleWindows([window.id])
-    const result = results.find(r => r.id === window.id)
-    return window.withToggled(result.is_active)
+    await WorkWindowRepository.toggleWindows([window.id])
+    return await WorkWindowRepository.fetchById(window.id)
   } catch (e) {
     throw WorkWindowError.fromHttp(e, 'Error al cambiar el estado de la ventana.')
   }

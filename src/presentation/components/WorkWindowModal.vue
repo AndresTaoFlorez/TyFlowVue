@@ -45,6 +45,7 @@ const editAffinityWeight = ref('')
 const fmtDate = (date) => fmtDateLocale(date)
 
 function enterEdit() {
+  if (isEnded.value) return
   editStartDate.value = dateFromTimestamp(props.window.startsAt) || props.window.scheduledDate || ''
   editStartTime.value = fmtForInput(props.window.startTime)
   editEndDate.value = dateFromTimestamp(props.window.endsAt) || props.window.scheduledDate || ''
@@ -125,8 +126,14 @@ const hasChanged = computed(() => {
 
 const fmtDisplay = fmtTime12h
 
-const statusLabel = computed(() => props.window.isActive ? 'Activa' : 'Inactiva')
-const statusClass = computed(() => props.window.isActive ? 'open' : 'closed')
+const statusLabel = computed(() => {
+  if (isEnded.value) return 'Finalizada'
+  return props.window.isActive ? 'Activa' : 'Inactiva'
+})
+const statusClass = computed(() => {
+  if (isEnded.value) return 'ended'
+  return props.window.isActive ? 'open' : 'closed'
+})
 </script>
 
 <template>
@@ -151,7 +158,7 @@ const statusClass = computed(() => props.window.isActive ? 'open' : 'closed')
         </div>
         <div class="wm__header-right">
           <button
-            v-if="!editing"
+            v-if="!editing && !isEnded"
             class="wm__icon-btn"
             title="Editar horario"
             @click="enterEdit"
@@ -305,7 +312,7 @@ const statusClass = computed(() => props.window.isActive ? 'open' : 'closed')
             <i v-if="loading" class='bx bx-loader-alt bx-spin'></i>
             <i v-else class='bx bx-trash'></i>
           </button>
-          <div class="wm__footer-right">
+          <div v-if="!isEnded" class="wm__footer-right">
             <button
               class="wm__btn"
               :class="window.isActive ? 'wm__btn--danger' : 'wm__btn--primary'"
@@ -352,6 +359,7 @@ const statusClass = computed(() => props.window.isActive ? 'open' : 'closed')
 
 .wm__bar--open { background: var(--primary-500); }
 .wm__bar--closed { background: var(--border-light); }
+.wm__bar--ended { background: #94a3b8; }
 
 /* ===== Header ===== */
 .wm__header {
@@ -383,6 +391,7 @@ const statusClass = computed(() => props.window.isActive ? 'open' : 'closed')
 
 .wm__status-dot--open { background: var(--primary-500); box-shadow: 0 0 0 3px rgba(42, 199, 143, 0.2); }
 .wm__status-dot--closed { background: #94a3b8; }
+.wm__status-dot--ended { background: #cbd5e1; }
 
 .wm__status-label {
   font-size: 12px;

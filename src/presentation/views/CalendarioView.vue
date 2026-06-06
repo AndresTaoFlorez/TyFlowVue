@@ -104,6 +104,7 @@ async function pasteOnSlot(date, startTime, endTime) {
 
 function onWindowContext({ window: w, x, y }) {
   const isFutureWindow = w.startsAt && new Date(w.startsAt) > new Date()
+  const isEndedWindow = w.endsAt && new Date(w.endsAt) < new Date()
   const hasInheritance = !!(w.inheritedFromWindowId || w.inheritsOnReopen)
   const inheritItem = isFutureWindow
     ? (hasInheritance
@@ -111,9 +112,9 @@ function onWindowContext({ window: w, x, y }) {
       : { label: 'Activar herencia', icon: 'bx-link', action: 'reinherit' })
     : null
   const items = [
-    { label: 'Editar', icon: 'bx-pencil', action: 'edit' },
+    ...(!isEndedWindow ? [{ label: 'Editar', icon: 'bx-pencil', action: 'edit' }] : []),
     { label: 'Agregar especialista', icon: 'bx-user-plus', action: 'add-specialist' },
-    { label: w.isActive ? 'Inhabilitar' : 'Habilitar', icon: w.isActive ? 'bx-block' : 'bx-check-circle', action: 'toggle' },
+    ...(!isEndedWindow ? [{ label: w.isActive ? 'Inhabilitar' : 'Habilitar', icon: w.isActive ? 'bx-block' : 'bx-check-circle', action: 'toggle' }] : []),
     ...(inheritItem ? [inheritItem] : []),
     { label: 'Copiar ventana', icon: 'bx-copy', action: 'copy' },
     { label: 'Cortar ventana', icon: 'bx-cut', action: 'cut' },
