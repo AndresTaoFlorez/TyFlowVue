@@ -136,10 +136,25 @@ export const useCasesStore = defineStore('cases', () => {
       ...(userStore.supportLevels ?? []),
       ...(userStore.supportCategories ?? []),
     ]
-    return raw.replace(/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi, (uuid) => {
-      const match = catalogs.find(c => c.id === uuid)
-      return match ? `"${match.name}"` : uuid
-    })
+    // Two lookup tables:
+    // 1. Full UUID (with dashes, case-insensitive) → display name
+    // 2. 6-char hex prefix (backend truncates UUIDs in error messages) → display name
+    const byFullId  = new Map(catalogs.map(c => [c.id.toLowerCase(), c.name]))
+    const byShortId = new Map(
+      catalogs.map(c => [c.id.replace(/-/g, '').slice(0, 6).toLowerCase(), c.name])
+    )
+
+    return raw
+      // Full UUIDs first
+      .replace(/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi, (uuid) => {
+        const name = byFullId.get(uuid.toLowerCase())
+        return name ? `"${name}"` : uuid
+      })
+      // 6-char hex short IDs (truncated UUIDs from backend error messages)
+      .replace(/\b([0-9a-f]{6})\b/gi, (short) => {
+        const name = byShortId.get(short.toLowerCase())
+        return name ? `"${name}"` : short
+      })
   }
 
   // ── Actions ──
