@@ -2,10 +2,20 @@
 import { ref, computed, watch, onUnmounted } from 'vue'
 import { useCasesStore } from '@/presentation/stores/useCasesStore'
 import { useUserStore } from '@/presentation/stores/useUserStore'
+import { STATUS_LABELS } from '@/domain/entities/Case'
 
 const store = useCasesStore()
 const userStore = useUserStore()
 const emit = defineEmits(['select'])
+
+// When in search mode, show searchResults; otherwise the normal paginated list.
+const displayCases = computed(() => store.searchMode ? store.searchResults : store.cases)
+
+// A result is "out of section" when searching within a specific status filter
+// and the found case belongs to a different section.
+function isOutOfSection(c) {
+  return store.searchMode && store.filters.status && c.status !== store.filters.status
+}
 
 // Build specialist id → name lookup from all available sources
 const specialistMap = computed(() => {
@@ -34,6 +44,13 @@ function specialistName(id) {
 const scrollEl = ref(null)
 const sentinel = ref(null)
 let observer = null
+
+// Scroll the selected row into view when navigating with arrows
+watch(() => store.selectedCase?.id, (id) => {
+  if (!id || !scrollEl.value) return
+  const row = scrollEl.value.querySelector(`tr[data-case-id="${id}"]`)
+  if (row) row.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+})
 
 function setupObserver() {
   observer?.disconnect()
@@ -85,18 +102,22 @@ onUnmounted(() => observer?.disconnect())
     </div>
 
     <!-- Empty state -->
-    <div v-else-if="store.cases.length === 0 && !store.listError" class="ct__empty">
+    <div v-else-if="store.searchMode && store.searchResults.length === 0 && !store.searchLoading" class="ct__empty">
+      <i class="bx bx-search"></i>
+      <span>{{ store.searchError ?? 'Sin resultados' }}</span>
+    </div>
+    <div v-else-if="!store.searchMode && store.cases.length === 0 && !store.listError" class="ct__empty">
       <i class="bx bx-inbox"></i>
       <span>Sin casos para mostrar</span>
     </div>
 
     <!-- Error state -->
-    <div v-else-if="store.listError" class="ct__empty ct__empty--error">
+    <div v-else-if="store.listError && !store.searchMode" class="ct__empty ct__empty--error">
       <i class="bx bx-error-circle"></i>
       <span>{{ store.listError }}</span>
     </div>
 
-    <!-- Table with infinite scroll -->
+    <!-- Table -->
     <div v-else ref="scrollEl" class="ct__scroll">
       <table class="ct__table">
         <thead>
@@ -112,9 +133,14 @@ onUnmounted(() => observer?.disconnect())
         </thead>
         <tbody>
           <tr
-            v-for="c in store.cases"
+            v-for="c in displayCases"
             :key="c.id"
+            :data-case-id="c.id"
             class="ct__row"
+            :class="{
+              'ct__row--out-of-section': isOutOfSection(c),
+              'ct__row--selected': store.selectedCase?.id === c.id,
+            }"
             tabindex="0"
             role="button"
             :aria-label="c.subject"
@@ -122,7 +148,12 @@ onUnmounted(() => observer?.disconnect())
             @keydown.enter.prevent="emit('select', c.id)"
             @keydown.space.prevent="emit('select', c.id)"
           >
-            <td class="ct__id">{{ c.shortId }}</td>
+            <td class="ct__id">
+              {{ c.shortId }}
+              <span v-if="isOutOfSection(c)" class="ct__section-tag" :style="{ background: c.statusBg, color: c.statusColor }">
+                {{ STATUS_LABELS[c.status] ?? c.status }}
+              </span>
+            </td>
             <td class="ct__subject">{{ c.subject }}</td>
             <td>
               <span class="ct__badge" :style="{ background: c.originBg, color: c.originColor }">
@@ -151,8 +182,8 @@ onUnmounted(() => observer?.disconnect())
         </tbody>
       </table>
 
-      <!-- Sentinel + load-more indicator -->
-      <div ref="sentinel" class="ct__sentinel">
+      <!-- Sentinel + load-more (hidden during search mode) -->
+      <div v-if="!store.searchMode" ref="sentinel" class="ct__sentinel">
         <div v-if="store.loadingMore" class="ct__load-more">
           <span class="ct__load-more-dot"></span>
           <span class="ct__load-more-dot"></span>
@@ -218,6 +249,25 @@ onUnmounted(() => observer?.disconnect())
 
 .ct__row--skel { cursor: default; }
 .ct__row--skel:hover { background: transparent; }
+
+.ct__row--selected {
+  background: rgba(42, 199, 143, 0.07) !important;
+  box-shadow: inset 3px 0 0 var(--primary-500);
+}
+.ct__row--selected:hover { background: rgba(42, 199, 143, 0.11) !important; }
+
+.ct__row--out-of-section { opacity: 0.78; }
+.ct__row--out-of-section:hover { opacity: 1; background: var(--bg-card); }
+
+.ct__section-tag {
+  display: inline-block;
+  margin-left: 0.3rem;
+  padding: 0.08rem 0.35rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.6rem;
+  font-weight: 700;
+  vertical-align: middle;
+}
 
 .ct__id {
   font-weight: 700;

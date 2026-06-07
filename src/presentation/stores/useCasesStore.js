@@ -86,6 +86,13 @@ export const useCasesStore = defineStore('cases', () => {
   const loadingCargasCases      = ref(false)
   const cargasTotalAssignments  = ref(0)      // total histórico de asignaciones del especialista
 
+  // ── Search state ──
+  const searchMode    = ref(false)
+  const searchResults = ref([])
+  const searchQuery   = ref('')
+  const searchLoading = ref(false)
+  const searchError   = ref(null)
+
   // ── Modal state ──
   const showDetailModal = ref(false)
   const showCreateModal = ref(false)
@@ -157,6 +164,10 @@ export const useCasesStore = defineStore('cases', () => {
       })
   }
 
+  // Per-filter in-memory cache: filterKey → { data, total }
+  // Enables instant restoration when the user switches back to a previously-loaded filter.
+  const _filterCache = new Map()
+
   // ── Actions ──
   async function loadCases(newFilters) {
     if (newFilters) {
@@ -164,19 +175,31 @@ export const useCasesStore = defineStore('cases', () => {
       const before = _filterKey()
       Object.assign(filters.value, newFilters)
       if (_filterKey() === before) return
-      // Filter changed: reset page and clear stale data so skeleton shows
       pagination.value.page = 1
-      cases.value = []
+      // Exit search mode when filters change
+      searchMode.value = false
+      searchResults.value = []
+      searchQuery.value = ''
+      searchError.value = null
     }
 
+    const fKey = _filterKey()
     const isPage1 = pagination.value.page === 1
-    if (cases.value.length === 0) {
-      loading.value = true       // show skeleton on empty state (filter change or first load)
-    } else if (!isPage1) {
-      loadingMore.value = true   // show bottom spinner for infinite-scroll pages
-    }
-    // else: silent background revalidation — cached data stays visible
     listError.value = null
+
+    if (isPage1) {
+      const cached = _filterCache.get(fKey)
+      if (cached) {
+        // Restore from in-memory cache instantly — no skeleton, silent revalidation
+        cases.value = cached.data
+        pagination.value.total = cached.total
+      } else if (cases.value.length === 0) {
+        loading.value = true       // first load for this filter — show skeleton
+      }
+      // else: stale data visible while we revalidate silently
+    } else {
+      loadingMore.value = true     // infinite-scroll page
+    }
 
     try {
       const result = await fetchCasesUseCase({
@@ -186,16 +209,21 @@ export const useCasesStore = defineStore('cases', () => {
       })
       if (isPage1) {
         casesSync.replaceAll(cases, result.data)
+        _filterCache.set(fKey, { data: [...result.data], total: result.total })
       } else {
-        // Append for infinite scroll
+        // Append for infinite scroll; update cache so back-navigation stays correct
         const appended = [...cases.value, ...result.data]
         cases.value = appended
         casesSync.writeToCache(appended)
+        _filterCache.set(fKey, { data: appended, total: result.total })
       }
       pagination.value.total = result.total
       pagination.value.page = result.page
     } catch (e) {
-      listError.value = _humanizeError(e) || 'Error cargando casos'
+      // Only surface the error if we have nothing to show
+      if (cases.value.length === 0) {
+        listError.value = _humanizeError(e) || 'Error cargando casos'
+      }
     } finally {
       loading.value = false
       loadingMore.value = false
@@ -423,6 +451,74 @@ export const useCasesStore = defineStore('cases', () => {
       if (e.response?.status === 409) throw new Error('Ya hay un job de autopilot en progreso')
       throw e
     }
+  }
+
+  // ── Search ──
+
+  // Scan all locally cached data (current list + every filter cache) for query matches.
+  function _localSearch(q) {
+    const upper = q.toUpperCase()
+    const seen = new Set()
+    const matches = []
+    const check = (list) => {
+      for (const c of list) {
+        if (seen.has(c.id)) continue
+        const short = c.id.slice(0, 6).toUpperCase()
+        if (short.startsWith(upper.slice(0, 6)) || c.id.toLowerCase() === q.toLowerCase()) {
+          seen.add(c.id)
+          matches.push(c)
+        }
+      }
+    }
+    check(cases.value)
+    for (const { data } of _filterCache.values()) check(data)
+    return matches
+  }
+
+  // Live filter as user types — local only, no API call.
+  function filterCasesLocally(query) {
+    const q = query.replace(/^#/, '').trim()
+    if (!q) { clearSearch(); return }
+    searchQuery.value = query
+    searchError.value = null
+    const matches = _localSearch(q)
+    searchMode.value = true
+    searchResults.value = matches
+  }
+
+  // Full search on Enter — local first, then API if nothing found.
+  async function searchCases(query) {
+    const q = query.replace(/^#/, '').trim()
+    if (!q) { clearSearch(); return }
+    searchQuery.value = query
+    searchError.value = null
+
+    const local = _localSearch(q)
+    if (local.length > 0) {
+      searchMode.value = true
+      searchResults.value = local
+      return
+    }
+
+    searchLoading.value = true
+    searchMode.value = true
+    try {
+      const result = await fetchCasesUseCase({ q, pageSize: 20 })
+      searchResults.value = result.data
+      if (result.data.length === 0) searchError.value = 'No se encontraron casos'
+    } catch {
+      searchError.value = 'Error en la búsqueda'
+      searchResults.value = []
+    } finally {
+      searchLoading.value = false
+    }
+  }
+
+  function clearSearch() {
+    searchMode.value = false
+    searchResults.value = []
+    searchQuery.value = ''
+    searchError.value = null
   }
 
   // ── Cargas helpers ──
@@ -655,6 +751,7 @@ export const useCasesStore = defineStore('cases', () => {
     cases, selectedCase, selectedIndex, filters, pagination,
     specialistWorkloads,
     loading, loadingMore, loadingDetail, assigning, listError, detailError, actionError,
+    searchMode, searchResults, searchQuery, searchLoading, searchError,
     showDetailModal, showCreateModal,
     caseCount, hasMore, workloadsByLevel, hasPrev, hasNext,
     autopilotState,
@@ -662,6 +759,7 @@ export const useCasesStore = defineStore('cases', () => {
     allWorkloads, loadingAllWorkloads,
     cargasSpecialistId, cargasCases, loadingCargasCases, cargasTotalAssignments,
     loadCases, loadPage, loadCaseById,
+    filterCasesLocally, searchCases, clearSearch,
     openDetail, openDetailById, closeDetail, goToPrev, goToNext,
     createCase, updateCase, updateCaseStatus,
     assignWdd, assignManual, reassign, triggerAutopilot,

@@ -198,6 +198,27 @@ function selectCase(c) {
   if (isMobile.value) mobilePanel.value = 2
 }
 
+// ── Case navigation (← / →) ──────────────────────────
+const selectedCaseIdx = computed(() => {
+  if (!selectedCase.value) return -1
+  return store.cargasCases.findIndex(c => c.id === selectedCase.value.id)
+})
+const hasPrevCase = computed(() => selectedCaseIdx.value > 0)
+const hasNextCase = computed(() => selectedCaseIdx.value !== -1 && selectedCaseIdx.value < store.cargasCases.length - 1)
+
+function goToPrevCase() {
+  if (hasPrevCase.value) selectCase(store.cargasCases[selectedCaseIdx.value - 1])
+}
+function goToNextCase() {
+  if (hasNextCase.value) selectCase(store.cargasCases[selectedCaseIdx.value + 1])
+}
+
+function onKeydown(e) {
+  if (!selectedCase.value || showReassign.value) return
+  if (e.key === 'ArrowLeft')  { e.preventDefault(); goToPrevCase() }
+  if (e.key === 'ArrowRight') { e.preventDefault(); goToNextCase() }
+}
+
 // ── Status options for selected case ──────────────────
 const statusOptions = computed(() => {
   const current = selectedCase.value?.status
@@ -254,6 +275,7 @@ function appName(id) {
 
 onMounted(async () => {
   window.addEventListener('resize', onResize)
+  window.addEventListener('keydown', onKeydown)
   const appIds = applications.value.map(a => a.id)
   if (appIds.length) {
     await store.loadAllWorkloads(appIds)
@@ -269,6 +291,7 @@ onMounted(async () => {
 })
 onUnmounted(() => {
   window.removeEventListener('resize', onResize)
+  window.removeEventListener('keydown', onKeydown)
   clearTimeout(_resizeTimer)
 })
 </script>
@@ -503,6 +526,14 @@ onUnmounted(() => {
         <!-- Case detail -->
         <div v-else class="cl-p3-body">
           <div class="cl-detail-header">
+            <div class="cl-detail-nav">
+              <button class="cl-nav-btn" :disabled="!hasPrevCase" title="Anterior (←)" @click="goToPrevCase">
+                <i class="bx bx-chevron-left"></i>
+              </button>
+              <button class="cl-nav-btn" :disabled="!hasNextCase" title="Siguiente (→)" @click="goToNextCase">
+                <i class="bx bx-chevron-right"></i>
+              </button>
+            </div>
             <div class="cl-detail-id">{{ selectedCase.shortId }}</div>
             <div class="cl-detail-badges">
               <span
@@ -717,6 +748,10 @@ onUnmounted(() => {
         <div class="cl-mob-header">
           <button class="cl-panel-btn" @click="mobilePanel = 1"><i class="bx bx-arrow-back"></i></button>
           <span class="cl-panel-title">{{ selectedCase?.shortId || 'Detalle' }}</span>
+          <div style="margin-left:auto;display:flex;gap:2px">
+            <button class="cl-nav-btn" :disabled="!hasPrevCase" @click="goToPrevCase"><i class="bx bx-chevron-left"></i></button>
+            <button class="cl-nav-btn" :disabled="!hasNextCase" @click="goToNextCase"><i class="bx bx-chevron-right"></i></button>
+          </div>
         </div>
         <div v-if="!selectedCase" class="cl-p3-placeholder"><i class="bx bx-file-blank"></i><span>Selecciona un caso</span></div>
         <div v-else class="cl-p3-body">
@@ -1275,9 +1310,31 @@ onUnmounted(() => {
 .cl-detail-header {
   display: flex;
   align-items: center;
-  gap: 0.6rem;
+  gap: 0.5rem;
   flex-wrap: wrap;
 }
+
+.cl-detail-nav {
+  display: flex;
+  gap: 2px;
+}
+
+.cl-nav-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 1.05rem;
+  cursor: pointer;
+  transition: background 0.1s, color 0.1s;
+}
+.cl-nav-btn:hover:not(:disabled) { background: var(--bg-card); color: var(--text-primary); }
+.cl-nav-btn:disabled { opacity: 0.3; cursor: default; }
 
 .cl-detail-id {
   font-size: 0.75rem;

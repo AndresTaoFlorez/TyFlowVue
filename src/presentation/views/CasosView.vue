@@ -80,39 +80,57 @@ const tabs = [
 
 useCasesRealtime()
 
+// ── Status → filter mapping ───────────────────────────
+const STATUS_TO_FILTER = {
+  todos: null,
+  open: 'open',
+  assigned: 'assigned',
+  in_progress: 'in_progress',
+  resolved: 'resolved',
+  closed: 'closed',
+}
+
 // ── Routing bridge ────────────────────────────────────
-// URL (:id param) is the source of truth for the detail panel.
+
+// Detail panel: id param is the source of truth
 watch(() => route.params.id, (id) => {
   if (id) store.openDetailById(id)
   else store.closeDetail()
 }, { immediate: true })
 
+// Close detail → navigate back to list (keep status param)
 watch(() => store.showDetailModal, (open) => {
   if (!open && route.name === 'caso-detail') {
-    router.replace({ name: 'casos' })
+    router.replace({ name: 'casos-list', params: { status: route.params.status } })
   }
 })
 
 // Prev/Next navigation → replace URL without extra history entry
 watch(() => store.selectedCase?.id, (id) => {
   if (store.showDetailModal && id && route.params.id !== id) {
-    router.replace({ name: 'caso-detail', params: { id } })
+    router.replace({ name: 'caso-detail', params: { status: route.params.status ?? 'open', id } })
   }
 })
 
+// Status tab navigation (fires only when status param changes after mount)
+watch(() => route.params.status, (newStatus, oldStatus) => {
+  if (oldStatus === undefined) return  // initial load handled in onMounted
+  store.loadCases({ status: STATUS_TO_FILTER[newStatus ?? 'open'] ?? null })
+})
+
 function openCase(id) {
-  router.push({ name: 'caso-detail', params: { id } })
+  router.push({ name: 'caso-detail', params: { status: route.params.status ?? 'open', id } })
 }
 
 // ── Init ─────────────────────────────────────────────
 onMounted(async () => {
-  // Load selects (roles, levels, categories, applications) + users for specialist name lookup
   await Promise.all([userStore.loadSelects(), userStore.loadUsers()])
+  const status = STATUS_TO_FILTER[route.params.status ?? 'open'] ?? 'open'
+  const initFilters = { status }
   if (!authStore.isAdmin && authStore.profile?.specialistId) {
-    await store.loadCases({ specialistId: authStore.profile.specialistId, status: null })
-  } else {
-    await store.loadCases()
+    initFilters.specialistId = authStore.profile.specialistId
   }
+  store.loadCases(initFilters)
 })
 </script>
 

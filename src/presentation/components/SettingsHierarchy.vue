@@ -578,6 +578,25 @@ async function saveEditCat(id) {
   display: flex; align-items: center; gap: 0.4rem;
 }
 
+.sh__bulk {
+  display: flex; align-items: center; gap: 0.05rem;
+}
+.sh__bulk-btn {
+  background: none; border: none;
+  font-size: 0.7rem; font-weight: 600;
+  color: var(--primary-500); cursor: pointer;
+  padding: 0.18rem 0.3rem; border-radius: var(--radius-sm);
+  transition: background 0.12s, color 0.12s; line-height: 1;
+  font-family: inherit;
+}
+.sh__bulk-btn:hover:not(:disabled) { background: rgba(42,199,143,0.12); }
+.sh__bulk-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+.sh__bulk-btn--sm { font-size: 0.64rem; padding: 0.12rem 0.22rem; }
+.sh__bulk-sep {
+  font-size: 0.65rem; color: var(--text-secondary);
+  opacity: 0.5; user-select: none; padding: 0 0.05rem;
+}
+
 .sh__save-levels-btn {
   display: flex; align-items: center; gap: 0.2rem;
   padding: 0.3rem 0.6rem; background: var(--primary-500); color: white;

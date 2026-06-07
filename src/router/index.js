@@ -62,12 +62,16 @@ const router = createRouter({
         },
         {
           path: 'casos',
-          name: 'casos',
+          redirect: { name: 'casos-list', params: { status: 'open' } },
+        },
+        {
+          path: 'casos/:status',
+          name: 'casos-list',
           component: CasosView,
           meta: { title: 'Casos' },
         },
         {
-          path: 'casos/:id',
+          path: 'casos/:status/:id',
           name: 'caso-detail',
           component: CasosView,
           meta: { title: 'Caso' },

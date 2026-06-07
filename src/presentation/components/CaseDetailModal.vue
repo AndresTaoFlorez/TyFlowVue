@@ -424,32 +424,41 @@ function fmtDateTime(iso) {
   color: var(--text-secondary);
 }
 
-/* ── Grid of fields ─────────────────────────────────── */
+/* ── Grid of fields (Outlook-style inline wrap) ─────── */
 .cdp__grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
-  gap: 0.6rem 1rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem 1.1rem;
+  align-items: baseline;
 }
 
 .cdp__field {
-  display: flex;
-  flex-direction: column;
-  gap: 0.1rem;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.25rem;
+  flex-shrink: 0;
+  min-width: 0;
 }
 
 .cdp__label {
-  font-size: 0.62rem;
-  font-weight: 600;
+  font-size: 0.6rem;
+  font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.03em;
   color: var(--text-secondary);
+  white-space: nowrap;
+  flex-shrink: 0;
 }
+.cdp__label::after { content: ':'; }
 
 .cdp__value {
-  font-size: 0.8rem;
+  font-size: 0.78rem;
   color: var(--text-primary);
   font-weight: 500;
-  word-break: break-word;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 220px;
 }
 
 .cdp__value--specialist {

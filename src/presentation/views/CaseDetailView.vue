@@ -34,7 +34,7 @@ onMounted(async () => {
 })
 
 function goBack() {
-  router.push({ name: 'casos' })
+  router.push({ name: 'casos-list', params: { status: 'open' } })
 }
 
 function onAssignDone() {
