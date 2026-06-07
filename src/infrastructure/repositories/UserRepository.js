@@ -34,6 +34,11 @@ export const UserRepository = {
     return data
   },
 
+  async patchPreferences(partial) {
+    const { data } = await client.patch('/users/me/preferences', partial)
+    return data
+  },
+
   async fetchByApplication(applicationId) {
     const { data } = await client.get('/users', {
       params: { is_specialist: true, application_ids: applicationId },

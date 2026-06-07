@@ -21,13 +21,6 @@ const hours = Array.from({ length: 24 }, (_, i) => ({
           <option v-for="h in hours" :key="h.value" :value="h.value">{{ h.label }}</option>
         </select>
       </div>
-
-      <div class="sc__field">
-        <label class="sc__label">Hora de fin</label>
-        <select v-model.number="prefs.calendarEndHour" class="sc__select">
-          <option v-for="h in hours" :key="h.value" :value="h.value">{{ h.label }}</option>
-        </select>
-      </div>
     </div>
   </section>
 </template>

@@ -12,18 +12,10 @@ const prefs = usePreferencesStore()
     <div class="sn__rows">
       <label class="sn__row">
         <div class="sn__row-text">
-          <span class="sn__row-label">Asignaciones</span>
-          <span class="sn__row-hint">Notificar cuando se asigna un caso</span>
+          <span class="sn__row-label">Notificaciones emergentes</span>
+          <span class="sn__row-hint">Mostrar toast al recibir eventos</span>
         </div>
-        <input type="checkbox" v-model="prefs.notifyAssignments" class="sn__toggle" />
-      </label>
-
-      <label class="sn__row">
-        <div class="sn__row-text">
-          <span class="sn__row-label">Casos nuevos</span>
-          <span class="sn__row-hint">Notificar cuando se crea un caso</span>
-        </div>
-        <input type="checkbox" v-model="prefs.notifyCases" class="sn__toggle" />
+        <input type="checkbox" v-model="prefs.notificationsToast" class="sn__toggle" />
       </label>
 
       <label class="sn__row">
@@ -31,7 +23,7 @@ const prefs = usePreferencesStore()
           <span class="sn__row-label">Sonido</span>
           <span class="sn__row-hint">Reproducir sonido con las notificaciones</span>
         </div>
-        <input type="checkbox" v-model="prefs.notifySound" class="sn__toggle" />
+        <input type="checkbox" v-model="prefs.notificationsSound" class="sn__toggle" />
       </label>
     </div>
   </section>

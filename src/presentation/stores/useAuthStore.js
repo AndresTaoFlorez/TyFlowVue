@@ -6,6 +6,7 @@ import { fetchMeUseCase } from '@/application/use-cases/users/FetchMeUseCase'
 import { TOKEN_KEY } from '@/infrastructure/http/client'
 import { UserInactiveError } from '@/domain/errors/DomainErrors'
 import { useUserStore } from '@/presentation/stores/useUserStore'
+import { usePreferencesStore } from '@/presentation/stores/usePreferencesStore'
 import { wsClient } from '@/infrastructure/realtime/wsClient'
 
 export const useAuthStore = defineStore('auth', () => {
@@ -40,6 +41,7 @@ export const useAuthStore = defineStore('auth', () => {
     }
 
     profile.value = userProfile
+    usePreferencesStore().initFromPreferences(userProfile.preferences)
   }
 
   function logout() {

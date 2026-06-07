@@ -9,6 +9,23 @@ const userStore = useUserStore()
 const store = useCasesStore()
 const applications = computed(() => userStore.applications ?? [])
 
+// ── Cargas filters ────────────────────────────────────
+const cargasFilters = ref({ status: null, originType: null, applicationId: null })
+
+const CARGAS_ORIGINS = [
+  { value: 'outlook', label: 'Outlook' },
+  { value: 'judit', label: 'Judit' },
+  { value: 'tyflow', label: 'TyFlow' },
+]
+
+const filteredCargasCases = computed(() => {
+  let cases = store.cargasCases
+  if (cargasFilters.value.status) cases = cases.filter(c => c.status === cargasFilters.value.status)
+  if (cargasFilters.value.originType) cases = cases.filter(c => c.originType === cargasFilters.value.originType)
+  if (cargasFilters.value.applicationId) cases = cases.filter(c => c.applicationId === cargasFilters.value.applicationId)
+  return cases
+})
+
 // ── Panels state ──────────────────────────────────────
 // selectedSpecialistId drives the selection; selectedSpecialist is derived from store.allWorkloads
 // so it stays live when RT events update counters.
@@ -159,7 +176,7 @@ const STATUS_BG = {
 const casesByStatus = computed(() => {
   const grouped = {}
   for (const s of STATUS_ORDER) grouped[s] = []
-  for (const c of store.cargasCases) {
+  for (const c of filteredCargasCases.value) {
     if (grouped[c.status]) grouped[c.status].push(c)
     else grouped['open']?.push(c)
   }
@@ -169,10 +186,10 @@ const casesByStatus = computed(() => {
 })
 
 const panelStats = computed(() => {
-  const active = store.cargasCases.filter(c => c.status === 'assigned' || c.status === 'in_progress').length
-  const open   = store.cargasCases.filter(c => c.status === 'open').length
-  const closed = store.cargasCases.filter(c => c.status === 'closed' || c.status === 'resolved').length
-  return { total: store.cargasCases.length, active, open, closed }
+  const active = filteredCargasCases.value.filter(c => c.status === 'assigned' || c.status === 'in_progress').length
+  const open   = filteredCargasCases.value.filter(c => c.status === 'open').length
+  const closed = filteredCargasCases.value.filter(c => c.status === 'closed' || c.status === 'resolved').length
+  return { total: filteredCargasCases.value.length, active, open, closed }
 })
 
 // Keep selectedCase in sync when store.cargasCases updates via RT events
@@ -188,6 +205,7 @@ async function selectSpecialist(s) {
   selectedSpecialistId.value = s.specialist_id
   selectedCase.value = null
   showReassign.value = false
+  cargasFilters.value = { status: null, originType: null, applicationId: null }
   if (isMobile.value) mobilePanel.value = 1
   await store.loadCargasCases(s.specialist_id)
 }
@@ -201,16 +219,16 @@ function selectCase(c) {
 // ── Case navigation (← / →) ──────────────────────────
 const selectedCaseIdx = computed(() => {
   if (!selectedCase.value) return -1
-  return store.cargasCases.findIndex(c => c.id === selectedCase.value.id)
+  return filteredCargasCases.value.findIndex(c => c.id === selectedCase.value.id)
 })
 const hasPrevCase = computed(() => selectedCaseIdx.value > 0)
-const hasNextCase = computed(() => selectedCaseIdx.value !== -1 && selectedCaseIdx.value < store.cargasCases.length - 1)
+const hasNextCase = computed(() => selectedCaseIdx.value !== -1 && selectedCaseIdx.value < filteredCargasCases.value.length - 1)
 
 function goToPrevCase() {
-  if (hasPrevCase.value) selectCase(store.cargasCases[selectedCaseIdx.value - 1])
+  if (hasPrevCase.value) selectCase(filteredCargasCases.value[selectedCaseIdx.value - 1])
 }
 function goToNextCase() {
-  if (hasNextCase.value) selectCase(store.cargasCases[selectedCaseIdx.value + 1])
+  if (hasNextCase.value) selectCase(filteredCargasCases.value[selectedCaseIdx.value + 1])
 }
 
 function onKeydown(e) {
@@ -443,56 +461,87 @@ onUnmounted(() => {
             <span>Sin casos registrados</span>
           </div>
 
-          <!-- Cases grouped by status -->
-          <div v-else class="cl-p2-body">
-            <!-- Stats row -->
-            <div class="cl-p2-stats">
-              <span class="cl-pstat">
-                <span class="cl-pstat-num">{{ panelStats.total }}</span>
-                <span class="cl-pstat-lbl">total</span>
-              </span>
-              <span class="cl-pstat-sep"></span>
-              <span class="cl-pstat" style="color: var(--status-in-progress)">
-                <span class="cl-pstat-num">{{ panelStats.active }}</span>
-                <span class="cl-pstat-lbl">activos</span>
-              </span>
-              <span class="cl-pstat-sep"></span>
-              <span class="cl-pstat" style="color: var(--status-open)">
-                <span class="cl-pstat-num">{{ panelStats.open }}</span>
-                <span class="cl-pstat-lbl">abiertos</span>
-              </span>
-              <span class="cl-pstat-sep"></span>
-              <span class="cl-pstat">
-                <span class="cl-pstat-num">{{ panelStats.closed }}</span>
-                <span class="cl-pstat-lbl">cerrados</span>
-              </span>
-            </div>
-
-            <!-- Status groups -->
-            <div v-for="group in casesByStatus" :key="group.status">
-              <div
-                class="cl-case-group-label"
-                :style="{ color: STATUS_COLORS[group.status], background: STATUS_BG[group.status] }"
-              >
-                {{ STATUS_LABELS[group.status] }}
-                <span class="cl-case-group-count">{{ group.cases.length }}</span>
+          <!-- Has cases: filter bar + list -->
+          <template v-else>
+            <div class="clf-bar">
+              <div class="clf-chips">
+                <button class="clf-chip" :class="{ 'clf-chip--active': !cargasFilters.status }" @click="cargasFilters.status = null">Todos</button>
+                <button
+                  v-for="s in STATUS_ORDER"
+                  :key="s"
+                  class="clf-chip"
+                  :class="{ 'clf-chip--active': cargasFilters.status === s }"
+                  :style="cargasFilters.status === s ? { background: STATUS_COLORS[s], borderColor: STATUS_COLORS[s] } : {}"
+                  @click="cargasFilters.status = cargasFilters.status === s ? null : s"
+                >{{ STATUS_LABELS[s] }}</button>
               </div>
-              <div
-                v-for="c in group.cases"
-                :key="c.id"
-                class="cl-case-row"
-                :class="{ 'cl-case-row--selected': selectedCase?.id === c.id }"
-                @click="selectCase(c)"
-              >
-                <div class="cl-case-row-top">
-                  <span class="cl-case-id">{{ c.shortId }}</span>
-                  <span class="cl-case-app">{{ appName(c.applicationId) }}</span>
-                  <span class="cl-case-date">{{ fmtDate(c.assignedAt || c.createdAt) }}</span>
+              <div class="clf-selects">
+                <select class="clf-select" :value="cargasFilters.originType" @change="cargasFilters.originType = $event.target.value || null">
+                  <option value="">Origen</option>
+                  <option v-for="o in CARGAS_ORIGINS" :key="o.value" :value="o.value">{{ o.label }}</option>
+                </select>
+                <select class="clf-select" :value="cargasFilters.applicationId" @change="cargasFilters.applicationId = $event.target.value || null">
+                  <option value="">Aplicación</option>
+                  <option v-for="app in applications" :key="app.id" :value="app.id">{{ app.name }}</option>
+                </select>
+              </div>
+            </div>
+            <div class="cl-p2-body">
+              <div v-if="filteredCargasCases.length === 0" class="cl-p2-placeholder" style="flex:1">
+                <i class="bx bx-filter-alt"></i>
+                <span>Sin resultados con estos filtros</span>
+              </div>
+              <template v-else>
+                <!-- Stats row -->
+                <div class="cl-p2-stats">
+                  <span class="cl-pstat">
+                    <span class="cl-pstat-num">{{ panelStats.total }}</span>
+                    <span class="cl-pstat-lbl">total</span>
+                  </span>
+                  <span class="cl-pstat-sep"></span>
+                  <span class="cl-pstat" style="color: var(--status-in-progress)">
+                    <span class="cl-pstat-num">{{ panelStats.active }}</span>
+                    <span class="cl-pstat-lbl">activos</span>
+                  </span>
+                  <span class="cl-pstat-sep"></span>
+                  <span class="cl-pstat" style="color: var(--status-open)">
+                    <span class="cl-pstat-num">{{ panelStats.open }}</span>
+                    <span class="cl-pstat-lbl">abiertos</span>
+                  </span>
+                  <span class="cl-pstat-sep"></span>
+                  <span class="cl-pstat">
+                    <span class="cl-pstat-num">{{ panelStats.closed }}</span>
+                    <span class="cl-pstat-lbl">cerrados</span>
+                  </span>
                 </div>
-                <span class="cl-case-subject">{{ c.subject || '(sin asunto)' }}</span>
-              </div>
+
+                <!-- Status groups -->
+                <div v-for="group in casesByStatus" :key="group.status">
+                  <div
+                    class="cl-case-group-label"
+                    :style="{ color: STATUS_COLORS[group.status], background: STATUS_BG[group.status] }"
+                  >
+                    {{ STATUS_LABELS[group.status] }}
+                    <span class="cl-case-group-count">{{ group.cases.length }}</span>
+                  </div>
+                  <div
+                    v-for="c in group.cases"
+                    :key="c.id"
+                    class="cl-case-row"
+                    :class="{ 'cl-case-row--selected': selectedCase?.id === c.id }"
+                    @click="selectCase(c)"
+                  >
+                    <div class="cl-case-row-top">
+                      <span class="cl-case-id">{{ c.shortId }}</span>
+                      <span class="cl-case-app">{{ appName(c.applicationId) }}</span>
+                      <span class="cl-case-date">{{ fmtDate(c.assignedAt || c.createdAt) }}</span>
+                    </div>
+                    <span class="cl-case-subject">{{ c.subject || '(sin asunto)' }}</span>
+                  </div>
+                </div>
+              </template>
             </div>
-          </div>
+          </template>
         </template>
 
         <!-- Collapsed: icon list -->
@@ -716,31 +765,62 @@ onUnmounted(() => {
         </div>
         <div v-if="store.loadingCargasCases" class="cl-p2-placeholder"><i class="bx bx-loader-alt bx-spin"></i><span>Cargando...</span></div>
         <div v-else-if="!store.cargasCases.length" class="cl-p2-placeholder"><i class="bx bx-folder-open"></i><span>Sin casos</span></div>
-        <div v-else class="cl-p2-body">
-          <div class="cl-p2-stats">
-            <span class="cl-pstat"><span class="cl-pstat-num">{{ panelStats.total }}</span><span class="cl-pstat-lbl">total</span></span>
-            <span class="cl-pstat-sep"></span>
-            <span class="cl-pstat"><span class="cl-pstat-num" style="color:var(--status-in-progress)">{{ panelStats.active }}</span><span class="cl-pstat-lbl">activos</span></span>
-          </div>
-          <div v-for="group in casesByStatus" :key="group.status">
-            <div class="cl-case-group-label" :style="{ color: STATUS_COLORS[group.status], background: STATUS_BG[group.status] }">
-              {{ STATUS_LABELS[group.status] }}<span class="cl-case-group-count">{{ group.cases.length }}</span>
+        <template v-else>
+          <div class="clf-bar">
+            <div class="clf-chips">
+              <button class="clf-chip" :class="{ 'clf-chip--active': !cargasFilters.status }" @click="cargasFilters.status = null">Todos</button>
+              <button
+                v-for="s in STATUS_ORDER"
+                :key="s"
+                class="clf-chip"
+                :class="{ 'clf-chip--active': cargasFilters.status === s }"
+                :style="cargasFilters.status === s ? { background: STATUS_COLORS[s], borderColor: STATUS_COLORS[s] } : {}"
+                @click="cargasFilters.status = cargasFilters.status === s ? null : s"
+              >{{ STATUS_LABELS[s] }}</button>
             </div>
-            <div
-              v-for="c in group.cases"
-              :key="c.id"
-              class="cl-case-row"
-              @click="selectCase(c)"
-            >
-              <div class="cl-case-row-top">
-                <span class="cl-case-id">{{ c.shortId }}</span>
-                <span class="cl-case-app">{{ appName(c.applicationId) }}</span>
-                <span class="cl-case-date">{{ fmtDate(c.assignedAt || c.createdAt) }}</span>
+            <div class="clf-selects">
+              <select class="clf-select" :value="cargasFilters.originType" @change="cargasFilters.originType = $event.target.value || null">
+                <option value="">Origen</option>
+                <option v-for="o in CARGAS_ORIGINS" :key="o.value" :value="o.value">{{ o.label }}</option>
+              </select>
+              <select class="clf-select" :value="cargasFilters.applicationId" @change="cargasFilters.applicationId = $event.target.value || null">
+                <option value="">Aplicación</option>
+                <option v-for="app in applications" :key="app.id" :value="app.id">{{ app.name }}</option>
+              </select>
+            </div>
+          </div>
+          <div class="cl-p2-body">
+            <div v-if="filteredCargasCases.length === 0" class="cl-p2-placeholder" style="flex:1">
+              <i class="bx bx-filter-alt"></i>
+              <span>Sin resultados</span>
+            </div>
+            <template v-else>
+              <div class="cl-p2-stats">
+                <span class="cl-pstat"><span class="cl-pstat-num">{{ panelStats.total }}</span><span class="cl-pstat-lbl">total</span></span>
+                <span class="cl-pstat-sep"></span>
+                <span class="cl-pstat"><span class="cl-pstat-num" style="color:var(--status-in-progress)">{{ panelStats.active }}</span><span class="cl-pstat-lbl">activos</span></span>
               </div>
-              <span class="cl-case-subject">{{ c.subject || '(sin asunto)' }}</span>
-            </div>
+              <div v-for="group in casesByStatus" :key="group.status">
+                <div class="cl-case-group-label" :style="{ color: STATUS_COLORS[group.status], background: STATUS_BG[group.status] }">
+                  {{ STATUS_LABELS[group.status] }}<span class="cl-case-group-count">{{ group.cases.length }}</span>
+                </div>
+                <div
+                  v-for="c in group.cases"
+                  :key="c.id"
+                  class="cl-case-row"
+                  @click="selectCase(c)"
+                >
+                  <div class="cl-case-row-top">
+                    <span class="cl-case-id">{{ c.shortId }}</span>
+                    <span class="cl-case-app">{{ appName(c.applicationId) }}</span>
+                    <span class="cl-case-date">{{ fmtDate(c.assignedAt || c.createdAt) }}</span>
+                  </div>
+                  <span class="cl-case-subject">{{ c.subject || '(sin asunto)' }}</span>
+                </div>
+              </div>
+            </template>
           </div>
-        </div>
+        </template>
       </div>
 
       <!-- Panel 2: Case detail -->
@@ -1523,6 +1603,65 @@ onUnmounted(() => {
 .cl-mob-tab i { font-size: 1.2rem; }
 .cl-mob-tab--active { color: var(--primary-500); }
 .cl-mob-tab:disabled { opacity: 0.35; cursor: not-allowed; }
+
+/* ── Cargas filter bar ───────────────────────────────── */
+.clf-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  padding: 0.4rem 0.5rem;
+  border-bottom: 1px solid var(--border-light);
+  background: var(--bg-main);
+  flex-shrink: 0;
+}
+
+.clf-chips {
+  display: flex;
+  gap: 0.2rem;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+.clf-chips::-webkit-scrollbar { display: none; }
+
+.clf-chip {
+  padding: 0.18rem 0.45rem;
+  border-radius: var(--radius-full);
+  font-size: 0.62rem;
+  font-weight: 600;
+  border: 1px solid var(--border-light);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.1s;
+  flex-shrink: 0;
+}
+.clf-chip:hover { color: var(--text-primary); border-color: var(--text-secondary); }
+.clf-chip--active {
+  background: var(--primary-500);
+  color: white;
+  border-color: var(--primary-500);
+}
+
+.clf-selects {
+  display: flex;
+  gap: 0.3rem;
+}
+
+.clf-select {
+  flex: 1;
+  padding: 0.2rem 0.35rem;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  font-size: 0.62rem;
+  color: var(--text-primary);
+  background: var(--bg-main);
+  cursor: pointer;
+  outline: none;
+  min-width: 0;
+}
+.clf-select:focus { border-color: var(--primary-500); }
 
 /* ── Responsive ──────────────────────────────────────── */
 @media (max-width: 767px) {
