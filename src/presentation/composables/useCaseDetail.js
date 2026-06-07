@@ -33,8 +33,13 @@ export function useCaseDetail(caseRef) {
   const specialistName = computed(() => {
     if (!caseRef.value?.specialistId) return null
     const sid = caseRef.value.specialistId
+    // 1. Workload dropdown data (populated when assign modal is open)
     const w = store.specialistWorkloads.find(s => s.specialist_id === sid)
     if (w?.full_name) return w.full_name
+    // 2. allWorkloads (populated by Cargas view)
+    const aw = store.allWorkloads.find(s => s.specialist_id === sid)
+    if (aw?.full_name) return aw.full_name
+    // 3. Users store (loaded on mount in CasosView)
     const u = userStore.users.find(u => u.specialistId === sid)
     return u?.fullName ?? null
   })

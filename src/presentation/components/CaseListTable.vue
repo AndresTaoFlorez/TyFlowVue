@@ -1,9 +1,35 @@
 <script setup>
-import { ref, watch, onUnmounted } from 'vue'
+import { ref, computed, watch, onUnmounted } from 'vue'
 import { useCasesStore } from '@/presentation/stores/useCasesStore'
+import { useUserStore } from '@/presentation/stores/useUserStore'
 
 const store = useCasesStore()
+const userStore = useUserStore()
 const emit = defineEmits(['select'])
+
+// Build specialist id → name lookup from all available sources
+const specialistMap = computed(() => {
+  const map = new Map()
+  for (const u of userStore.users) {
+    if (u.specialistId) map.set(u.specialistId, u.fullName)
+  }
+  for (const w of store.specialistWorkloads) {
+    if (w.specialist_id && w.full_name && !map.has(w.specialist_id)) {
+      map.set(w.specialist_id, w.full_name)
+    }
+  }
+  for (const w of store.allWorkloads) {
+    if (w.specialist_id && w.full_name && !map.has(w.specialist_id)) {
+      map.set(w.specialist_id, w.full_name)
+    }
+  }
+  return map
+})
+
+function specialistName(id) {
+  if (!id) return null
+  return specialistMap.value.get(id) ?? null
+}
 
 const scrollEl = ref(null)
 const sentinel = ref(null)
@@ -40,6 +66,7 @@ onUnmounted(() => observer?.disconnect())
             <th>Origen</th>
             <th>Prioridad</th>
             <th>Estado</th>
+            <th class="ct__col-specialist">Especialista</th>
             <th>Creado</th>
           </tr>
         </thead>
@@ -50,6 +77,7 @@ onUnmounted(() => observer?.disconnect())
             <td><span class="skel skel--badge"></span></td>
             <td><span class="skel skel--badge" style="width:52px"></span></td>
             <td><span class="skel skel--badge" style="width:68px"></span></td>
+            <td class="ct__col-specialist"><span class="skel skel--specialist"></span></td>
             <td><span class="skel skel--time"></span></td>
           </tr>
         </tbody>
@@ -78,6 +106,7 @@ onUnmounted(() => observer?.disconnect())
             <th>Origen</th>
             <th>Prioridad</th>
             <th>Estado</th>
+            <th class="ct__col-specialist">Especialista</th>
             <th>Creado</th>
           </tr>
         </thead>
@@ -110,6 +139,12 @@ onUnmounted(() => observer?.disconnect())
               <span class="ct__badge" :style="{ background: c.statusBg, color: c.statusColor }">
                 {{ c.statusLabel }}
               </span>
+            </td>
+            <td class="ct__col-specialist ct__specialist">
+              <span v-if="specialistName(c.specialistId)" class="ct__specialist-name">
+                {{ specialistName(c.specialistId) }}
+              </span>
+              <span v-else class="ct__specialist-none">—</span>
             </td>
             <td class="ct__time">{{ c.waitingTime }}</td>
           </tr>
@@ -216,6 +251,25 @@ onUnmounted(() => observer?.disconnect())
   white-space: nowrap;
 }
 
+.ct__specialist {
+  max-width: 140px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ct__specialist-name {
+  font-size: 0.76rem;
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+.ct__specialist-none {
+  font-size: 0.72rem;
+  color: var(--text-secondary);
+  opacity: 0.5;
+}
+
 /* ── Skeleton shimmer ── */
 @keyframes shimmer {
   0%   { background-position: 200% 0; }
@@ -236,9 +290,10 @@ onUnmounted(() => observer?.disconnect())
   animation: shimmer 1.5s ease-in-out infinite;
 }
 
-.skel--id    { width: 44px; }
-.skel--badge { width: 64px; height: 18px; }
-.skel--time  { width: 48px; }
+.skel--id         { width: 44px; }
+.skel--badge      { width: 64px; height: 18px; }
+.skel--specialist { width: 80px; }
+.skel--time       { width: 48px; }
 
 /* ── Empty / Error ── */
 .ct__empty {
@@ -296,13 +351,20 @@ onUnmounted(() => observer?.disconnect())
 }
 
 /* ── Responsive ── */
+@media (max-width: 960px) {
+  /* Hide Especialista column when space is tight */
+  .ct__col-specialist { display: none; }
+}
+
 @media (max-width: 768px) {
-  .ct__table th:nth-child(6),
-  .ct__table td:nth-child(6) { display: none; }
+  /* Hide Creado (now column 7) */
+  .ct__table th:nth-child(7),
+  .ct__table td:nth-child(7) { display: none; }
   .ct__subject { max-width: 160px; }
 }
 
 @media (max-width: 480px) {
+  /* Hide Origen (column 3) */
   .ct__table th:nth-child(3),
   .ct__table td:nth-child(3) { display: none; }
 }

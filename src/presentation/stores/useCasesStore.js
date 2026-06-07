@@ -79,11 +79,12 @@ export const useCasesStore = defineStore('cases', () => {
   // ── Cargas view state (SyncEngine is the source of truth) ──
   // allWorkloads: flat list of workload rows for ALL apps — feeds the Cargas panel 1.
   // RT events (assign/reassign) update it reactively so counters stay live.
-  const allWorkloads         = ref([])
-  const loadingAllWorkloads  = ref(false)
-  const cargasSpecialistId   = ref(null)   // which specialist is open in Cargas panel 2
-  const cargasCases          = ref([])     // cases for that specialist (all statuses)
-  const loadingCargasCases   = ref(false)
+  const allWorkloads            = ref([])
+  const loadingAllWorkloads     = ref(false)
+  const cargasSpecialistId      = ref(null)   // which specialist is open in Cargas panel 2
+  const cargasCases             = ref([])     // cases for that specialist (all statuses)
+  const loadingCargasCases      = ref(false)
+  const cargasTotalAssignments  = ref(0)      // total histórico de asignaciones del especialista
 
   // ── Modal state ──
   const showDetailModal = ref(false)
@@ -230,6 +231,8 @@ export const useCasesStore = defineStore('cases', () => {
     detailError.value = null
     try {
       const fresh = await fetchCaseByIdUseCase(id)
+      // Guard: discard result if the user navigated to a different case while fetching
+      if (selectedCase.value?.id !== id) return
       selectedCase.value = fresh
       // Sync the fresh detail back to the list (no CRDT stamp — data is from backend)
       const idx = cases.value.findIndex(c => c.id === id)
@@ -242,9 +245,13 @@ export const useCasesStore = defineStore('cases', () => {
         casesSync.writeToCache(cases.value)
       }
     } catch (e) {
-      detailError.value = _humanizeError(e) || 'Error cargando caso'
+      if (selectedCase.value?.id === id) {
+        detailError.value = _humanizeError(e) || 'Error cargando caso'
+      }
     } finally {
-      loadingDetail.value = false
+      if (selectedCase.value?.id === id || !selectedCase.value) {
+        loadingDetail.value = false
+      }
     }
   }
 
@@ -421,6 +428,7 @@ export const useCasesStore = defineStore('cases', () => {
     try {
       const result = await fetchCasesUseCase({ specialistId, pageSize: 200 })
       cargasCasesSync.replaceAll(cargasCases, result.data ?? [])
+      cargasTotalAssignments.value = result.total ?? 0
     } catch { /* silent */ }
     finally { loadingCargasCases.value = false }
   }
@@ -476,16 +484,14 @@ export const useCasesStore = defineStore('cases', () => {
       }
     }
     if (selectedCase.value?.id === data.case_id) {
-      if (removedFromList) {
-        closeDetail()
-      } else {
-        selectedCase.value = new Case({
-          ...selectedCase.value._toRaw(),
-          status: 'assigned',
-          specialist_id: data.specialist_id,
-          assigned_at: new Date().toISOString(),
-        })
-      }
+      // Never auto-close on assignment — the user is actively viewing this case.
+      // Just reflect the new status so the detail stays in sync.
+      selectedCase.value = new Case({
+        ...selectedCase.value._toRaw(),
+        status: 'assigned',
+        specialist_id: data.specialist_id,
+        assigned_at: new Date().toISOString(),
+      })
     }
     // Update workloadSync (for the assign modal dropdown)
     const w = specialistWorkloads.value.find(s => s.specialist_id === data.specialist_id)
@@ -607,7 +613,7 @@ export const useCasesStore = defineStore('cases', () => {
     autopilotState,
     // Cargas view state
     allWorkloads, loadingAllWorkloads,
-    cargasSpecialistId, cargasCases, loadingCargasCases,
+    cargasSpecialistId, cargasCases, loadingCargasCases, cargasTotalAssignments,
     loadCases, loadPage, loadCaseById,
     openDetail, openDetailById, closeDetail, goToPrev, goToNext,
     createCase, updateCase, updateCaseStatus,

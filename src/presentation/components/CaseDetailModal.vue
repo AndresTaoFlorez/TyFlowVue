@@ -1,16 +1,14 @@
 <script setup>
-import { ref, computed, onMounted, nextTick } from 'vue'
+import { computed } from 'vue'
 import { useCasesStore } from '@/presentation/stores/useCasesStore'
-import { useUserStore } from '@/presentation/stores/useUserStore'
 import CaseStatusTimeline from '@/presentation/components/CaseStatusTimeline.vue'
 import CaseAssignPanel from '@/presentation/components/CaseAssignPanel.vue'
 import CaseReassignModal from '@/presentation/components/CaseReassignModal.vue'
 import { useCaseDetail } from '@/presentation/composables/useCaseDetail'
 
 const store = useCasesStore()
-const userStore = useUserStore()
-
 const c = computed(() => store.selectedCase)
+
 const {
   showAssign, toggleAssign, showReassign,
   statusOptions, statusLabels,
@@ -19,406 +17,462 @@ const {
   onAssignDone, onReassignDone,
 } = useCaseDetail(c)
 
-function onOverlay(e) {
-  if (e.target === e.currentTarget) store.closeDetail()
+function fmtDateShort(iso) {
+  if (!iso) return null
+  return new Date(iso).toLocaleDateString('es-CO', { day: '2-digit', month: 'short', year: 'numeric' })
 }
-
-const overlay = ref(null)
-
-onMounted(() => {
-  nextTick(() => overlay.value?.focus())
-})
-
-function onKeydown(e) {
-  if (e.key === 'Escape') store.closeDetail()
-  if (e.key === 'ArrowLeft') store.goToPrev()
-  if (e.key === 'ArrowRight') store.goToNext()
+function fmtDateTime(iso) {
+  if (!iso) return null
+  return new Date(iso).toLocaleString('es-CO', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
 }
 </script>
 
 <template>
-  <Teleport to="body">
-    <div class="cdm__overlay" @click="onOverlay" @keydown="onKeydown" tabindex="-1" ref="overlay">
-      <!-- Prev arrow -->
-      <button
-        v-if="store.hasPrev"
-        class="cdm__nav cdm__nav--prev"
-        @click.stop="store.goToPrev()"
-        aria-label="Caso anterior"
-      >
-        <i class="bx bx-chevron-left"></i>
+  <div class="cdp">
+    <!-- Header -->
+    <div class="cdp__header">
+      <div class="cdp__header-left">
+        <!-- Prev -->
+        <button
+          class="cdp__nav-btn"
+          :disabled="!store.hasPrev"
+          @click="store.goToPrev()"
+          title="Caso anterior (←)"
+        >
+          <i class="bx bx-chevron-left"></i>
+        </button>
+        <!-- Next -->
+        <button
+          class="cdp__nav-btn"
+          :disabled="!store.hasNext"
+          @click="store.goToNext()"
+          title="Caso siguiente (→)"
+        >
+          <i class="bx bx-chevron-right"></i>
+        </button>
+        <span v-if="c" class="cdp__id">{{ c.shortId }}</span>
+        <span v-if="store.selectedIndex >= 0" class="cdp__counter">
+          {{ store.selectedIndex + 1 }} / {{ store.cases.length }}
+        </span>
+      </div>
+      <button class="cdp__close" @click="store.closeDetail()" aria-label="Cerrar panel">
+        <i class="bx bx-x"></i>
       </button>
+    </div>
 
-      <!-- Modal panel -->
-      <div class="cdm__panel">
-        <!-- Header -->
-        <div class="cdm__header">
-          <div class="cdm__header-left">
-            <span v-if="c" class="cdm__id">{{ c.shortId }}</span>
-            <span v-if="store.selectedIndex >= 0" class="cdm__counter">
-              {{ store.selectedIndex + 1 }} / {{ store.cases.length }}
+    <!-- Loading skeleton (navigation in-flight) -->
+    <div v-if="store.loadingDetail && !c" class="cdp__loading">
+      <i class="bx bx-loader-alt bx-spin"></i>
+      <span>Cargando...</span>
+    </div>
+
+    <!-- Error -->
+    <div v-else-if="store.detailError && !c" class="cdp__error">
+      <i class="bx bx-error-circle"></i>
+      {{ store.detailError }}
+    </div>
+
+    <!-- Panel body -->
+    <div v-else-if="c" class="cdp__body" :class="{ 'cdp__body--refreshing': store.loadingDetail }">
+
+      <!-- Title + badges -->
+      <div class="cdp__hero">
+        <h2 class="cdp__title">{{ c.subject || '(sin asunto)' }}</h2>
+        <div class="cdp__badges">
+          <span class="cdp__badge" :style="{ background: c.statusBg, color: c.statusColor }">
+            {{ c.statusLabel }}
+          </span>
+          <span class="cdp__badge" :style="{ background: c.priorityBg, color: c.priorityColor }">
+            {{ c.priorityLabel }}
+          </span>
+          <span class="cdp__badge" :style="{ background: c.originBg, color: c.originColor }">
+            <i :class="'bx ' + c.originIcon" style="font-size:0.7rem"></i>
+            {{ c.originLabel }}
+          </span>
+        </div>
+      </div>
+
+      <!-- Timeline -->
+      <CaseStatusTimeline :case-data="c" :specialist-name="specialistName" />
+
+      <!-- Action bar -->
+      <div class="cdp__actions">
+        <button
+          v-if="c.isAssignable"
+          class="cdp__action"
+          :class="{ 'cdp__action--active': showAssign }"
+          @click="toggleAssign()"
+        >
+          <i class="bx bx-user-plus"></i> Asignar
+        </button>
+        <button v-if="c.isReassignable" class="cdp__action" @click="showReassign = true">
+          <i class="bx bx-transfer"></i> Reasignar
+        </button>
+        <div class="cdp__status-wrap">
+          <span class="cdp__status-label">Estado:</span>
+          <select class="cdp__status-select" :value="c.status" @change="changeStatus($event.target.value)">
+            <option v-for="s in statusOptions" :key="s" :value="s">{{ statusLabels[s] }}</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Assign panel -->
+      <CaseAssignPanel v-if="showAssign" :case-id="c.id" @done="onAssignDone" />
+
+      <!-- Meta grid -->
+      <div class="cdp__section">
+        <span class="cdp__section-title">Información</span>
+        <div class="cdp__grid">
+          <div v-if="applicationName" class="cdp__field">
+            <span class="cdp__label">Aplicación</span>
+            <span class="cdp__value">{{ applicationName }}</span>
+          </div>
+          <div v-if="supportLevelName" class="cdp__field">
+            <span class="cdp__label">Nivel de soporte</span>
+            <span class="cdp__value">{{ supportLevelName }}</span>
+          </div>
+          <div v-if="categoryName" class="cdp__field">
+            <span class="cdp__label">Categoría</span>
+            <span class="cdp__value">{{ categoryName }}</span>
+          </div>
+          <div v-if="specialistName" class="cdp__field">
+            <span class="cdp__label">Especialista</span>
+            <span class="cdp__value cdp__value--specialist">
+              <i class="bx bx-user-check"></i> {{ specialistName }}
             </span>
           </div>
-          <button class="cdm__close" @click="store.closeDetail()" aria-label="Cerrar">
-            <i class="bx bx-x"></i>
-          </button>
-        </div>
-
-        <!-- Loading -->
-        <div v-if="store.loadingDetail && !c" class="cdm__loading">
-          <i class="bx bx-loader-alt bx-spin"></i> Cargando...
-        </div>
-
-        <!-- Error -->
-        <div v-else-if="store.detailError && !c" class="cdm__error">
-          <i class="bx bx-error-circle"></i> {{ store.detailError }}
-        </div>
-
-        <!-- Content -->
-        <div v-else-if="c" class="cdm__body">
-          <!-- Title + badges -->
-          <h2 class="cdm__title">{{ c.subject }}</h2>
-          <div class="cdm__badges">
-            <span class="cdm__badge" :style="{ background: c.statusBg, color: c.statusColor }">{{ c.statusLabel }}</span>
-            <span class="cdm__badge" :style="{ background: c.priorityBg, color: c.priorityColor }">{{ c.priorityLabel }}</span>
-            <span class="cdm__badge" :style="{ background: c.originBg, color: c.originColor }">
-              <i :class="'bx ' + c.originIcon" style="font-size: 0.7rem"></i> {{ c.originLabel }}
-            </span>
-          </div>
-
-          <!-- Timeline -->
-          <CaseStatusTimeline :case-data="c" :specialist-name="specialistName" />
-
-          <!-- Action bar -->
-          <div class="cdm__actions">
-            <button v-if="c.isAssignable" class="cdm__action" :class="{ 'cdm__action--active': showAssign }" @click="toggleAssign()">
-              <i class="bx bx-user-plus"></i> Asignar
-            </button>
-            <button v-if="c.isReassignable" class="cdm__action" @click="showReassign = true">
-              <i class="bx bx-transfer"></i> Reasignar
-            </button>
-            <div class="cdm__status-group">
-              <span class="cdm__status-label">Estado:</span>
-              <select class="cdm__status-select" :value="c.status" @change="changeStatus($event.target.value)">
-                <option v-for="s in statusOptions" :key="s" :value="s">{{ statusLabels[s] }}</option>
-              </select>
-            </div>
-          </div>
-
-          <!-- Assign panel -->
-          <CaseAssignPanel v-if="showAssign" :case-id="c.id" @done="onAssignDone" />
-
-          <!-- Dates row -->
-          <div class="cdm__dates">
-            <div class="cdm__detail">
-              <span class="cdm__detail-label">Creado</span>
-              <span class="cdm__detail-value">{{ fmtDate(c.createdAt) }}</span>
-            </div>
-            <div class="cdm__detail">
-              <span class="cdm__detail-label">Asignado</span>
-              <span class="cdm__detail-value">{{ fmtDate(c.assignedAt) ?? '—' }}</span>
-            </div>
-            <div v-if="specialistName" class="cdm__detail">
-              <span class="cdm__detail-label">Especialista</span>
-              <span class="cdm__detail-value cdm__detail-value--specialist">
-                <i class="bx bx-user-check"></i> {{ specialistName }}
-              </span>
-            </div>
-            <div class="cdm__detail">
-              <span class="cdm__detail-label">Resuelto</span>
-              <span class="cdm__detail-value">{{ fmtDate(c.resolvedAt) ?? '—' }}</span>
-            </div>
-          </div>
-
-          <div v-if="c.description" class="cdm__desc-block">
-            <span class="cdm__detail-label">Descripción</span>
-            <p class="cdm__description">{{ c.description }}</p>
+          <div v-if="c.waitingTime" class="cdp__field">
+            <span class="cdp__label">Tiempo en espera</span>
+            <span class="cdp__value">{{ c.waitingTime }}</span>
           </div>
         </div>
       </div>
 
-      <!-- Next arrow -->
-      <button
-        v-if="store.hasNext"
-        class="cdm__nav cdm__nav--next"
-        @click.stop="store.goToNext()"
-        aria-label="Caso siguiente"
-      >
-        <i class="bx bx-chevron-right"></i>
-      </button>
+      <!-- Dates grid -->
+      <div class="cdp__section">
+        <span class="cdp__section-title">Fechas</span>
+        <div class="cdp__grid">
+          <div class="cdp__field">
+            <span class="cdp__label">Creado</span>
+            <span class="cdp__value">{{ fmtDateTime(c.createdAt) ?? '—' }}</span>
+          </div>
+          <div class="cdp__field">
+            <span class="cdp__label">Asignado</span>
+            <span class="cdp__value">{{ fmtDateTime(c.assignedAt) ?? '—' }}</span>
+          </div>
+          <div v-if="c.resolvedAt" class="cdp__field">
+            <span class="cdp__label">Resuelto</span>
+            <span class="cdp__value">{{ fmtDateTime(c.resolvedAt) }}</span>
+          </div>
+          <div v-if="c.closedAt" class="cdp__field">
+            <span class="cdp__label">Cerrado</span>
+            <span class="cdp__value">{{ fmtDateTime(c.closedAt) }}</span>
+          </div>
+          <div v-if="c.updatedAt" class="cdp__field">
+            <span class="cdp__label">Actualizado</span>
+            <span class="cdp__value">{{ fmtDateTime(c.updatedAt) }}</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Description -->
+      <div v-if="c.description" class="cdp__section">
+        <span class="cdp__section-title">Descripción</span>
+        <p class="cdp__desc">{{ c.description }}</p>
+      </div>
+
     </div>
 
-    <!-- Reassign modal on top -->
+    <!-- Reassign modal on top of everything -->
     <CaseReassignModal
       v-if="showReassign && c"
       :case-data="c"
       @close="showReassign = false"
       @done="onReassignDone"
     />
-  </Teleport>
+  </div>
 </template>
 
 <style scoped>
-.cdm__overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 200;
-  background: rgba(0, 0, 0, 0.5);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 1.5rem;
-  outline: none;
-}
-
-/* Nav arrows — fixed position so they never displace the panel */
-.cdm__nav {
-  position: fixed;
-  top: 50%;
-  transform: translateY(-50%);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 40px;
-  height: 40px;
-  border-radius: var(--radius-full);
-  background: var(--bg-card);
-  border: 1px solid var(--border-light);
-  color: var(--text-primary);
-  font-size: 1.5rem;
-  cursor: pointer;
-  transition: all 0.15s;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
-  z-index: 210;
-}
-.cdm__nav--prev { left: 1rem; }
-.cdm__nav--next { right: 1rem; }
-.cdm__nav:hover {
-  background: var(--primary-500);
-  color: white;
-  border-color: var(--primary-500);
-}
-
-/* Panel */
-.cdm__panel {
-  background: var(--bg-main);
-  border-radius: var(--radius-lg);
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
-  width: 100%;
-  max-width: 640px;
-  max-height: 85vh;
+/* ── Panel shell ─────────────────────────────────────── */
+.cdp {
   display: flex;
   flex-direction: column;
+  height: 100%;
+  background: var(--bg-main);
+  border-left: 1px solid var(--border-light);
   overflow: hidden;
+  position: relative;
 }
 
-/* Header */
-.cdm__header {
+/* Mobile: slide over full screen */
+@media (max-width: 768px) {
+  .cdp {
+    position: fixed;
+    inset: 0;
+    z-index: 200;
+    border-left: none;
+    box-shadow: -4px 0 24px rgba(0,0,0,0.18);
+  }
+}
+
+/* ── Header ─────────────────────────────────────────── */
+.cdp__header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0.85rem 1.15rem;
+  padding: 0.55rem 0.75rem;
   border-bottom: 1px solid var(--border-light);
   flex-shrink: 0;
+  background: var(--bg-card);
 }
-.cdm__header-left {
+
+.cdp__header-left {
   display: flex;
   align-items: center;
-  gap: 0.6rem;
+  gap: 0.25rem;
 }
-.cdm__id {
-  font-size: 0.82rem;
-  font-weight: 700;
-  color: var(--primary-500);
-}
-.cdm__counter {
-  font-size: 0.7rem;
-  font-weight: 600;
-  color: var(--text-secondary);
-  background: var(--bg-card);
-  padding: 0.15rem 0.5rem;
-  border-radius: var(--radius-sm);
-}
-.cdm__close {
+
+.cdp__nav-btn {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 30px;
-  height: 30px;
-  border-radius: var(--radius-md);
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-sm);
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 1.1rem;
+  cursor: pointer;
+  transition: background 0.1s, color 0.1s;
+}
+.cdp__nav-btn:hover:not(:disabled) {
+  background: var(--bg-main);
+  color: var(--text-primary);
+}
+.cdp__nav-btn:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.cdp__id {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--primary-500);
+  margin-left: 0.3rem;
+}
+
+.cdp__counter {
+  font-size: 0.68rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+  background: var(--bg-main);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  padding: 0.1rem 0.4rem;
+}
+
+.cdp__close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-sm);
   background: transparent;
   border: none;
   color: var(--text-secondary);
-  font-size: 1.25rem;
+  font-size: 1.2rem;
   cursor: pointer;
-  transition: all 0.12s;
+  transition: background 0.1s, color 0.1s;
 }
-.cdm__close:hover {
-  background: var(--bg-card);
+.cdp__close:hover {
+  background: var(--bg-main);
   color: var(--text-primary);
 }
 
-/* Loading / Error */
-.cdm__loading, .cdm__error {
+/* ── Loading / Error ─────────────────────────────────── */
+.cdp__loading,
+.cdp__error {
+  flex: 1;
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 0.5rem;
-  padding: 3rem 1rem;
   color: var(--text-secondary);
-  font-size: 0.85rem;
+  font-size: 0.82rem;
 }
+.cdp__error { color: var(--error, #e53e3e); }
 
-/* Body */
-.cdm__body {
+/* ── Body ────────────────────────────────────────────── */
+.cdp__body {
   flex: 1;
   overflow-y: auto;
-  padding: 1.15rem;
   display: flex;
   flex-direction: column;
-  gap: 0.85rem;
+  gap: 0;
 }
 
-.cdm__title {
-  font-size: 1.1rem;
+/* Subtle pulse when refreshing detail in background */
+.cdp__body--refreshing {
+  animation: cdp-refresh-pulse 0.8s ease infinite alternate;
+}
+@keyframes cdp-refresh-pulse {
+  from { opacity: 1; }
+  to   { opacity: 0.75; }
+}
+
+/* ── Hero ────────────────────────────────────────────── */
+.cdp__hero {
+  padding: 1rem 1.1rem 0.75rem;
+  border-bottom: 1px solid var(--border-light);
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.cdp__title {
+  font-size: 1rem;
   font-weight: 700;
   color: var(--text-primary);
+  line-height: 1.4;
+  margin: 0;
 }
 
-.cdm__badges {
-  display: flex;
-  align-items: center;
-  gap: 0.35rem;
-  flex-wrap: wrap;
-}
-
-.cdm__badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.2rem;
-  padding: 0.15rem 0.55rem;
-  border-radius: var(--radius-sm);
-  font-size: 0.68rem;
-  font-weight: 700;
-}
-
-/* Actions */
-.cdm__actions {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  flex-wrap: wrap;
-}
-
-.cdm__action {
+.cdp__badges {
   display: flex;
   align-items: center;
   gap: 0.3rem;
-  padding: 0.4rem 0.75rem;
+  flex-wrap: wrap;
+}
+
+.cdp__badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  padding: 0.15rem 0.5rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.66rem;
+  font-weight: 700;
+}
+
+/* ── Actions ─────────────────────────────────────────── */
+.cdp__actions {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+  padding: 0.6rem 1.1rem;
+  border-bottom: 1px solid var(--border-light);
+  background: var(--bg-card);
+}
+
+.cdp__action {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.35rem 0.65rem;
   border-radius: var(--radius-md);
   border: 1px solid var(--border-light);
-  background: var(--bg-card);
+  background: var(--bg-main);
   color: var(--text-primary);
-  font-size: 0.78rem;
+  font-size: 0.75rem;
   font-weight: 600;
   cursor: pointer;
   transition: all 0.12s;
 }
-.cdm__action:hover { border-color: var(--primary-500); color: var(--primary-500); }
-.cdm__action--active {
+.cdp__action:hover { border-color: var(--primary-500); color: var(--primary-500); }
+.cdp__action--active {
   background: var(--primary-500);
   color: white;
   border-color: var(--primary-500);
 }
-.cdm__action--active:hover { background: var(--primary-600); color: white; }
+.cdp__action--active:hover { background: var(--primary-600); border-color: var(--primary-600); }
 
-.cdm__status-group {
+.cdp__status-wrap {
   display: flex;
   align-items: center;
-  gap: 0.35rem;
+  gap: 0.3rem;
   margin-left: auto;
 }
-.cdm__status-label {
-  font-size: 0.72rem;
+.cdp__status-label {
+  font-size: 0.7rem;
   font-weight: 600;
   color: var(--text-secondary);
+  white-space: nowrap;
 }
-.cdm__status-select {
-  padding: 0.3rem 0.45rem;
+.cdp__status-select {
+  padding: 0.28rem 0.4rem;
   border: 1px solid var(--border-light);
   border-radius: var(--radius-md);
-  font-size: 0.75rem;
+  font-size: 0.73rem;
   color: var(--text-primary);
-  background: var(--bg-card);
+  background: var(--bg-main);
   cursor: pointer;
   outline: none;
 }
-.cdm__status-select:focus { border-color: var(--primary-500); }
+.cdp__status-select:focus { border-color: var(--primary-500); }
 
-/* Dates row */
-.cdm__dates {
+/* ── Section ─────────────────────────────────────────── */
+.cdp__section {
+  padding: 0.75rem 1.1rem;
+  border-bottom: 1px solid var(--border-light);
   display: flex;
-  gap: 1.5rem;
-  flex-wrap: wrap;
+  flex-direction: column;
+  gap: 0.55rem;
 }
 
-.cdm__detail {
+.cdp__section-title {
+  font-size: 0.62rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-secondary);
+}
+
+/* ── Grid of fields ─────────────────────────────────── */
+.cdp__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 0.6rem 1rem;
+}
+
+.cdp__field {
   display: flex;
   flex-direction: column;
   gap: 0.1rem;
 }
 
-.cdm__detail-label {
-  font-size: 0.65rem;
+.cdp__label {
+  font-size: 0.62rem;
   font-weight: 600;
-  color: var(--text-secondary);
   text-transform: uppercase;
   letter-spacing: 0.03em;
+  color: var(--text-secondary);
 }
 
-.cdm__detail-value {
-  font-size: 0.82rem;
+.cdp__value {
+  font-size: 0.8rem;
   color: var(--text-primary);
   font-weight: 500;
+  word-break: break-word;
 }
 
-.cdm__detail-value--specialist {
-  display: flex;
+.cdp__value--specialist {
+  display: inline-flex;
   align-items: center;
-  gap: 0.25rem;
+  gap: 0.2rem;
   color: var(--primary-600, #1fa672);
   font-weight: 600;
 }
 
-.cdm__desc-block {
-  display: flex;
-  flex-direction: column;
-  gap: 0.3rem;
-}
-
-.cdm__description {
+/* ── Description ─────────────────────────────────────── */
+.cdp__desc {
   font-size: 0.82rem;
   color: var(--text-primary);
-  line-height: 1.55;
+  line-height: 1.6;
   white-space: pre-wrap;
   margin: 0;
-}
-
-/* Responsive */
-@media (max-width: 768px) {
-  .cdm__overlay { padding: 0; }
-  .cdm__panel {
-    max-width: 100%;
-    max-height: 100%;
-    height: 100%;
-    border-radius: 0;
-  }
-  .cdm__nav {
-    top: auto;
-    bottom: 1.25rem;
-    transform: none;
-    width: 44px;
-    height: 44px;
-  }
 }
 </style>

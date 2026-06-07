@@ -1,5 +1,5 @@
 <script setup>
-import { ref, watch, onMounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useCasesStore } from '@/presentation/stores/useCasesStore'
 import { useUserStore } from '@/presentation/stores/useUserStore'
@@ -19,6 +19,50 @@ const router = useRouter()
 const activeTab = ref('lista')
 const autopilotError = ref(null)
 
+// ── Resizable detail panel ────────────────────────────
+const PANEL_MIN = 320
+const PANEL_MAX = 960
+const PANEL_DEFAULT = 520
+const panelWidth = ref(parseInt(localStorage.getItem('tyflow_detail_panel_w')) || PANEL_DEFAULT)
+
+const listStyle = computed(() => {
+  if (!store.showDetailModal) return {}
+  return { width: `calc(100% - ${panelWidth.value}px - 5px)`, flexShrink: '0' }
+})
+
+function onResizeStart(e) {
+  e.preventDefault()
+  const startX = e.clientX
+  const startW = panelWidth.value
+  document.body.style.cursor = 'col-resize'
+  document.body.style.userSelect = 'none'
+  const onMove = (ev) => {
+    // Dragging handle leftward grows the panel (panel is on the right)
+    panelWidth.value = Math.max(PANEL_MIN, Math.min(PANEL_MAX, startW + (startX - ev.clientX)))
+  }
+  const onUp = () => {
+    document.body.style.cursor = ''
+    document.body.style.userSelect = ''
+    document.removeEventListener('mousemove', onMove)
+    document.removeEventListener('mouseup', onUp)
+    localStorage.setItem('tyflow_detail_panel_w', String(panelWidth.value))
+  }
+  document.addEventListener('mousemove', onMove)
+  document.addEventListener('mouseup', onUp)
+}
+
+// Keyboard nav (←/→/Escape) when panel is open
+function onKeydown(e) {
+  if (!store.showDetailModal) return
+  if (e.key === 'Escape') store.closeDetail()
+  if (e.key === 'ArrowLeft') store.goToPrev()
+  if (e.key === 'ArrowRight') store.goToNext()
+}
+
+onMounted(() => document.addEventListener('keydown', onKeydown))
+onUnmounted(() => document.removeEventListener('keydown', onKeydown))
+
+// ── Autopilot ────────────────────────────────────────
 async function runAutopilot() {
   autopilotError.value = null
   try {
@@ -36,12 +80,8 @@ const tabs = [
 
 useCasesRealtime()
 
-// ── Routing bridge ─────────────────────────────────────────────────────────
-// URL (:id param) is the source of truth for the detail modal.
-// - Direct link / browser back → route watcher opens or closes the modal
-// - Row click → pushes the URL, route watcher opens the modal
-// - Modal close (X / Escape) → modal watcher replaces URL back to list
-
+// ── Routing bridge ────────────────────────────────────
+// URL (:id param) is the source of truth for the detail panel.
 watch(() => route.params.id, (id) => {
   if (id) store.openDetailById(id)
   else store.closeDetail()
@@ -53,7 +93,7 @@ watch(() => store.showDetailModal, (open) => {
   }
 })
 
-// Prev/Next navigation while modal is open → replace URL (no extra history entries)
+// Prev/Next navigation → replace URL without extra history entry
 watch(() => store.selectedCase?.id, (id) => {
   if (store.showDetailModal && id && route.params.id !== id) {
     router.replace({ name: 'caso-detail', params: { id } })
@@ -63,12 +103,12 @@ watch(() => store.selectedCase?.id, (id) => {
 function openCase(id) {
   router.push({ name: 'caso-detail', params: { id } })
 }
-// ──────────────────────────────────────────────────────────────────────────
 
+// ── Init ─────────────────────────────────────────────
 onMounted(async () => {
-  await userStore.loadSelects()
+  // Load selects (roles, levels, categories, applications) + users for specialist name lookup
+  await Promise.all([userStore.loadSelects(), userStore.loadUsers()])
   if (!authStore.isAdmin && authStore.profile?.specialistId) {
-    // Specialist: pre-filter to own cases, show all statuses
     await store.loadCases({ specialistId: authStore.profile.specialistId, status: null })
   } else {
     await store.loadCases()
@@ -78,7 +118,7 @@ onMounted(async () => {
 
 <template>
   <div class="cv">
-    <!-- Tabs + create button -->
+    <!-- Tabs + actions -->
     <nav class="cv__tabs">
       <button
         v-for="tab in tabs"
@@ -95,10 +135,8 @@ onMounted(async () => {
         </span>
       </button>
 
-      <!-- Right-side actions -->
       <div class="cv__tabs-end">
         <template v-if="authStore.isAdmin">
-          <!-- Autopilot progress pill -->
           <div v-if="store.autopilotState.running" class="cv__autopilot-pill">
             <i class="bx bx-loader-alt bx-spin"></i>
             <span v-if="store.autopilotState.total">
@@ -106,8 +144,6 @@ onMounted(async () => {
             </span>
             <span v-else>Autopilot...</span>
           </div>
-
-          <!-- Autopilot trigger button -->
           <button
             class="cv__autopilot-btn"
             :disabled="store.autopilotState.running"
@@ -115,12 +151,11 @@ onMounted(async () => {
             @click="runAutopilot"
           >
             <i class="bx bx-bot"></i>
-            <span class="cv__create-label">Autopilot</span>
+            <span class="cv__btn-label">Autopilot</span>
           </button>
-
           <button class="cv__create-btn" @click="store.showCreateModal = true">
             <i class="bx bx-plus"></i>
-            <span class="cv__create-label">Nuevo caso</span>
+            <span class="cv__btn-label">Nuevo caso</span>
           </button>
         </template>
       </div>
@@ -133,19 +168,36 @@ onMounted(async () => {
       </div>
     </Transition>
 
-    <!-- Lista: filters + table -->
-    <div v-show="activeTab === 'lista'" class="cv__lista">
-      <CaseFiltersBar />
-      <CaseListTable @select="openCase" />
+    <!-- Lista tab: list + resizable detail panel -->
+    <div v-show="activeTab === 'lista'" class="cv__split">
+      <!-- Left: filters + table -->
+      <div class="cv__list-pane" :style="listStyle">
+        <CaseFiltersBar />
+        <CaseListTable @select="openCase" />
+      </div>
+
+      <!-- Resize handle (only when panel open, desktop only) -->
+      <div
+        v-if="store.showDetailModal"
+        class="cv__resize-handle"
+        @mousedown="onResizeStart"
+        title="Arrastrar para redimensionar"
+      ></div>
+
+      <!-- Right: detail panel -->
+      <CaseDetailModal
+        v-if="store.showDetailModal"
+        class="cv__detail-pane"
+        :style="{ width: panelWidth + 'px' }"
+      />
     </div>
 
-    <!-- Cargas (admin only) -->
-    <div v-show="activeTab === 'cargas' && authStore.isAdmin" class="cv__scroll">
+    <!-- Cargas tab (admin only) -->
+    <div v-show="activeTab === 'cargas' && authStore.isAdmin" class="cv__cargas">
       <CaseLoadsView />
     </div>
 
-    <!-- Modals -->
-    <CaseDetailModal v-if="store.showDetailModal" />
+    <!-- Create modal (stays as overlay) -->
     <CaseCreateModal v-if="store.showCreateModal" />
   </div>
 </template>
@@ -159,7 +211,7 @@ onMounted(async () => {
   background: var(--bg-main);
 }
 
-/* Tabs */
+/* ── Tabs ────────────────────────────────────────────── */
 .cv__tabs {
   display: flex;
   align-items: center;
@@ -181,15 +233,10 @@ onMounted(async () => {
   border-bottom: 2px solid transparent;
   cursor: pointer;
   transition: color 0.12s, border-color 0.12s;
+  white-space: nowrap;
 }
-
 .cv__tab:hover { color: var(--text-primary); }
-
-.cv__tab--active {
-  color: var(--primary-500);
-  border-bottom-color: var(--primary-500);
-}
-
+.cv__tab--active { color: var(--primary-500); border-bottom-color: var(--primary-500); }
 .cv__tab-icon { font-size: 0.95rem; }
 
 .cv__tab-badge {
@@ -206,7 +253,6 @@ onMounted(async () => {
   font-weight: 700;
 }
 
-/* Right-side tab actions group */
 .cv__tabs-end {
   display: flex;
   align-items: center;
@@ -214,7 +260,6 @@ onMounted(async () => {
   margin-left: auto;
 }
 
-/* Autopilot */
 .cv__autopilot-btn {
   display: flex;
   align-items: center;
@@ -249,7 +294,6 @@ onMounted(async () => {
 }
 .cv__autopilot-pill i { font-size: 0.8rem; }
 
-/* Create button */
 .cv__create-btn {
   display: flex;
   align-items: center;
@@ -268,8 +312,50 @@ onMounted(async () => {
 .cv__create-btn:hover { background: var(--primary-600); }
 .cv__create-btn i { font-size: 1rem; }
 
-/* Tab content panels */
-.cv__lista {
+/* ── Split layout ────────────────────────────────────── */
+.cv__split {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  overflow: hidden;
+}
+
+.cv__list-pane {
+  flex: 1;
+  min-width: 260px;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  /* width set via :style when detail panel is open */
+}
+
+/* Resize handle between list and detail panel */
+.cv__resize-handle {
+  width: 5px;
+  flex-shrink: 0;
+  background: transparent;
+  border-left: 1px solid var(--border-light);
+  cursor: col-resize;
+  position: relative;
+  z-index: 1;
+  transition: background 0.15s;
+}
+.cv__resize-handle:hover,
+.cv__resize-handle:active {
+  background: rgba(42, 199, 143, 0.35);
+}
+
+/* Detail panel */
+.cv__detail-pane {
+  flex-shrink: 0;
+  min-width: 320px;
+  max-width: 100%;
+  height: 100%;
+}
+
+/* Cargas tab */
+.cv__cargas {
   flex: 1;
   min-height: 0;
   overflow: hidden;
@@ -277,12 +363,7 @@ onMounted(async () => {
   flex-direction: column;
 }
 
-.cv__scroll {
-  flex: 1;
-  overflow-y: auto;
-}
-
-/* Autopilot error pill */
+/* Error pill */
 .cv__error-pill {
   display: flex;
   align-items: center;
@@ -301,11 +382,17 @@ onMounted(async () => {
 .cv-err-enter-from, .cv-err-leave-to { opacity: 0; max-height: 0; padding-top: 0; padding-bottom: 0; }
 .cv-err-enter-to, .cv-err-leave-from { opacity: 1; max-height: 60px; }
 
-/* Responsive */
+/* ── Responsive ──────────────────────────────────────── */
 @media (max-width: 768px) {
   .cv__tabs { overflow-x: auto; }
-  .cv__tab { white-space: nowrap; padding: 0.6rem 0.75rem; font-size: 0.78rem; }
-  .cv__create-label { display: none; }
-  .cv__create-btn { padding: 0.4rem; }
+  .cv__tab { padding: 0.6rem 0.75rem; font-size: 0.78rem; }
+  .cv__btn-label { display: none; }
+  .cv__create-btn,
+  .cv__autopilot-btn { padding: 0.4rem; }
+
+  /* On mobile the detail panel covers the entire screen (fixed, in cdp styles) */
+  .cv__resize-handle { display: none; }
+  /* List pane goes back to full width on mobile (detail is fixed overlay) */
+  .cv__list-pane { width: 100% !important; flex: 1 !important; }
 }
 </style>

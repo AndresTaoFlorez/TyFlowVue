@@ -580,6 +580,24 @@ onUnmounted(() => {
             </div>
           </div>
 
+          <!-- Historical totals -->
+          <div v-if="selectedSpecialist" class="cl-detail-section">
+            <span class="cl-detail-label">Totales históricos</span>
+            <div class="cl-detail-grid">
+              <div class="cl-detail-field">
+                <span class="cl-detail-label">Casos asignados (total)</span>
+                <span class="cl-detail-value">
+                  <template v-if="store.loadingCargasCases">—</template>
+                  <template v-else>{{ store.cargasTotalAssignments }}</template>
+                </span>
+              </div>
+              <div class="cl-detail-field">
+                <span class="cl-detail-label">Activos ahora</span>
+                <span class="cl-detail-value">{{ selectedSpecialist.totalCases }}</span>
+              </div>
+            </div>
+          </div>
+
           <!-- Specialist apps detail -->
           <div v-if="selectedSpecialist" class="cl-detail-section">
             <span class="cl-detail-label">Cargas del especialista</span>
