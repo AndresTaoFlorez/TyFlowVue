@@ -316,7 +316,7 @@ onUnmounted(() => {
         <!-- Expanded: full list -->
         <div v-else class="cl-p1-list">
           <!-- Summary -->
-          <div v-if="!loading && bySpecialist.length" class="cl-summary">
+          <div v-if="!store.loadingAllWorkloads && bySpecialist.length" class="cl-summary">
             <span class="cl-summary-stat">
               <span class="cl-summary-num">{{ stats.available }}</span>
               <span class="cl-summary-lbl">con turno</span>
