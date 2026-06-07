@@ -1,7 +1,16 @@
 <script setup>
 import { usePreferencesStore } from '@/presentation/stores/usePreferencesStore'
+import { useAuthStore } from '@/presentation/stores/useAuthStore'
 
 const prefs = usePreferencesStore()
+const authStore = useAuthStore()
+
+const MENU_ITEMS = [
+  { key: 'home',         label: 'Inicio',          adminOnly: false },
+  { key: 'cases',        label: 'Casos',            adminOnly: false },
+  { key: 'settings',     label: 'Configuración',    adminOnly: false },
+  { key: 'applications', label: 'Aplicaciones',     adminOnly: true  },
+]
 </script>
 
 <template>
@@ -28,6 +37,22 @@ const prefs = usePreferencesStore()
           <i class="bx bx-moon"></i>
           <span>Oscuro</span>
         </button>
+      </div>
+    </div>
+
+    <div class="ss__group ss__group--nav">
+      <span class="ss__label">Menú de navegación</span>
+      <p class="ss__nav-hint">Elige qué secciones mostrar en el menú lateral.</p>
+      <div class="ss__nav-rows">
+        <label
+          v-for="item in MENU_ITEMS"
+          :key="item.key"
+          v-show="!item.adminOnly || authStore.isAdmin"
+          class="ss__nav-row"
+        >
+          <span class="ss__nav-label">{{ item.label }}</span>
+          <input type="checkbox" v-model="prefs.menus[item.key]" class="ss__toggle" />
+        </label>
       </div>
     </div>
   </section>
@@ -90,4 +115,66 @@ const prefs = usePreferencesStore()
 }
 
 .ss__theme-opt i { font-size: 1.15rem; }
+
+.ss__group--nav { margin-top: 1.75rem; }
+
+.ss__nav-hint {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  margin: 0 0 0.5rem;
+}
+
+.ss__nav-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.ss__nav-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 1rem;
+  background: var(--bg-card);
+  border-bottom: 1px solid var(--border-light);
+  cursor: pointer;
+  transition: background 0.1s;
+}
+.ss__nav-row:last-child { border-bottom: none; }
+.ss__nav-row:hover { background: var(--bg-main); }
+
+.ss__nav-label {
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.ss__toggle {
+  width: 40px;
+  height: 22px;
+  appearance: none;
+  background: var(--border-light);
+  border-radius: var(--radius-full);
+  position: relative;
+  cursor: pointer;
+  transition: background 0.2s;
+  flex-shrink: 0;
+}
+.ss__toggle::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: white;
+  transition: transform 0.2s;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.15);
+}
+.ss__toggle:checked { background: var(--primary-500); }
+.ss__toggle:checked::after { transform: translateX(18px); }
 </style>

@@ -35,6 +35,9 @@ const DAY_LABELS = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom']
 const scrollContainerDay = ref(null)
 const scrollContainerCompact = ref(null)
 const scrollContainerWeek = ref(null)
+const panCompactHeaderRef = ref(null)
+const panCompactBodyRef = ref(null)
+const panMonthRef = ref(null)
 
 const scrollContainer = computed(() =>
   scrollContainerDay.value ||
@@ -57,33 +60,138 @@ let swipeStartX = 0
 let swipeStartY = 0
 let touchOnBlock = false // true when touch started on a window/group block
 
+// ---- Navigation pan ("follow the finger") ----
+const panX = ref(0)
+const panLock = ref(null)  // null | 'h' | 'v'
+let panInitiatedNav = false
+let panBusy = false
+const PAN_COMMIT = 80
+
+const _sleep = (ms) => new Promise(r => setTimeout(r, ms))
+
+function _getPanEls() {
+  if (showSingleDay.value) return scrollContainerDay.value ? [scrollContainerDay.value] : []
+  if (showCompactWeek.value) return [panCompactHeaderRef.value, panCompactBodyRef.value].filter(Boolean)
+  if (props.viewMode === 'month') return panMonthRef.value ? [panMonthRef.value] : []
+  return []
+}
+
+async function _commitPan(dx) {
+  if (panBusy) return
+  panBusy = true
+  panLock.value = null
+  panX.value = 0
+  const exitDir = dx < 0 ? -1 : 1
+  const W = window.innerWidth
+  const els = _getPanEls()
+  if (!els.length) { panBusy = false; return }
+
+  // Slide off-screen from current position
+  for (const el of els) {
+    el.style.transition = 'transform 0.18s ease-in'
+    el.style.transform = `translateX(${exitDir < 0 ? -(W + 40) : (W + 40)}px)`
+  }
+  await _sleep(200)
+
+  // Navigate
+  panInitiatedNav = true
+  if (showSingleDay.value) emit(exitDir < 0 ? 'next-day' : 'prev-day')
+  else if (showCompactWeek.value) emit(exitDir < 0 ? 'next-week' : 'prev-week')
+  else if (props.viewMode === 'month') emit(exitDir < 0 ? 'next-month' : 'prev-month')
+  await nextTick()
+
+  // Enter new content from opposite side
+  const enterX = exitDir < 0 ? (W + 40) : -(W + 40)
+  for (const el of els) {
+    el.style.transition = 'none'
+    el.style.transform = `translateX(${enterX}px)`
+  }
+  els.forEach(el => void el.offsetWidth) // force reflow
+  for (const el of els) {
+    el.style.transition = 'transform 0.24s cubic-bezier(0.25, 0.46, 0.45, 0.94)'
+    el.style.transform = 'translateX(0)'
+  }
+  setTimeout(() => {
+    els.forEach(el => { el.style.transition = ''; el.style.transform = '' })
+    panInitiatedNav = false
+    panBusy = false
+  }, 260)
+}
+
+function _springBack() {
+  panLock.value = null
+  panX.value = 0
+  const els = _getPanEls()
+  for (const el of els) {
+    el.style.transition = 'transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)'
+    el.style.transform = 'translateX(0)'
+  }
+  setTimeout(() => { els.forEach(el => { el.style.transition = ''; el.style.transform = '' }) }, 320)
+}
+
 const onCalSwipeStart = (e) => {
   swipeStartX = e.touches[0].clientX
   swipeStartY = e.touches[0].clientY
+  panLock.value = null
+  panX.value = 0
+}
+
+const onCalSwipeMove = (e) => {
+  if (touchOnBlock || blockDragging.value || resizing.value || panBusy) return
+  const dx = e.touches[0].clientX - swipeStartX
+  const dy = e.touches[0].clientY - swipeStartY
+  if (panLock.value === null) {
+    if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return
+    panLock.value = Math.abs(dx) >= Math.abs(dy) ? 'h' : 'v'
+    if (panLock.value === 'v') return
+  }
+  if (panLock.value !== 'h') return
+  e.preventDefault()
+  const els = _getPanEls()
+  for (const el of els) el.style.transform = `translateX(${dx}px)`
+  panX.value = dx
 }
 
 const onCalSwipeEnd = (e) => {
-  if (touchOnBlock) return // don't navigate when tapping a window/group
+  if (touchOnBlock) { _springBack(); return }
+
+  if (panLock.value === 'h') {
+    const dx = panX.value
+    panLock.value = null
+    if (Math.abs(dx) >= PAN_COMMIT) _commitPan(dx)
+    else _springBack()
+    return
+  }
+
+  panLock.value = null
+  panX.value = 0
+
+  // Fallback: fast swipe with no touchmove pan tracked
   const dx = e.changedTouches[0].clientX - swipeStartX
   const dy = e.changedTouches[0].clientY - swipeStartY
   if (Math.abs(dx) < Math.abs(dy) * 0.8 || Math.abs(dx) < 80) return
-  // Day mode — navigate days
-  if (props.viewMode === 'day') {
-    emit(dx < 0 ? 'next-day' : 'prev-day')
-    return
-  }
-  // Month mode — navigate months
-  if (props.viewMode === 'month') {
-    emit(dx < 0 ? 'next-month' : 'prev-month')
-    return
-  }
-  // Mobile week mode — navigate within the 7 days
+  if (props.viewMode === 'day') { _commitPan(dx); return }
+  if (props.viewMode === 'month') { _commitPan(dx); return }
+  // Legacy compact-week within-day navigation (not used in swipe-to-navigate flow)
   if (dx < 0 && activeMobileDay.value < props.weekDates.length - 1) activeMobileDay.value++
   if (dx > 0 && activeMobileDay.value > 0) activeMobileDay.value--
 }
 
 const onHeaderSwipeEnd = (e) => {
   if (touchOnBlock) return
+
+  if (panLock.value === 'h') {
+    const dx = panX.value
+    panLock.value = null
+    if (Math.abs(dx) >= PAN_COMMIT) _commitPan(dx)
+    else _springBack()
+    return
+  }
+
+  panLock.value = null
+  panX.value = 0
+
+  // Fallback fast swipe
   const dx = e.changedTouches[0].clientX - swipeStartX
   const dy = e.changedTouches[0].clientY - swipeStartY
   if (Math.abs(dx) < Math.abs(dy) * 0.8 || Math.abs(dx) < 80) return
@@ -273,6 +381,8 @@ const cancelDrag = () => {
 // ---- Touch / mobile tap support ----
 let touchTimer = null
 const touchActive = ref(false)
+let blockDragTimer = null   // long-press timer for mobile block/group drag
+let _pendingDrag = null     // { type, w|group, dayIdx, startX, startY }
 
 // Mobile double-tap: first tap preselects slot, second tap triggers creation
 const mobileTapSlot = ref(null) // { dayIdx, slot }
@@ -348,6 +458,17 @@ const onCellTouchendTap = (dayIdx, slot, e) => {
 }
 
 const onTouchmove = (e) => {
+  // Cancel pending block/group drag — user is scrolling, not long-pressing
+  if (blockDragTimer !== null) {
+    clearTimeout(blockDragTimer)
+    blockDragTimer = null
+    _pendingDrag = null
+  }
+  // Navigation pan tracking for day mode (before drag checks)
+  if (showSingleDay.value && !touchOnBlock && !blockDragging.value && !resizing.value && !panBusy) {
+    onCalSwipeMove(e)
+    if (panLock.value === 'h') return // horizontal pan active — skip drag processing
+  }
   // If the long-press hasn't activated yet, user is scrolling — cancel and don't interfere
   if (!touchActive.value && !dragging.value && !blockDragging.value && !resizing.value && !hExpanding.value && !erasing.value) {
     if (touchTimer) {
@@ -386,6 +507,7 @@ const onTouchmove = (e) => {
 
 const onTouchend = () => {
   if (touchTimer) { clearTimeout(touchTimer); touchTimer = null }
+  if (blockDragTimer !== null) { clearTimeout(blockDragTimer); blockDragTimer = null; _pendingDrag = null }
   touchActive.value = false
   touchOnBlock = false
   onMouseup()
@@ -506,13 +628,58 @@ const compactBlockDragGhostStyle = computed(() => {
 const onBlockTouchstart = (w, dayIdx, e) => {
   touchOnBlock = true
   onWindowLongPress(w, e)
-  onBlockDragStart(w, dayIdx, e)
+  if (props.isMobile) {
+    const startX = e.touches[0]?.clientX ?? 0
+    const startY = e.touches[0]?.clientY ?? 0
+    _pendingDrag = { type: 'window', w, dayIdx, startX, startY }
+    blockDragTimer = setTimeout(() => {
+      const pd = _pendingDrag
+      blockDragTimer = null
+      _pendingDrag = null
+      if (!pd || pd.type !== 'window') return
+      blockDragging.value = true
+      blockDragMoved = false
+      batchDragging.value = false
+      draggedWindow.value = pd.w
+      draggedGroup.value = null
+      draggedOriginDay.value = pd.dayIdx
+      draggedTargetDay.value = pd.dayIdx
+      draggedTargetSlot.value = Math.round(pd.w.startHour * 2)
+      const els = document.elementsFromPoint(pd.startX, pd.startY)
+      const cell = els.find(el => el.dataset.slot !== undefined)
+      dragGrabOffset = cell ? parseInt(cell.dataset.slot) - Math.round(pd.w.startHour * 2) : 0
+    }, 300)
+  } else {
+    onBlockDragStart(w, dayIdx, e)
+  }
 }
 
 const onGroupTouchstart = (group, dayIdx, e) => {
   touchOnBlock = true
   onGroupLongPress(group, e)
-  onGroupDragStart(group, dayIdx, e)
+  if (props.isMobile) {
+    const startX = e.touches[0]?.clientX ?? 0
+    const startY = e.touches[0]?.clientY ?? 0
+    _pendingDrag = { type: 'group', group, dayIdx, startX, startY }
+    blockDragTimer = setTimeout(() => {
+      const pd = _pendingDrag
+      blockDragTimer = null
+      _pendingDrag = null
+      if (!pd || pd.type !== 'group') return
+      blockDragging.value = true
+      blockDragMoved = false
+      draggedGroup.value = pd.group
+      draggedWindow.value = { startHour: pd.group.startHour, endHour: pd.group.endHour }
+      draggedOriginDay.value = pd.dayIdx
+      draggedTargetDay.value = pd.dayIdx
+      draggedTargetSlot.value = Math.round(pd.group.startHour * 2)
+      const els = document.elementsFromPoint(pd.startX, pd.startY)
+      const cell = els.find(el => el.dataset.slot !== undefined)
+      dragGrabOffset = cell ? parseInt(cell.dataset.slot) - Math.round(pd.group.startHour * 2) : 0
+    }, 300)
+  } else {
+    onGroupDragStart(group, dayIdx, e)
+  }
 }
 
 const onBlockDragEnd = () => {
@@ -1287,6 +1454,26 @@ const periodKey = computed(() => {
   if (props.viewMode === 'month') return props.monthDates[0] || ''
   return props.weekDates[0] || ''
 })
+
+// ---- Button-navigation enter animation (slideDir set by parent) ----
+watch(periodKey, (newKey, oldKey) => {
+  if (!oldKey || panInitiatedNav || !props.slideDir) return
+  const dir = props.slideDir === 'slide-left' ? -1 : 1
+  const W = window.innerWidth
+  const enterX = dir < 0 ? (W + 40) : -(W + 40)
+  const els = _getPanEls()
+  if (!els.length) return
+  for (const el of els) {
+    el.style.transition = 'none'
+    el.style.transform = `translateX(${enterX}px)`
+  }
+  els.forEach(el => void el.offsetWidth)
+  for (const el of els) {
+    el.style.transition = 'transform 0.24s cubic-bezier(0.25, 0.46, 0.45, 0.94)'
+    el.style.transform = 'translateX(0)'
+  }
+  setTimeout(() => { els.forEach(el => { el.style.transition = ''; el.style.transform = '' }) }, 260)
+}, { flush: 'post' })
 </script>
 
 <template>
@@ -1486,8 +1673,9 @@ const periodKey = computed(() => {
     <template v-else-if="showCompactWeek">
       <div ref="scrollContainerCompact" class="cal-scroll cal-scroll--compact">
         <!-- Compact header with nav arrows -->
-        <div class="cal-header cal-header--compact"
+        <div ref="panCompactHeaderRef" class="cal-header cal-header--compact"
           @touchstart.passive="onCalSwipeStart"
+          @touchmove="onCalSwipeMove"
           @touchend.passive="onHeaderSwipeEnd"
         >
           <button class="cal-header__nav" @click="$emit('prev-week')">
@@ -1511,7 +1699,7 @@ const periodKey = computed(() => {
         </div>
 
         <!-- Compact body -->
-        <div class="cal-body cal-body--compact">
+        <div ref="panCompactBodyRef" class="cal-body cal-body--compact">
           <!-- Gutter -->
           <div class="cal-gutter cal-gutter--compact">
             <div v-for="slot in SLOTS" :key="slot" class="cal-gutter__cell" :class="{ 'cal-gutter__cell--top': isHourTop(slot) }" :style="{ height: COMPACT_SLOT_H + 'px' }">
@@ -1627,15 +1815,15 @@ const periodKey = computed(() => {
 
     <!-- ── MES: grid mensual ── -->
     <template v-else-if="viewMode === 'month'">
-      <div class="mcal"
+      <div ref="panMonthRef" class="mcal"
         @touchstart.passive="onCalSwipeStart"
+        @touchmove="onCalSwipeMove"
         @touchend.passive="onCalSwipeEnd"
       >
         <div class="mcal__header">
           <div v-for="label in DAY_LABELS" :key="label" class="mcal__header-cell">{{ label }}</div>
         </div>
-        <Transition :name="slideDir" mode="out-in">
-          <div class="mcal__body" :key="periodKey">
+        <div class="mcal__body">
             <div v-for="(week, ri) in monthWeeks" :key="ri" class="mcal__row">
               <button
                 v-for="cell in week"
@@ -1686,8 +1874,7 @@ const periodKey = computed(() => {
                 </div>
               </button>
             </div>
-          </div>
-        </Transition>
+        </div>
       </div>
     </template>
 
