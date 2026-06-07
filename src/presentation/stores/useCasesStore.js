@@ -232,18 +232,27 @@ export const useCasesStore = defineStore('cases', () => {
 
     if (nextIdx < cases.value.length) {
       openDetail(nextIdx)
-      // Look-ahead: when within 8 cases of the end, preload next page silently
+      // Look-ahead: when within 8 of the end, start loading next page silently
       if (nextIdx >= cases.value.length - 8 && hasMore.value && !loadingMore.value) {
         loadPage(pagination.value.page + 1)
       }
       return
     }
 
-    // Next case isn't loaded yet — fetch the next page then navigate
+    // Reached the end of loaded cases — need more from backend.
+    // Start a load only if nothing is already in flight.
     if (hasMore.value && !loadingMore.value) {
-      await loadPage(pagination.value.page + 1)
+      loadPage(pagination.value.page + 1)
     }
-    // After load, check again (page may have appended new cases)
+
+    // Whether we just started a load or one was already in flight (look-ahead),
+    // wait until loadingMore goes back to false before navigating.
+    if (loadingMore.value) {
+      await new Promise(resolve => {
+        const stop = watch(loadingMore, (v) => { if (!v) { stop(); resolve() } })
+      })
+    }
+
     if (nextIdx < cases.value.length) {
       openDetail(nextIdx)
     }
