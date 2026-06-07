@@ -115,7 +115,11 @@ export const useCasesStore = defineStore('cases', () => {
   })
 
   const hasPrev = computed(() => selectedIndex.value > 0)
-  const hasNext = computed(() => selectedIndex.value < cases.value.length - 1)
+  // hasNext is true when there's a next loaded case OR more pages exist in the backend
+  const hasNext = computed(() =>
+    selectedIndex.value < cases.value.length - 1 ||
+    cases.value.length < pagination.value.total
+  )
 
   // ── Helpers ──
   function _filterKey() {
@@ -222,8 +226,27 @@ export const useCasesStore = defineStore('cases', () => {
     if (hasPrev.value) openDetail(selectedIndex.value - 1)
   }
 
-  function goToNext() {
-    if (hasNext.value) openDetail(selectedIndex.value + 1)
+  async function goToNext() {
+    if (!hasNext.value) return
+    const nextIdx = selectedIndex.value + 1
+
+    if (nextIdx < cases.value.length) {
+      openDetail(nextIdx)
+      // Look-ahead: when within 8 cases of the end, preload next page silently
+      if (nextIdx >= cases.value.length - 8 && hasMore.value && !loadingMore.value) {
+        loadPage(pagination.value.page + 1)
+      }
+      return
+    }
+
+    // Next case isn't loaded yet — fetch the next page then navigate
+    if (hasMore.value && !loadingMore.value) {
+      await loadPage(pagination.value.page + 1)
+    }
+    // After load, check again (page may have appended new cases)
+    if (nextIdx < cases.value.length) {
+      openDetail(nextIdx)
+    }
   }
 
   async function loadCaseById(id) {

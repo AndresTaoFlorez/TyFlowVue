@@ -44,15 +44,20 @@ function fmtDateTime(iso) {
         <!-- Next -->
         <button
           class="cdp__nav-btn"
-          :disabled="!store.hasNext"
+          :disabled="!store.hasNext || store.loadingMore"
           @click="store.goToNext()"
           title="Caso siguiente (→)"
         >
-          <i class="bx bx-chevron-right"></i>
+          <i
+            class="bx"
+            :class="store.loadingMore && store.selectedIndex >= store.cases.length - 1
+              ? 'bx-loader-alt bx-spin'
+              : 'bx-chevron-right'"
+          ></i>
         </button>
         <span v-if="c" class="cdp__id">{{ c.shortId }}</span>
         <span v-if="store.selectedIndex >= 0" class="cdp__counter">
-          {{ store.selectedIndex + 1 }} / {{ store.cases.length }}
+          {{ store.selectedIndex + 1 }} / {{ store.caseCount }}
         </span>
       </div>
       <button class="cdp__close" @click="store.closeDetail()" aria-label="Cerrar panel">
