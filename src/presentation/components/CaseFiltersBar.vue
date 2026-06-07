@@ -35,7 +35,7 @@ const applications = computed(() => userStore.applications ?? [])
 
 function setStatusFilter(routeStatus) {
   store.clearSearch()
-  router.push({ name: 'casos-list', params: { status: routeStatus } })
+  router.push({ name: 'casos-lista', params: { status: routeStatus } })
 }
 
 function setFilter(key, value) {
@@ -73,7 +73,7 @@ function clearSearch() {
         v-for="s in statuses"
         :key="s.routeStatus"
         class="fb__chip"
-        :class="{ 'fb__chip--active': route.params.status === s.routeStatus && !store.searchMode }"
+        :class="{ 'fb__chip--active': route.name?.startsWith('casos-lista') && route.params.status === s.routeStatus && !store.searchMode }"
         @click="setStatusFilter(s.routeStatus)"
       >{{ s.label }}</button>
     </div>
@@ -281,7 +281,14 @@ function clearSearch() {
 
 @media (max-width: 768px) {
   .fb { gap: 0.35rem; padding: 0.6rem 0.75rem; }
-  .fb__group { overflow-x: auto; flex-shrink: 0; }
+  .fb__group {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    flex-shrink: 0;
+    max-width: 100%;
+  }
+  .fb__group::-webkit-scrollbar { display: none; }
   .fb__sep { display: none; }
   .fb__search { width: 140px; }
 }

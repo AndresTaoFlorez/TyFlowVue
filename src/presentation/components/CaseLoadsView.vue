@@ -1,5 +1,6 @@
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { useUserStore } from '@/presentation/stores/useUserStore'
 import { useCasesStore } from '@/presentation/stores/useCasesStore'
 import { STATUS_LABELS, PRIORITY_LABELS, STATUS_TRANSITIONS } from '@/domain/entities/Case'
@@ -7,6 +8,8 @@ import CaseReassignModal from '@/presentation/components/CaseReassignModal.vue'
 
 const userStore = useUserStore()
 const store = useCasesStore()
+const route = useRoute()
+const router = useRouter()
 const applications = computed(() => userStore.applications ?? [])
 
 // ── Cargas filters ────────────────────────────────────
@@ -27,9 +30,9 @@ const filteredCargasCases = computed(() => {
 })
 
 // ── Panels state ──────────────────────────────────────
-// selectedSpecialistId drives the selection; selectedSpecialist is derived from store.allWorkloads
+// selectedSpecialistId is derived from the route; selectedSpecialist is computed from bySpecialist
 // so it stays live when RT events update counters.
-const selectedSpecialistId = ref(null)
+const selectedSpecialistId = computed(() => route.params.specialistId ?? null)
 const selectedCase         = ref(null)
 const showReassign         = ref(false)
 const changingStatus       = ref(false)
@@ -194,26 +197,50 @@ const panelStats = computed(() => {
 
 // Keep selectedCase in sync when store.cargasCases updates via RT events
 watch(() => store.cargasCases, (newCases) => {
+  const caseId = route.params.caseId
+  if (!selectedCase.value && caseId) {
+    const found = newCases.find(c => c.id === caseId)
+    if (found) selectedCase.value = found
+    return
+  }
   if (!selectedCase.value) return
   const refreshed = newCases.find(c => c.id === selectedCase.value.id)
   if (refreshed) selectedCase.value = refreshed
 }, { deep: true })
 
-// ── Select specialist ─────────────────────────────────
-async function selectSpecialist(s) {
-  if (selectedSpecialistId.value === s.specialist_id) return
-  selectedSpecialistId.value = s.specialist_id
+// ── Route → state sync ────────────────────────────────
+watch(selectedSpecialistId, async (id, oldId) => {
+  if (id === oldId) return
   selectedCase.value = null
   showReassign.value = false
   cargasFilters.value = { status: null, originType: null, applicationId: null }
-  if (isMobile.value) mobilePanel.value = 1
-  await store.loadCargasCases(s.specialist_id)
+  if (id) {
+    await store.loadCargasCases(id)
+  }
+}, { immediate: true })
+
+watch(() => route.params.caseId, (caseId) => {
+  if (!caseId) { selectedCase.value = null; return }
+  const found = store.cargasCases.find(c => c.id === caseId)
+  if (found) selectedCase.value = found
+}, { immediate: true })
+
+// Sync mobilePanel with route when on mobile
+watch(() => route.name, (name) => {
+  if (!isMobile.value) return
+  if (name === 'casos-cargas-case') mobilePanel.value = 2
+  else if (name === 'casos-cargas-specialist') mobilePanel.value = 1
+  else mobilePanel.value = 0
+}, { immediate: true })
+
+// ── Select specialist ─────────────────────────────────
+function selectSpecialist(s) {
+  if (selectedSpecialistId.value === s.specialist_id) return
+  router.push({ name: 'casos-cargas-specialist', params: { specialistId: s.specialist_id } })
 }
 
 function selectCase(c) {
-  selectedCase.value = c
-  showReassign.value = false
-  if (isMobile.value) mobilePanel.value = 2
+  router.push({ name: 'casos-cargas-case', params: { specialistId: selectedSpecialistId.value, caseId: c.id } })
 }
 
 // ── Case navigation (← / →) ──────────────────────────
@@ -760,7 +787,7 @@ onUnmounted(() => {
       <!-- Panel 1: Cases -->
       <div v-show="mobilePanel === 1" class="cl-mobile-panel">
         <div class="cl-mob-header">
-          <button class="cl-panel-btn" @click="mobilePanel = 0"><i class="bx bx-arrow-back"></i></button>
+          <button class="cl-panel-btn" @click="router.push({ name: 'casos-cargas' })"><i class="bx bx-arrow-back"></i></button>
           <span class="cl-panel-title">{{ selectedSpecialist?.full_name || 'Casos' }}</span>
         </div>
         <div v-if="store.loadingCargasCases" class="cl-p2-placeholder"><i class="bx bx-loader-alt bx-spin"></i><span>Cargando...</span></div>
@@ -826,7 +853,7 @@ onUnmounted(() => {
       <!-- Panel 2: Case detail -->
       <div v-show="mobilePanel === 2" class="cl-mobile-panel">
         <div class="cl-mob-header">
-          <button class="cl-panel-btn" @click="mobilePanel = 1"><i class="bx bx-arrow-back"></i></button>
+          <button class="cl-panel-btn" @click="router.push({ name: 'casos-cargas-specialist', params: { specialistId: selectedSpecialistId } })"><i class="bx bx-arrow-back"></i></button>
           <span class="cl-panel-title">{{ selectedCase?.shortId || 'Detalle' }}</span>
           <div style="margin-left:auto;display:flex;gap:2px">
             <button class="cl-nav-btn" :disabled="!hasPrevCase" @click="goToPrevCase"><i class="bx bx-chevron-left"></i></button>

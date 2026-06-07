@@ -16,8 +16,12 @@ const userStore = useUserStore()
 const authStore = useAuthStore()
 const route = useRoute()
 const router = useRouter()
-const activeTab = ref('lista')
 const autopilotError = ref(null)
+
+// Derived from route — no local state needed
+const activeTab = computed(() =>
+  route.name?.startsWith('casos-cargas') ? 'cargas' : 'lista'
+)
 
 // ── Resizable detail panel ────────────────────────────
 const PANEL_MIN = 320
@@ -100,15 +104,15 @@ watch(() => route.params.id, (id) => {
 
 // Close detail → navigate back to list (keep status param)
 watch(() => store.showDetailModal, (open) => {
-  if (!open && route.name === 'caso-detail') {
-    router.replace({ name: 'casos-list', params: { status: route.params.status } })
+  if (!open && route.name === 'casos-lista-detail') {
+    router.replace({ name: 'casos-lista', params: { status: route.params.status } })
   }
 })
 
 // Prev/Next navigation → replace URL without extra history entry
 watch(() => store.selectedCase?.id, (id) => {
   if (store.showDetailModal && id && route.params.id !== id) {
-    router.replace({ name: 'caso-detail', params: { status: route.params.status ?? 'open', id } })
+    router.replace({ name: 'casos-lista-detail', params: { status: route.params.status ?? 'open', id } })
   }
 })
 
@@ -119,18 +123,21 @@ watch(() => route.params.status, (newStatus, oldStatus) => {
 })
 
 function openCase(id) {
-  router.push({ name: 'caso-detail', params: { status: route.params.status ?? 'open', id } })
+  router.push({ name: 'casos-lista-detail', params: { status: route.params.status ?? 'open', id } })
 }
 
 // ── Init ─────────────────────────────────────────────
 onMounted(async () => {
   await Promise.all([userStore.loadSelects(), userStore.loadUsers()])
-  const status = STATUS_TO_FILTER[route.params.status ?? 'open'] ?? 'open'
-  const initFilters = { status }
-  if (!authStore.isAdmin && authStore.profile?.specialistId) {
-    initFilters.specialistId = authStore.profile.specialistId
+  // Only load cases when on the lista tab
+  if (activeTab.value === 'lista') {
+    const status = STATUS_TO_FILTER[route.params.status ?? 'open'] ?? 'open'
+    const initFilters = { status }
+    if (!authStore.isAdmin && authStore.profile?.specialistId) {
+      initFilters.specialistId = authStore.profile.specialistId
+    }
+    store.loadCases(initFilters)
   }
-  store.loadCases(initFilters)
 })
 </script>
 
@@ -144,7 +151,9 @@ onMounted(async () => {
         :key="tab.id"
         class="cv__tab"
         :class="{ 'cv__tab--active': activeTab === tab.id }"
-        @click="activeTab = tab.id"
+        @click="tab.id === 'cargas'
+          ? router.push({ name: 'casos-cargas' })
+          : router.push({ name: 'casos-lista', params: { status: route.params.status ?? 'open' } })"
       >
         <i :class="'bx ' + tab.icon + ' cv__tab-icon'"></i>
         {{ tab.label }}

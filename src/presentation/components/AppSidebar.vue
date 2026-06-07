@@ -57,7 +57,7 @@ const handleLogout = () => {
         </RouterLink>
       </li>
       <li v-if="prefs.menus.cases" class="sidebar__item">
-        <RouterLink :to="{ name: 'casos-list', params: { status: 'open' } }" class="sidebar__link" active-class="sidebar__link--active" @click="$emit('navigate')">
+        <RouterLink :to="{ name: 'casos-lista', params: { status: 'open' } }" class="sidebar__link" active-class="sidebar__link--active" @click="$emit('navigate')">
           <i class='bx bx-task sidebar__icon'></i>
           <span class="sidebar__label">Casos</span>
         </RouterLink>

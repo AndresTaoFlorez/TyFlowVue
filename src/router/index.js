@@ -62,19 +62,37 @@ const router = createRouter({
         },
         {
           path: 'casos',
-          redirect: { name: 'casos-list', params: { status: 'open' } },
+          redirect: { name: 'casos-lista', params: { status: 'open' } },
         },
         {
-          path: 'casos/:status',
-          name: 'casos-list',
+          path: 'casos/lista/:status',
+          name: 'casos-lista',
           component: CasosView,
           meta: { title: 'Casos' },
         },
         {
-          path: 'casos/:status/:id',
-          name: 'caso-detail',
+          path: 'casos/lista/:status/:id',
+          name: 'casos-lista-detail',
           component: CasosView,
           meta: { title: 'Caso' },
+        },
+        {
+          path: 'casos/cargas',
+          name: 'casos-cargas',
+          component: CasosView,
+          meta: { title: 'Cargas' },
+        },
+        {
+          path: 'casos/cargas/:specialistId',
+          name: 'casos-cargas-specialist',
+          component: CasosView,
+          meta: { title: 'Cargas' },
+        },
+        {
+          path: 'casos/cargas/:specialistId/:caseId',
+          name: 'casos-cargas-case',
+          component: CasosView,
+          meta: { title: 'Cargas' },
         },
         {
           path: 'settings',
