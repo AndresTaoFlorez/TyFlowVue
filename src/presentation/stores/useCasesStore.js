@@ -11,6 +11,7 @@ import { assignCaseManualUseCase } from '@/application/use-cases/cases/AssignCas
 import { reassignCaseUseCase } from '@/application/use-cases/cases/ReassignCaseUseCase'
 import { assignCaseWddAutopilotUseCase } from '@/application/use-cases/cases/AssignCaseWddAutopilotUseCase'
 import { fetchSpecialistWorkloadsUseCase } from '@/application/use-cases/cases/FetchSpecialistWorkloadsUseCase'
+import { fetchAssignmentTotalUseCase } from '@/application/use-cases/assignments/FetchAssignmentTotalUseCase'
 import { Case } from '@/domain/entities/Case'
 import { useUserStore } from '@/presentation/stores/useUserStore'
 
@@ -31,11 +32,12 @@ const workloadSync = new SyncEngine({
 })
 
 // allWorkloads: filas por (specialist, app) — key compuesta para updates precisos por RT.
+// application_id ahora viene del backend en cada fila (API contract §10d).
 const allWorkloadsSync = new SyncEngine({
   cacheKey: null,
   hydrate: (raw) => raw,
   fetchRemote: null,
-  getId: (w) => `${w.specialist_id}|${w._appId}`,
+  getId: (w) => `${w.specialist_id}|${w.application_id}`,
 })
 
 // cargasCases: casos del especialista abierto en el panel de Cargas.
@@ -500,14 +502,24 @@ export const useCasesStore = defineStore('cases', () => {
       return
     }
 
+    // Short IDs → local only (API has no q param)
+    const cleanQ = q.replace(/-/g, '')
+    const isUUID = /^[0-9a-f]{32}$/i.test(cleanQ)
+    if (!isUUID) {
+      searchMode.value = true
+      searchResults.value = []
+      searchError.value = 'No se encontraron casos'
+      return
+    }
+
+    // Full UUID → fetch by ID directly
     searchLoading.value = true
     searchMode.value = true
     try {
-      const result = await fetchCasesUseCase({ q, pageSize: 20 })
-      searchResults.value = result.data
-      if (result.data.length === 0) searchError.value = 'No se encontraron casos'
+      const c = await fetchCaseByIdUseCase(q)
+      searchResults.value = [c]
     } catch {
-      searchError.value = 'Error en la búsqueda'
+      searchError.value = 'No se encontró el caso'
       searchResults.value = []
     } finally {
       searchLoading.value = false
@@ -537,8 +549,8 @@ export const useCasesStore = defineStore('cases', () => {
   function _updateAllWorkloadCounts(specialistId, delta, appId) {
     const rows = allWorkloads.value.filter(w => w.specialist_id === specialistId)
     if (!rows.length) return
-    const targetRow = (appId ? rows.find(r => r._appId === appId) : null) ?? rows[0]
-    allWorkloadsSync.updateLocal(allWorkloads, `${targetRow.specialist_id}|${targetRow._appId}`, {
+    const targetRow = (appId ? rows.find(r => r.application_id === appId) : null) ?? rows[0]
+    allWorkloadsSync.updateLocal(allWorkloads, `${targetRow.specialist_id}|${targetRow.application_id}`, {
       ...targetRow, current_count: Math.max(0, (targetRow.current_count ?? 0) + delta),
     })
   }
@@ -548,11 +560,10 @@ export const useCasesStore = defineStore('cases', () => {
     _loadAllWorkloadsInFlight = true
     loadingAllWorkloads.value = true
     try {
+      // application_id ya viene en cada fila de la respuesta (API contract §10d)
       const results = await Promise.all(
         applicationIds.map(appId =>
-          fetchSpecialistWorkloadsUseCase(appId)
-            .then(rows => rows.map(r => ({ ...r, _appId: appId })))
-            .catch(() => [])
+          fetchSpecialistWorkloadsUseCase(appId).catch(() => [])
         )
       )
       allWorkloadsSync.replaceAll(allWorkloads, results.flat())
@@ -569,9 +580,12 @@ export const useCasesStore = defineStore('cases', () => {
     }
     loadingCargasCases.value = true
     try {
-      const result = await fetchCasesUseCase({ specialistId, pageSize: 200 })
-      cargasCasesSync.replaceAll(cargasCases, result.data ?? [])
-      cargasTotalAssignments.value = result.total ?? 0
+      const [casesResult, total] = await Promise.all([
+        fetchCasesUseCase({ specialistId, pageSize: 200 }),
+        fetchAssignmentTotalUseCase(specialistId),
+      ])
+      cargasCasesSync.replaceAll(cargasCases, casesResult.data ?? [])
+      cargasTotalAssignments.value = total
     } catch { /* silent */ }
     finally { loadingCargasCases.value = false }
   }
@@ -720,10 +734,11 @@ export const useCasesStore = defineStore('cases', () => {
   }
 
   function onCaseUpdatedRT(data) {
+    // case.updated payload only carries { case_id, status, previous_status } — merge status only
     const idx = cases.value.findIndex(c => c.id === data.case_id)
     let removedFromList = false
     if (idx !== -1) {
-      const merged = new Case({ ...cases.value[idx]._toRaw(), ...data })
+      const merged = new Case({ ...cases.value[idx]._toRaw(), status: data.status })
       if (!_matchesFilters(merged)) {
         casesSync.removeLocal(cases, data.case_id)
         pagination.value.total--
@@ -736,14 +751,14 @@ export const useCasesStore = defineStore('cases', () => {
       if (removedFromList) {
         closeDetail()
       } else {
-        selectedCase.value = new Case({ ...selectedCase.value._toRaw(), ...data })
+        selectedCase.value = new Case({ ...selectedCase.value._toRaw(), status: data.status })
       }
     }
     // Update cargasCases if the case is there
     const cargasIdx = cargasCases.value.findIndex(c => c.id === data.case_id)
     if (cargasIdx !== -1) {
       cargasCasesSync.updateLocal(cargasCases, data.case_id,
-        new Case({ ...cargasCases.value[cargasIdx]._toRaw(), ...data }))
+        new Case({ ...cargasCases.value[cargasIdx]._toRaw(), status: data.status }))
     }
   }
 

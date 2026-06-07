@@ -100,7 +100,7 @@ function onP2ResizeStart(e) {
 const bySpecialist = computed(() => {
   const specs = new Map()
   for (const row of store.allWorkloads) {
-    const app = applications.value.find(a => a.id === row._appId)
+    const app = applications.value.find(a => a.id === row.application_id)
     if (!specs.has(row.specialist_id)) {
       specs.set(row.specialist_id, {
         specialist_id: row.specialist_id,
@@ -114,8 +114,8 @@ const bySpecialist = computed(() => {
     s.totalCases += row.current_count ?? 0
     if (row.is_available) s.anyAvailable = true
     s.apps.push({
-      appId:            row._appId,
-      appName:          app?.name ?? row._appId,
+      appId:            row.application_id,
+      appName:          app?.name ?? row.application_id,
       current_count:    row.current_count ?? 0,
       is_available:     row.is_available,
       window_starts_at: row.window_starts_at,

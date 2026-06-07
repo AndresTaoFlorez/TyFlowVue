@@ -2,7 +2,7 @@ import client from '@/infrastructure/http/client'
 import { Case } from '@/domain/entities/Case'
 
 export const CaseRepository = {
-  async fetchAll({ status, originType, priority, applicationId, specialistId, page, pageSize, q } = {}) {
+  async fetchAll({ status, originType, priority, applicationId, specialistId, page, pageSize } = {}) {
     const params = {}
     if (status) params.status = status
     if (originType) params.origin_type = originType
@@ -11,10 +11,9 @@ export const CaseRepository = {
     if (specialistId) params.specialist_id = specialistId
     if (page) params.page = page
     if (pageSize) params.page_size = pageSize
-    if (q) params.q = q
 
     const { data } = await client.get('/cases', { params })
-    const items = Array.isArray(data) ? data : data.data ?? data.items ?? []
+    const items = Array.isArray(data) ? data : data.items ?? data.data ?? []
     const total = data.total ?? items.length
     return {
       data: items.map(item => new Case(item)),

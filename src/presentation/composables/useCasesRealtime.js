@@ -14,11 +14,10 @@ export function useCasesRealtime() {
   })
 
   onMounted(() => {
-    unsubs.push(wsClient.on('case.created',        data => store.onCaseCreatedRT(data)))
-    unsubs.push(wsClient.on('case.assigned',       data => store.onCaseAssignedRT(data)))
-    unsubs.push(wsClient.on('case.reassigned',     data => store.onCaseReassignedRT(data)))
-    unsubs.push(wsClient.on('case.updated',        data => store.onCaseUpdatedRT(data)))
-    unsubs.push(wsClient.on('case.status_changed', data => store.onCaseUpdatedRT(data)))
+    unsubs.push(wsClient.on('case.created',    data => store.onCaseCreatedRT(data)))
+    unsubs.push(wsClient.on('case.assigned',   data => store.onCaseAssignedRT(data)))
+    unsubs.push(wsClient.on('case.reassigned', data => store.onCaseReassignedRT(data)))
+    unsubs.push(wsClient.on('case.updated',    data => store.onCaseUpdatedRT(data)))
     unsubs.push(wsClient.on('autopilot.started',   data => store.onAutopilotStartedRT(data)))
     unsubs.push(wsClient.on('autopilot.progress',  data => store.onAutopilotProgressRT(data)))
     unsubs.push(wsClient.on('autopilot.completed', data => store.onAutopilotCompletedRT(data)))
