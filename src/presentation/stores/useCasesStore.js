@@ -30,6 +30,22 @@ const workloadSync = new SyncEngine({
   getId: (w) => w.specialist_id,
 })
 
+// allWorkloads: filas por (specialist, app) — key compuesta para updates precisos por RT.
+const allWorkloadsSync = new SyncEngine({
+  cacheKey: null,
+  hydrate: (raw) => raw,
+  fetchRemote: null,
+  getId: (w) => `${w.specialist_id}|${w._appId}`,
+})
+
+// cargasCases: casos del especialista abierto en el panel de Cargas.
+const cargasCasesSync = new SyncEngine({
+  cacheKey: null,
+  hydrate: (raw) => new Case(raw),
+  fetchRemote: null,
+  getId: (c) => c.id,
+})
+
 export const useCasesStore = defineStore('cases', () => {
   // ── State ──
   const cases = ref(casesSync.loadFromCache())
@@ -59,6 +75,15 @@ export const useCasesStore = defineStore('cases', () => {
 
   // ── Autopilot state ──
   const autopilotState = ref({ running: false, jobId: null, processed: 0, total: null })
+
+  // ── Cargas view state (SyncEngine is the source of truth) ──
+  // allWorkloads: flat list of workload rows for ALL apps — feeds the Cargas panel 1.
+  // RT events (assign/reassign) update it reactively so counters stay live.
+  const allWorkloads         = ref([])
+  const loadingAllWorkloads  = ref(false)
+  const cargasSpecialistId   = ref(null)   // which specialist is open in Cargas panel 2
+  const cargasCases          = ref([])     // cases for that specialist (all statuses)
+  const loadingCargasCases   = ref(false)
 
   // ── Modal state ──
   const showDetailModal = ref(false)
@@ -271,6 +296,10 @@ export const useCasesStore = defineStore('cases', () => {
         }
       }
       if (selectedCase.value?.id === id) selectedCase.value = updated
+      // Keep cargasCases in sync
+      if (cargasCases.value.find(c => c.id === id)) {
+        cargasCasesSync.updateLocal(cargasCases, id, updated)
+      }
       return updated
     } catch (e) {
       actionError.value = _humanizeError(e)
@@ -342,6 +371,60 @@ export const useCasesStore = defineStore('cases', () => {
     }
   }
 
+  // ── Cargas helpers ──
+
+  let _loadAllWorkloadsInFlight = false
+
+  function _getAppIdForCase(caseId) {
+    return cases.value.find(c => c.id === caseId)?.applicationId
+      ?? (selectedCase.value?.id === caseId ? selectedCase.value.applicationId : null)
+      ?? cargasCases.value.find(c => c.id === caseId)?.applicationId
+      ?? null
+  }
+
+  // Incrementa/decrementa el contador de una fila de allWorkloads.
+  // Si appId es conocido actualiza la fila exacta; si no, actualiza la primera fila del specialist.
+  function _updateAllWorkloadCounts(specialistId, delta, appId) {
+    const rows = allWorkloads.value.filter(w => w.specialist_id === specialistId)
+    if (!rows.length) return
+    const targetRow = (appId ? rows.find(r => r._appId === appId) : null) ?? rows[0]
+    allWorkloadsSync.updateLocal(allWorkloads, `${targetRow.specialist_id}|${targetRow._appId}`, {
+      ...targetRow, current_count: Math.max(0, (targetRow.current_count ?? 0) + delta),
+    })
+  }
+
+  async function loadAllWorkloads(applicationIds) {
+    if (_loadAllWorkloadsInFlight || !applicationIds?.length) return
+    _loadAllWorkloadsInFlight = true
+    loadingAllWorkloads.value = true
+    try {
+      const results = await Promise.all(
+        applicationIds.map(appId =>
+          fetchSpecialistWorkloadsUseCase(appId)
+            .then(rows => rows.map(r => ({ ...r, _appId: appId })))
+            .catch(() => [])
+        )
+      )
+      allWorkloadsSync.replaceAll(allWorkloads, results.flat())
+    } finally {
+      loadingAllWorkloads.value = false
+      _loadAllWorkloadsInFlight = false
+    }
+  }
+
+  async function loadCargasCases(specialistId) {
+    if (cargasSpecialistId.value !== specialistId) {
+      cargasSpecialistId.value = specialistId
+      cargasCasesSync.replaceAll(cargasCases, [])
+    }
+    loadingCargasCases.value = true
+    try {
+      const result = await fetchCasesUseCase({ specialistId, pageSize: 200 })
+      cargasCasesSync.replaceAll(cargasCases, result.data ?? [])
+    } catch { /* silent */ }
+    finally { loadingCargasCases.value = false }
+  }
+
   const _workloadCache = new Map()
 
   async function loadWorkloads(applicationId, { supportLevelId, supportCategoryId } = {}) {
@@ -404,10 +487,28 @@ export const useCasesStore = defineStore('cases', () => {
         })
       }
     }
+    // Update workloadSync (for the assign modal dropdown)
     const w = specialistWorkloads.value.find(s => s.specialist_id === data.specialist_id)
     if (w) workloadSync.updateLocal(specialistWorkloads, w.specialist_id, {
       ...w, current_count: (w.current_count ?? 0) + 1,
     })
+    // Update allWorkloads counters (for Cargas panel 1)
+    _updateAllWorkloadCounts(data.specialist_id, +1, _getAppIdForCase(data.case_id))
+    // Update cargasCases (for Cargas panel 2)
+    if (data.specialist_id === cargasSpecialistId.value) {
+      const existing = cargasCases.value.find(c => c.id === data.case_id)
+      if (existing) {
+        cargasCasesSync.updateLocal(cargasCases, data.case_id,
+          new Case({ ...existing._toRaw(), status: 'assigned', specialist_id: data.specialist_id }))
+      } else {
+        const src = cases.value.find(c => c.id === data.case_id)
+          ?? (selectedCase.value?.id === data.case_id ? selectedCase.value : null)
+        if (src) {
+          cargasCasesSync.insertLocal(cargasCases,
+            new Case({ ...src._toRaw(), status: 'assigned', specialist_id: data.specialist_id }))
+        }
+      }
+    }
   }
 
   function onCaseReassignedRT(data) {
@@ -419,6 +520,7 @@ export const useCasesStore = defineStore('cases', () => {
     if (selectedCase.value?.id === data.case_id) {
       selectedCase.value = new Case({ ...selectedCase.value._toRaw(), specialist_id: data.to_specialist_id })
     }
+    // Update workloadSync (for assign modal dropdown)
     const fromW = specialistWorkloads.value.find(s => s.specialist_id === data.from_specialist_id)
     if (fromW && fromW.current_count > 0)
       workloadSync.updateLocal(specialistWorkloads, fromW.specialist_id, {
@@ -429,6 +531,30 @@ export const useCasesStore = defineStore('cases', () => {
       workloadSync.updateLocal(specialistWorkloads, toW.specialist_id, {
         ...toW, current_count: (toW.current_count ?? 0) + 1,
       })
+    // Update allWorkloads counters (for Cargas panel 1)
+    const appId = _getAppIdForCase(data.case_id)
+    _updateAllWorkloadCounts(data.from_specialist_id, -1, appId)
+    _updateAllWorkloadCounts(data.to_specialist_id, +1, appId)
+    // Update cargasCases (for Cargas panel 2)
+    if (data.from_specialist_id === cargasSpecialistId.value) {
+      // Case left this specialist
+      cargasCasesSync.removeLocal(cargasCases, data.case_id)
+    }
+    if (data.to_specialist_id === cargasSpecialistId.value) {
+      // Case arrived at this specialist
+      const existing = cargasCases.value.find(c => c.id === data.case_id)
+      if (!existing) {
+        const src = cases.value.find(c => c.id === data.case_id)
+          ?? (selectedCase.value?.id === data.case_id ? selectedCase.value : null)
+        if (src) {
+          cargasCasesSync.insertLocal(cargasCases,
+            new Case({ ...src._toRaw(), specialist_id: data.to_specialist_id }))
+        }
+      } else {
+        cargasCasesSync.updateLocal(cargasCases, data.case_id,
+          new Case({ ...existing._toRaw(), specialist_id: data.to_specialist_id }))
+      }
+    }
   }
 
   function onAutopilotStartedRT(data) {
@@ -464,6 +590,12 @@ export const useCasesStore = defineStore('cases', () => {
         selectedCase.value = new Case({ ...selectedCase.value._toRaw(), ...data })
       }
     }
+    // Update cargasCases if the case is there
+    const cargasIdx = cargasCases.value.findIndex(c => c.id === data.case_id)
+    if (cargasIdx !== -1) {
+      cargasCasesSync.updateLocal(cargasCases, data.case_id,
+        new Case({ ...cargasCases.value[cargasIdx]._toRaw(), ...data }))
+    }
   }
 
   return {
@@ -473,11 +605,14 @@ export const useCasesStore = defineStore('cases', () => {
     showDetailModal, showCreateModal,
     caseCount, hasMore, workloadsByLevel, hasPrev, hasNext,
     autopilotState,
+    // Cargas view state
+    allWorkloads, loadingAllWorkloads,
+    cargasSpecialistId, cargasCases, loadingCargasCases,
     loadCases, loadPage, loadCaseById,
     openDetail, openDetailById, closeDetail, goToPrev, goToNext,
     createCase, updateCase, updateCaseStatus,
     assignWdd, assignManual, reassign, triggerAutopilot,
-    loadWorkloads,
+    loadWorkloads, loadAllWorkloads, loadCargasCases,
     onCaseCreatedRT, onCaseAssignedRT, onCaseReassignedRT, onCaseUpdatedRT,
     onAutopilotStartedRT, onAutopilotProgressRT, onAutopilotCompletedRT,
   }

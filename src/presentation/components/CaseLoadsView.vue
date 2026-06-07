@@ -1,9 +1,7 @@
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useUserStore } from '@/presentation/stores/useUserStore'
 import { useCasesStore } from '@/presentation/stores/useCasesStore'
-import { fetchSpecialistWorkloadsUseCase } from '@/application/use-cases/cases/FetchSpecialistWorkloadsUseCase'
-import { fetchCasesUseCase } from '@/application/use-cases/cases/FetchCasesUseCase'
 import { STATUS_LABELS, PRIORITY_LABELS, STATUS_TRANSITIONS } from '@/domain/entities/Case'
 import CaseReassignModal from '@/presentation/components/CaseReassignModal.vue'
 
@@ -11,16 +9,13 @@ const userStore = useUserStore()
 const store = useCasesStore()
 const applications = computed(() => userStore.applications ?? [])
 
-const loading = ref(false)
-const lastRefreshAt = ref(null)
-
 // ── Panels state ──────────────────────────────────────
-const selectedSpecialist = ref(null)
-const selectedCase       = ref(null)
-const specialistCases    = ref([])
-const loadingCases       = ref(false)
-const showReassign       = ref(false)
-const changingStatus     = ref(false)
+// selectedSpecialistId drives the selection; selectedSpecialist is derived from store.allWorkloads
+// so it stays live when RT events update counters.
+const selectedSpecialistId = ref(null)
+const selectedCase         = ref(null)
+const showReassign         = ref(false)
+const changingStatus       = ref(false)
 
 // ── Mobile (Outlook-style) ────────────────────────────
 const MOBILE_BP = 768
@@ -101,23 +96,100 @@ function onP2ResizeStart(e) {
   document.addEventListener('mouseup', onUp)
 }
 
+// ── Workload data — derived from store.allWorkloads (reactive) ──────────
+const bySpecialist = computed(() => {
+  const specs = new Map()
+  for (const row of store.allWorkloads) {
+    const app = applications.value.find(a => a.id === row._appId)
+    if (!specs.has(row.specialist_id)) {
+      specs.set(row.specialist_id, {
+        specialist_id: row.specialist_id,
+        full_name:    row.full_name,
+        totalCases:   0,
+        anyAvailable: false,
+        apps:         [],
+      })
+    }
+    const s = specs.get(row.specialist_id)
+    s.totalCases += row.current_count ?? 0
+    if (row.is_available) s.anyAvailable = true
+    s.apps.push({
+      appId:            row._appId,
+      appName:          app?.name ?? row._appId,
+      current_count:    row.current_count ?? 0,
+      is_available:     row.is_available,
+      window_starts_at: row.window_starts_at,
+      window_ends_at:   row.window_ends_at,
+    })
+  }
+  return [...specs.values()].sort((a, b) => {
+    if (a.anyAvailable !== b.anyAvailable) return a.anyAvailable ? -1 : 1
+    return a.totalCases - b.totalCases
+  })
+})
+
+// selectedSpecialist derived from bySpecialist so RT count updates are reflected automatically
+const selectedSpecialist = computed(() =>
+  bySpecialist.value.find(s => s.specialist_id === selectedSpecialistId.value) ?? null
+)
+
+const stats = computed(() => ({
+  total:      bySpecialist.value.length,
+  available:  bySpecialist.value.filter(s => s.anyAvailable).length,
+  totalCases: bySpecialist.value.reduce((sum, s) => sum + s.totalCases, 0),
+}))
+
+// ── Cases — derived from store.cargasCases (reactive) ──────────────────
+const STATUS_ORDER  = ['assigned', 'in_progress', 'open', 'resolved', 'closed']
+const STATUS_COLORS = {
+  open:        'var(--status-open)',
+  assigned:    'var(--status-assigned)',
+  in_progress: 'var(--status-in-progress)',
+  resolved:    'var(--status-resolved)',
+  closed:      'var(--status-closed)',
+}
+const STATUS_BG = {
+  open:        'var(--status-open-bg)',
+  assigned:    'var(--status-assigned-bg)',
+  in_progress: 'var(--status-in-progress-bg)',
+  resolved:    'var(--status-resolved-bg)',
+  closed:      'var(--status-closed-bg)',
+}
+
+const casesByStatus = computed(() => {
+  const grouped = {}
+  for (const s of STATUS_ORDER) grouped[s] = []
+  for (const c of store.cargasCases) {
+    if (grouped[c.status]) grouped[c.status].push(c)
+    else grouped['open']?.push(c)
+  }
+  return STATUS_ORDER
+    .filter(s => grouped[s]?.length > 0)
+    .map(s => ({ status: s, cases: grouped[s] }))
+})
+
+const panelStats = computed(() => {
+  const active = store.cargasCases.filter(c => c.status === 'assigned' || c.status === 'in_progress').length
+  const open   = store.cargasCases.filter(c => c.status === 'open').length
+  const closed = store.cargasCases.filter(c => c.status === 'closed' || c.status === 'resolved').length
+  return { total: store.cargasCases.length, active, open, closed }
+})
+
+// Keep selectedCase in sync when store.cargasCases updates via RT events
+watch(() => store.cargasCases, (newCases) => {
+  if (!selectedCase.value) return
+  const refreshed = newCases.find(c => c.id === selectedCase.value.id)
+  if (refreshed) selectedCase.value = refreshed
+}, { deep: true })
+
 // ── Select specialist ─────────────────────────────────
 async function selectSpecialist(s) {
-  if (selectedSpecialist.value?.specialist_id === s.specialist_id) return
-  selectedSpecialist.value = s
+  if (selectedSpecialistId.value === s.specialist_id) return
+  selectedSpecialistId.value = s.specialist_id
   selectedCase.value = null
   showReassign.value = false
-  specialistCases.value = []
-  loadingCases.value = true
   if (isMobile.value) mobilePanel.value = 1
-  try {
-    const result = await fetchCasesUseCase({ specialistId: s.specialist_id, pageSize: 200 })
-    specialistCases.value = result.data ?? []
-  } catch {
-    specialistCases.value = []
-  } finally {
-    loadingCases.value = false
-  }
+  await store.loadCargasCases(s.specialist_id)
 }
 
 function selectCase(c) {
@@ -140,14 +212,6 @@ async function changeStatus(newStatus) {
   try {
     const updated = await store.updateCaseStatus(selectedCase.value.id, newStatus)
     selectedCase.value = updated
-    const idx = specialistCases.value.findIndex(c => c.id === updated.id)
-    if (idx !== -1) {
-      specialistCases.value = [
-        ...specialistCases.value.slice(0, idx),
-        updated,
-        ...specialistCases.value.slice(idx + 1),
-      ]
-    }
   } finally {
     changingStatus.value = false
   }
@@ -156,115 +220,10 @@ async function changeStatus(newStatus) {
 // ── Reassign done ─────────────────────────────────────
 async function onReassignDone() {
   showReassign.value = false
-  if (!selectedSpecialist.value) return
-  loadingCases.value = true
-  try {
-    const result = await fetchCasesUseCase({ specialistId: selectedSpecialist.value.specialist_id, pageSize: 200 })
-    specialistCases.value = result.data ?? []
-    const refreshed = specialistCases.value.find(c => c.id === selectedCase.value?.id)
-    selectedCase.value = refreshed ?? selectedCase.value
-  } catch { /* silent */ }
-  finally { loadingCases.value = false }
-}
-
-// ── Cases grouped by status ───────────────────────────
-const STATUS_ORDER  = ['assigned', 'in_progress', 'open', 'resolved', 'closed']
-const STATUS_COLORS = {
-  open:        'var(--status-open)',
-  assigned:    'var(--status-assigned)',
-  in_progress: 'var(--status-in-progress)',
-  resolved:    'var(--status-resolved)',
-  closed:      'var(--status-closed)',
-}
-const STATUS_BG = {
-  open:        'var(--status-open-bg)',
-  assigned:    'var(--status-assigned-bg)',
-  in_progress: 'var(--status-in-progress-bg)',
-  resolved:    'var(--status-resolved-bg)',
-  closed:      'var(--status-closed-bg)',
-}
-
-const casesByStatus = computed(() => {
-  const grouped = {}
-  for (const s of STATUS_ORDER) grouped[s] = []
-  for (const c of specialistCases.value) {
-    if (grouped[c.status]) grouped[c.status].push(c)
-    else grouped['open']?.push(c)
-  }
-  return STATUS_ORDER
-    .filter(s => grouped[s]?.length > 0)
-    .map(s => ({ status: s, cases: grouped[s] }))
-})
-
-const panelStats = computed(() => {
-  const active = specialistCases.value.filter(c => c.status === 'assigned' || c.status === 'in_progress').length
-  const open   = specialistCases.value.filter(c => c.status === 'open').length
-  const closed = specialistCases.value.filter(c => c.status === 'closed' || c.status === 'resolved').length
-  return { total: specialistCases.value.length, active, open, closed }
-})
-
-// ── Workload data ─────────────────────────────────────
-const rawByApp = ref(new Map())
-
-async function fetchAll() {
-  if (loading.value) return
-  loading.value = true
-  try {
-    const apps = applications.value
-    const results = await Promise.all(
-      apps.map(app =>
-        fetchSpecialistWorkloadsUseCase(app.id)
-          .then(rows => ({ appId: app.id, rows }))
-          .catch(() => ({ appId: app.id, rows: [] }))
-      )
-    )
-    const map = new Map()
-    for (const { appId, rows } of results) map.set(appId, rows)
-    rawByApp.value = map
-    lastRefreshAt.value = new Date()
-  } finally {
-    loading.value = false
+  if (selectedSpecialistId.value) {
+    await store.loadCargasCases(selectedSpecialistId.value)
   }
 }
-
-const bySpecialist = computed(() => {
-  const specs = new Map()
-  for (const [appId, rows] of rawByApp.value) {
-    const app = applications.value.find(a => a.id === appId)
-    for (const row of rows) {
-      if (!specs.has(row.specialist_id)) {
-        specs.set(row.specialist_id, {
-          specialist_id: row.specialist_id,
-          full_name:    row.full_name,
-          totalCases:   0,
-          anyAvailable: false,
-          apps:         [],
-        })
-      }
-      const s = specs.get(row.specialist_id)
-      s.totalCases += row.current_count ?? 0
-      if (row.is_available) s.anyAvailable = true
-      s.apps.push({
-        appId,
-        appName:          app?.name ?? appId,
-        current_count:    row.current_count ?? 0,
-        is_available:     row.is_available,
-        window_starts_at: row.window_starts_at,
-        window_ends_at:   row.window_ends_at,
-      })
-    }
-  }
-  return [...specs.values()].sort((a, b) => {
-    if (a.anyAvailable !== b.anyAvailable) return a.anyAvailable ? -1 : 1
-    return a.totalCases - b.totalCases
-  })
-})
-
-const stats = computed(() => ({
-  total:      bySpecialist.value.length,
-  available:  bySpecialist.value.filter(s => s.anyAvailable).length,
-  totalCases: bySpecialist.value.reduce((sum, s) => sum + s.totalCases, 0),
-}))
 
 // ── Helpers ───────────────────────────────────────────
 function loadColor(count) {
@@ -289,16 +248,24 @@ function fmtDate(iso) {
   if (!iso) return ''
   return new Date(iso).toLocaleDateString('es-CO', { day: '2-digit', month: 'short', year: 'numeric' })
 }
-function fmtRefresh(d) {
-  return d ? d.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' }) : ''
-}
 function appName(id) {
   return applications.value.find(a => a.id === id)?.name ?? '—'
 }
 
-onMounted(() => {
-  fetchAll()
+onMounted(async () => {
   window.addEventListener('resize', onResize)
+  const appIds = applications.value.map(a => a.id)
+  if (appIds.length) {
+    await store.loadAllWorkloads(appIds)
+  } else {
+    // Wait for applications to load, then fetch
+    const stop = watch(applications, async (apps) => {
+      if (apps.length) {
+        stop()
+        await store.loadAllWorkloads(apps.map(a => a.id))
+      }
+    })
+  }
 })
 onUnmounted(() => {
   window.removeEventListener('resize', onResize)
@@ -321,8 +288,8 @@ onUnmounted(() => {
         <div class="cl-panel-header">
           <span v-if="!p1Collapsed" class="cl-panel-title">Especialistas</span>
           <div class="cl-panel-header-actions">
-            <button v-if="!p1Collapsed" class="cl-panel-btn" @click="fetchAll" :disabled="loading" title="Actualizar">
-              <i class="bx bx-refresh" :class="{ 'cl__spin': loading }"></i>
+            <button v-if="!p1Collapsed" class="cl-panel-btn" @click="store.loadAllWorkloads(applications.map(a => a.id))" :disabled="store.loadingAllWorkloads" title="Actualizar">
+              <i class="bx bx-refresh" :class="{ 'cl__spin': store.loadingAllWorkloads }"></i>
             </button>
             <button class="cl-panel-btn cl-panel-btn--ghost" @click="toggleP1" :title="p1Collapsed ? 'Expandir' : 'Colapsar'">
               <i class="bx" :class="p1Collapsed ? 'bx-chevron-right' : 'bx-chevron-left'"></i>
@@ -368,7 +335,7 @@ onUnmounted(() => {
           </div>
 
           <!-- Skeleton -->
-          <template v-if="loading">
+          <template v-if="store.loadingAllWorkloads">
             <div v-for="i in 5" :key="i" class="cl-spec-row cl-spec-row--skeleton">
               <div class="sk sk--circle"></div>
               <div class="sk sk--lines"><div class="sk sk--line"></div><div class="sk sk--line sk--line-short"></div></div>
@@ -376,7 +343,7 @@ onUnmounted(() => {
           </template>
 
           <!-- Empty -->
-          <div v-else-if="bySpecialist.length === 0" class="cl-p1-empty">
+          <div v-else-if="!store.loadingAllWorkloads && bySpecialist.length === 0" class="cl-p1-empty">
             <i class="bx bx-user-x"></i>
             <span>Sin datos de carga</span>
           </div>
@@ -442,13 +409,13 @@ onUnmounted(() => {
           </div>
 
           <!-- Loading cases -->
-          <div v-else-if="loadingCases" class="cl-p2-placeholder">
+          <div v-else-if="store.loadingCargasCases" class="cl-p2-placeholder">
             <i class="bx bx-loader-alt bx-spin"></i>
             <span>Cargando casos...</span>
           </div>
 
           <!-- Empty cases -->
-          <div v-else-if="specialistCases.length === 0" class="cl-p2-placeholder">
+          <div v-else-if="store.cargasCases.length === 0" class="cl-p2-placeholder">
             <i class="bx bx-folder-open"></i>
             <span>Sin casos registrados</span>
           </div>
@@ -652,15 +619,15 @@ onUnmounted(() => {
       <div v-show="mobilePanel === 0" class="cl-mobile-panel">
         <div class="cl-mob-header">
           <span class="cl-panel-title">Especialistas</span>
-          <button class="cl-panel-btn" @click="fetchAll" :disabled="loading">
-            <i class="bx bx-refresh" :class="{ 'cl__spin': loading }"></i>
+          <button class="cl-panel-btn" @click="store.loadAllWorkloads(applications.map(a => a.id))" :disabled="store.loadingAllWorkloads">
+            <i class="bx bx-refresh" :class="{ 'cl__spin': store.loadingAllWorkloads }"></i>
           </button>
         </div>
         <div class="cl-info">
           <i class="bx bx-info-circle"></i>
           Solo especialistas con Ventanas vigentes.
         </div>
-        <template v-if="loading">
+        <template v-if="store.loadingAllWorkloads">
           <div v-for="i in 4" :key="i" class="cl-spec-row cl-spec-row--skeleton">
             <div class="sk sk--circle"></div>
             <div class="sk sk--lines"><div class="sk sk--line"></div><div class="sk sk--line sk--line-short"></div></div>
@@ -698,8 +665,8 @@ onUnmounted(() => {
           <button class="cl-panel-btn" @click="mobilePanel = 0"><i class="bx bx-arrow-back"></i></button>
           <span class="cl-panel-title">{{ selectedSpecialist?.full_name || 'Casos' }}</span>
         </div>
-        <div v-if="loadingCases" class="cl-p2-placeholder"><i class="bx bx-loader-alt bx-spin"></i><span>Cargando...</span></div>
-        <div v-else-if="!specialistCases.length" class="cl-p2-placeholder"><i class="bx bx-folder-open"></i><span>Sin casos</span></div>
+        <div v-if="store.loadingCargasCases" class="cl-p2-placeholder"><i class="bx bx-loader-alt bx-spin"></i><span>Cargando...</span></div>
+        <div v-else-if="!store.cargasCases.length" class="cl-p2-placeholder"><i class="bx bx-folder-open"></i><span>Sin casos</span></div>
         <div v-else class="cl-p2-body">
           <div class="cl-p2-stats">
             <span class="cl-pstat"><span class="cl-pstat-num">{{ panelStats.total }}</span><span class="cl-pstat-lbl">total</span></span>
