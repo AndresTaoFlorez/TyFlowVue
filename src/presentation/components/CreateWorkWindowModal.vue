@@ -192,6 +192,9 @@ watch(hasCompleteRow, (v) => { if (!v) inheritsOnReopen.value = false })
 
 const timeOrderError = computed(() => {
   if (!startTime.value || !endTime.value) return null
+  // In range mode (endDate is a later calendar day), the datetime span is valid regardless
+  // of time comparison — end could be 02:00 the next day while start is 22:00 tonight.
+  if (!isMultiDay.value && endDate.value && endDate.value > (selectedDates.value[0] ?? '')) return null
   const [sh, sm] = startTime.value.split(':').map(Number)
   const [eh, em] = endTime.value.split(':').map(Number)
   if (sh * 60 + sm >= eh * 60 + em) return 'La hora de inicio debe ser anterior a la de fin.'
@@ -247,10 +250,25 @@ watch(() => props.visible, (val) => {
     selectedDates.value = [todayISO()]
     endDate.value = todayISO()
   }
+  // Auto-fix: if same-day and endTime <= startTime, advance endTime by 1h
+  _fixEndTime()
   rows.value = [{ specialistId: '', applicationId: props.prefill?.applicationId || '' }]
   inheritsOnReopen.value = false
   affinityWeight.value = '1'
 })
+
+/** Advance endTime to startTime + 1h when they'd be on the same day and out of order. */
+function _fixEndTime() {
+  if (!startTime.value || !endTime.value) return
+  const sameDayMode = isMultiDay.value || !endDate.value || endDate.value <= (selectedDates.value[0] ?? '')
+  if (!sameDayMode) return
+  const [sh, sm] = startTime.value.split(':').map(Number)
+  const [eh, em] = endTime.value.split(':').map(Number)
+  if (sh * 60 + sm >= eh * 60 + em) {
+    const newEndM = (sh * 60 + sm + 60) % (24 * 60)
+    endTime.value = `${String(Math.floor(newEndM / 60)).padStart(2, '0')}:${String(newEndM % 60).padStart(2, '0')}`
+  }
+}
 
 // ---- Submit ----
 const handleSubmit = () => {
