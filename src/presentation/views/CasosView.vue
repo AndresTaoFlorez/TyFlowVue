@@ -1,5 +1,6 @@
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, watch, onMounted } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { useCasesStore } from '@/presentation/stores/useCasesStore'
 import { useUserStore } from '@/presentation/stores/useUserStore'
 import { useAuthStore } from '@/presentation/stores/useAuthStore'
@@ -13,14 +14,18 @@ import CaseCreateModal from '@/presentation/components/CaseCreateModal.vue'
 const store = useCasesStore()
 const userStore = useUserStore()
 const authStore = useAuthStore()
+const route = useRoute()
+const router = useRouter()
 const activeTab = ref('lista')
+const autopilotError = ref(null)
 
 async function runAutopilot() {
+  autopilotError.value = null
   try {
     await store.triggerAutopilot()
   } catch (e) {
-    // 409 or other — store doesn't set actionError for autopilot, show alert
-    alert(e.message || 'Error lanzando autopilot')
+    autopilotError.value = e.message || 'Error lanzando autopilot'
+    setTimeout(() => { autopilotError.value = null }, 5000)
   }
 }
 
@@ -30,6 +35,35 @@ const tabs = [
 ]
 
 useCasesRealtime()
+
+// ── Routing bridge ─────────────────────────────────────────────────────────
+// URL (:id param) is the source of truth for the detail modal.
+// - Direct link / browser back → route watcher opens or closes the modal
+// - Row click → pushes the URL, route watcher opens the modal
+// - Modal close (X / Escape) → modal watcher replaces URL back to list
+
+watch(() => route.params.id, (id) => {
+  if (id) store.openDetailById(id)
+  else store.closeDetail()
+}, { immediate: true })
+
+watch(() => store.showDetailModal, (open) => {
+  if (!open && route.name === 'caso-detail') {
+    router.replace({ name: 'casos' })
+  }
+})
+
+// Prev/Next navigation while modal is open → replace URL (no extra history entries)
+watch(() => store.selectedCase?.id, (id) => {
+  if (store.showDetailModal && id && route.params.id !== id) {
+    router.replace({ name: 'caso-detail', params: { id } })
+  }
+})
+
+function openCase(id) {
+  router.push({ name: 'caso-detail', params: { id } })
+}
+// ──────────────────────────────────────────────────────────────────────────
 
 onMounted(async () => {
   await userStore.loadSelects()
@@ -92,10 +126,17 @@ onMounted(async () => {
       </div>
     </nav>
 
+    <!-- Autopilot error -->
+    <Transition name="cv-err">
+      <div v-if="autopilotError" class="cv__error-pill">
+        <i class="bx bx-error-circle"></i> {{ autopilotError }}
+      </div>
+    </Transition>
+
     <!-- Lista: filters + table -->
     <div v-show="activeTab === 'lista'" class="cv__lista">
       <CaseFiltersBar />
-      <CaseListTable />
+      <CaseListTable @select="openCase" />
     </div>
 
     <!-- Cargas (admin only) -->
@@ -240,6 +281,25 @@ onMounted(async () => {
   flex: 1;
   overflow-y: auto;
 }
+
+/* Autopilot error pill */
+.cv__error-pill {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.45rem 1rem;
+  background: var(--error-bg, #fff0f0);
+  color: var(--error-text, #c53030);
+  font-size: 0.78rem;
+  font-weight: 600;
+  border-bottom: 1px solid var(--error-border, #fed7d7);
+  flex-shrink: 0;
+}
+.cv__error-pill i { font-size: 0.9rem; }
+
+.cv-err-enter-active, .cv-err-leave-active { transition: all 0.2s ease; }
+.cv-err-enter-from, .cv-err-leave-to { opacity: 0; max-height: 0; padding-top: 0; padding-bottom: 0; }
+.cv-err-enter-to, .cv-err-leave-from { opacity: 1; max-height: 60px; }
 
 /* Responsive */
 @media (max-width: 768px) {

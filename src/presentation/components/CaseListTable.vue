@@ -3,6 +3,7 @@ import { ref, watch, onUnmounted } from 'vue'
 import { useCasesStore } from '@/presentation/stores/useCasesStore'
 
 const store = useCasesStore()
+const emit = defineEmits(['select'])
 
 const scrollEl = ref(null)
 const sentinel = ref(null)
@@ -82,10 +83,15 @@ onUnmounted(() => observer?.disconnect())
         </thead>
         <tbody>
           <tr
-            v-for="(c, idx) in store.cases"
+            v-for="c in store.cases"
             :key="c.id"
             class="ct__row"
-            @click="store.openDetail(idx)"
+            tabindex="0"
+            role="button"
+            :aria-label="c.subject"
+            @click="emit('select', c.id)"
+            @keydown.enter.prevent="emit('select', c.id)"
+            @keydown.space.prevent="emit('select', c.id)"
           >
             <td class="ct__id">{{ c.shortId }}</td>
             <td class="ct__subject">{{ c.subject }}</td>

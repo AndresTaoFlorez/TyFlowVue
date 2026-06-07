@@ -67,6 +67,12 @@ const router = createRouter({
           meta: { title: 'Casos' },
         },
         {
+          path: 'casos/:id',
+          name: 'caso-detail',
+          component: CasosView,
+          meta: { title: 'Caso' },
+        },
+        {
           path: 'settings',
           name: 'settings',
           component: SettingsView,

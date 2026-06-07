@@ -41,20 +41,17 @@ export function useCaseDetail(caseRef) {
 
   const applicationName = computed(() => {
     if (!caseRef.value?.applicationId) return null
-    const app = userStore.applications.find(a => a.id === caseRef.value.applicationId)
-    return app?.name ?? caseRef.value.applicationId.slice(0, 8)
+    return userStore.applications.find(a => a.id === caseRef.value.applicationId)?.name ?? null
   })
 
   const supportLevelName = computed(() => {
     if (!caseRef.value?.supportLevelId) return null
-    const lvl = userStore.supportLevels.find(sl => sl.id === caseRef.value.supportLevelId)
-    return lvl?.name ?? caseRef.value.supportLevelId.slice(0, 8)
+    return userStore.supportLevels.find(sl => sl.id === caseRef.value.supportLevelId)?.name ?? null
   })
 
   const categoryName = computed(() => {
     if (!caseRef.value?.supportCategoryId) return null
-    const cat = userStore.supportCategories.find(sc => sc.id === caseRef.value.supportCategoryId)
-    return cat?.name ?? caseRef.value.supportCategoryId.slice(0, 8)
+    return userStore.supportCategories.find(sc => sc.id === caseRef.value.supportCategoryId)?.name ?? null
   })
 
   async function changeStatus(newStatus) {

@@ -23,13 +23,18 @@ const showReassign       = ref(false)
 const changingStatus     = ref(false)
 
 // ── Mobile (Outlook-style) ────────────────────────────
-const isMobile = ref(window.innerWidth < 768)
+const MOBILE_BP = 768
+const isMobile = ref(window.innerWidth < MOBILE_BP)
 // 0=specialists, 1=cases, 2=detail
 const mobilePanel = ref(0)
 
+let _resizeTimer = null
 function onResize() {
-  isMobile.value = window.innerWidth < 768
-  if (!isMobile.value) mobilePanel.value = 0
+  clearTimeout(_resizeTimer)
+  _resizeTimer = setTimeout(() => {
+    isMobile.value = window.innerWidth < MOBILE_BP
+    if (!isMobile.value) mobilePanel.value = 0
+  }, 80)
 }
 
 // ── Panel 1 (left) — collapsible + resizable ──────────
@@ -295,7 +300,10 @@ onMounted(() => {
   fetchAll()
   window.addEventListener('resize', onResize)
 })
-onUnmounted(() => window.removeEventListener('resize', onResize))
+onUnmounted(() => {
+  window.removeEventListener('resize', onResize)
+  clearTimeout(_resizeTimer)
+})
 </script>
 
 <template>

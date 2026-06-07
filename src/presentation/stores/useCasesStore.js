@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { SyncEngine } from '@/infrastructure/sync/SyncEngine'
 import { fetchCasesUseCase } from '@/application/use-cases/cases/FetchCasesUseCase'
 import { fetchCaseByIdUseCase } from '@/application/use-cases/cases/FetchCaseByIdUseCase'
@@ -35,12 +35,17 @@ export const useCasesStore = defineStore('cases', () => {
   const cases = ref(casesSync.loadFromCache())
   const selectedCase = ref(null)
   const selectedIndex = ref(-1)
+
+  const _FILTERS_KEY = 'tyflow_cases_filters_v1'
+  const _savedFilters = (() => {
+    try { return JSON.parse(localStorage.getItem(_FILTERS_KEY)) ?? {} } catch { return {} }
+  })()
   const filters = ref({
-    status: 'open',
-    originType: null,
-    priority: null,
-    applicationId: null,
-    specialistId: null,
+    status:        _savedFilters.status        ?? 'open',
+    originType:    _savedFilters.originType    ?? null,
+    priority:      _savedFilters.priority      ?? null,
+    applicationId: _savedFilters.applicationId ?? null,
+    specialistId:  null, // never persisted — set per auth context on mount
   })
   const pagination = ref({ page: 1, pageSize: 50, total: 0 })
   const specialistWorkloads = ref([])
@@ -58,6 +63,16 @@ export const useCasesStore = defineStore('cases', () => {
   // ── Modal state ──
   const showDetailModal = ref(false)
   const showCreateModal = ref(false)
+
+  // Persist non-auth filters across sessions (specialistId excluded intentionally)
+  watch(filters, (f) => {
+    try {
+      localStorage.setItem(_FILTERS_KEY, JSON.stringify({
+        status: f.status, originType: f.originType,
+        priority: f.priority, applicationId: f.applicationId,
+      }))
+    } catch { /* quota exceeded — silent */ }
+  }, { deep: true })
 
   // ── Computed ──
   const caseCount = computed(() => pagination.value.total)
@@ -189,7 +204,18 @@ export const useCasesStore = defineStore('cases', () => {
     loadingDetail.value = true
     detailError.value = null
     try {
-      selectedCase.value = await fetchCaseByIdUseCase(id)
+      const fresh = await fetchCaseByIdUseCase(id)
+      selectedCase.value = fresh
+      // Sync the fresh detail back to the list (no CRDT stamp — data is from backend)
+      const idx = cases.value.findIndex(c => c.id === id)
+      if (idx !== -1) {
+        cases.value = [
+          ...cases.value.slice(0, idx),
+          fresh,
+          ...cases.value.slice(idx + 1),
+        ]
+        casesSync.writeToCache(cases.value)
+      }
     } catch (e) {
       detailError.value = _humanizeError(e) || 'Error cargando caso'
     } finally {
