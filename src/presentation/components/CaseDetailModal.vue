@@ -56,9 +56,6 @@ function fmtDateTime(iso) {
           ></i>
         </button>
         <span v-if="c" class="cdp__id">{{ c.shortId }}</span>
-        <span v-if="store.selectedIndex >= 0" class="cdp__counter">
-          {{ store.selectedIndex + 1 }} / {{ store.caseCount }}
-        </span>
       </div>
       <button class="cdp__close" @click="store.closeDetail()" aria-label="Cerrar panel">
         <i class="bx bx-x"></i>
@@ -268,15 +265,6 @@ function fmtDateTime(iso) {
   margin-left: 0.3rem;
 }
 
-.cdp__counter {
-  font-size: 0.68rem;
-  font-weight: 500;
-  color: var(--text-secondary);
-  background: var(--bg-main);
-  border: 1px solid var(--border-light);
-  border-radius: var(--radius-sm);
-  padding: 0.1rem 0.4rem;
-}
 
 .cdp__close {
   display: flex;
