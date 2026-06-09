@@ -164,24 +164,30 @@ function onOverlay(e) {
   position: fixed;
   inset: 0;
   z-index: 200;
-  background: rgba(0, 0, 0, 0.5);
+  background: rgba(10, 12, 20, 0.55);
+  backdrop-filter: blur(2px);
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 1.5rem;
+  animation: ccm-fade 0.15s ease;
 }
+@keyframes ccm-fade { from { opacity: 0; } to { opacity: 1; } }
 
 .ccm__panel {
   background: var(--bg-main);
-  border-radius: var(--radius-lg);
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+  border-radius: 16px;
+  box-shadow: var(--shadow-lg);
+  border: 1px solid var(--border-light);
   width: 100%;
   max-width: 700px;
   max-height: 85vh;
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  animation: ccm-pop 0.18s cubic-bezier(0.2, 0.9, 0.3, 1.2);
 }
+@keyframes ccm-pop { from { transform: translateY(10px) scale(0.98); opacity: 0; } to { transform: none; opacity: 1; } }
 
 /* Header */
 .ccm__header {

@@ -166,7 +166,7 @@ const onHandleDown = (direction, e) => {
 <style scoped>
 .wgb {
   position: absolute;
-  border-radius: 4px;
+  border-radius: 7px;
   cursor: pointer;
   overflow: hidden;
   background: rgba(30, 35, 50, 0.06);

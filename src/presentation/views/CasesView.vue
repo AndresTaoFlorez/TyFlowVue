@@ -10,6 +10,7 @@ import CaseListTable from '@/presentation/components/cases/CaseListTable.vue'
 import CaseLoadsView from '@/presentation/components/cases/CaseLoadsView.vue'
 import CaseDetailModal from '@/presentation/components/cases/CaseDetailModal.vue'
 import CaseCreateModal from '@/presentation/components/cases/CaseCreateModal.vue'
+import CaseSpecialistsView from '@/presentation/components/cases/CaseSpecialistsView.vue'
 
 const store = useCasesStore()
 const userStore = useUserStore()
@@ -61,8 +62,8 @@ function onResizeStart(e) {
 function onKeydown(e) {
   if (!store.showDetailModal) return
   if (e.key === 'Escape') store.closeDetail()
-  if (e.key === 'ArrowLeft') store.goToPrev()
-  if (e.key === 'ArrowRight') store.goToNext()
+  if (e.key === 'ArrowLeft')  { e.preventDefault(); store.goToPrev() }
+  if (e.key === 'ArrowRight') { e.preventDefault(); store.goToNext() }
 }
 
 onMounted(() => document.addEventListener('keydown', onKeydown))
@@ -226,7 +227,7 @@ onMounted(async () => {
 
     <!-- Especialistas tab -->
     <div v-show="activeTab === 'especialistas'" class="cv__cargas">
-      <!-- TODO: specialist work overview component -->
+      <CaseSpecialistsView />
     </div>
 
     <!-- Cargas tab (admin only) -->

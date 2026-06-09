@@ -92,34 +92,21 @@ const onHandleDown = (direction, e) => {
 </script>
 
 <template>
-  <div
-    class="wb"
-    :class="[statusClass(), { 'wb--selected': selected, 'wb--cut': cut, 'wb--compact': compact }]"
-    :style="{
-      top: top() + 'px',
-      height: height() + 'px',
-      left: left(),
-      width: width(),
-      '--app-color': resolvedColor(),
-      '--app-text-color': textColor,
-    }"
-    @click="$emit('click', window, $event)"
-  >
+  <div class="wb" :class="[statusClass(), { 'wb--selected': selected, 'wb--cut': cut, 'wb--compact': compact }]" :style="{
+    top: top() + 'px',
+    height: height() + 'px',
+    left: left(),
+    width: width(),
+    '--app-color': resolvedColor(),
+    '--app-text-color': textColor,
+  }" @click="$emit('click', window, $event)">
     <!-- Resize handle top -->
-    <div
-      v-if="showTopHandle"
-      class="wb__handle wb__handle--top"
-      @mousedown="onHandleDown('top', $event)"
-      @touchstart.stop.prevent="onHandleDown('top', $event)"
-    ></div>
+    <div v-if="showTopHandle" class="wb__handle wb__handle--top" @mousedown="onHandleDown('top', $event)"
+      @touchstart.stop.prevent="onHandleDown('top', $event)"></div>
 
     <!-- Resize handle left -->
-    <div
-      v-if="showSideHandles"
-      class="wb__handle wb__handle--left"
-      @mousedown="onHandleDown('left', $event)"
-      @touchstart.stop.prevent="onHandleDown('left', $event)"
-    ></div>
+    <div v-if="showSideHandles" class="wb__handle wb__handle--left" @mousedown="onHandleDown('left', $event)"
+      @touchstart.stop.prevent="onHandleDown('left', $event)"></div>
 
     <template v-if="!compact">
       <div class="wb__head">
@@ -131,7 +118,8 @@ const onHandleDown = (direction, e) => {
       </div>
       <span v-if="height() > 42" class="wb__time">{{ window.timeRange }}</span>
       <span v-if="height() > 60" class="wb__app">{{ applicationName }}</span>
-      <span v-if="inheritLabel && height() > 48" class="wb__inherit-label" :title="inheritLabel">{{ inheritLabel }}</span>
+      <span v-if="inheritLabel && height() > 48" class="wb__inherit-label" :title="inheritLabel">{{ inheritLabel
+        }}</span>
     </template>
 
     <template v-if="compact && height() >= 16">
@@ -140,20 +128,12 @@ const onHandleDown = (direction, e) => {
     </template>
 
     <!-- Resize handle bottom -->
-    <div
-      v-if="showBottomHandle"
-      class="wb__handle wb__handle--bottom"
-      @mousedown="onHandleDown('bottom', $event)"
-      @touchstart.stop.prevent="onHandleDown('bottom', $event)"
-    ></div>
+    <div v-if="showBottomHandle" class="wb__handle wb__handle--bottom" @mousedown="onHandleDown('bottom', $event)"
+      @touchstart.stop.prevent="onHandleDown('bottom', $event)"></div>
 
     <!-- Resize handle right -->
-    <div
-      v-if="showSideHandles"
-      class="wb__handle wb__handle--right"
-      @mousedown="onHandleDown('right', $event)"
-      @touchstart.stop.prevent="onHandleDown('right', $event)"
-    ></div>
+    <div v-if="showSideHandles" class="wb__handle wb__handle--right" @mousedown="onHandleDown('right', $event)"
+      @touchstart.stop.prevent="onHandleDown('right', $event)"></div>
   </div>
 </template>
 
@@ -188,10 +168,22 @@ const onHandleDown = (direction, e) => {
 .wb--open {
   background: color-mix(in srgb, var(--app-color) 22%, transparent);
   border-left-color: var(--app-color);
+
 }
-.wb--open .wb__name { color: var(--app-text-color); }
-.wb--open .wb__time { color: var(--app-text-color); opacity: 0.85; }
-.wb--open .wb__app { color: var(--app-text-color); opacity: 0.75; }
+
+.wb--open .wb__name {
+  color: var(--app-text-color);
+}
+
+.wb--open .wb__time {
+  color: var(--app-text-color);
+  opacity: 0.85;
+}
+
+.wb--open .wb__app {
+  color: var(--app-text-color);
+  opacity: 0.9;
+}
 
 /* ── Head (avatar + name row) ── */
 .wb__head {
@@ -253,7 +245,7 @@ const onHandleDown = (direction, e) => {
   overflow: hidden;
   text-overflow: ellipsis;
   background: color-mix(in srgb, var(--app-color) 15%, transparent);
-  padding: 0.05rem 0.3rem;
+  padding: 0.05rem 0.4rem 0.25rem;
   border-radius: 3px;
   width: fit-content;
   max-width: 100%;
@@ -287,7 +279,9 @@ const onHandleDown = (direction, e) => {
   transition: opacity 0.15s;
 }
 
-.wb:hover .wb__handle { opacity: 1; }
+.wb:hover .wb__handle {
+  opacity: 1;
+}
 
 .wb__handle::after {
   content: '';
@@ -297,20 +291,39 @@ const onHandleDown = (direction, e) => {
   background: rgba(255, 255, 255, 0.5);
 }
 
-.wb__handle--top { top: 0; }
-.wb__handle--bottom { bottom: 0; }
+.wb__handle--top {
+  top: 0;
+}
+
+.wb__handle--bottom {
+  bottom: 0;
+}
 
 .wb__handle--left,
 .wb__handle--right {
-  top: 0; bottom: 0; left: auto; right: auto;
-  width: 8px; height: auto;
+  top: 0;
+  bottom: 0;
+  left: auto;
+  right: auto;
+  width: 8px;
+  height: auto;
   cursor: ew-resize;
   flex-direction: column;
 }
-.wb__handle--left { left: 0; }
-.wb__handle--right { right: 0; }
+
+.wb__handle--left {
+  left: 0;
+}
+
+.wb__handle--right {
+  right: 0;
+}
+
 .wb__handle--left::after,
-.wb__handle--right::after { width: 3px; height: 24px; }
+.wb__handle--right::after {
+  width: 3px;
+  height: 24px;
+}
 
 /* ── Selected ── */
 .wb--selected {
@@ -329,18 +342,27 @@ const onHandleDown = (direction, e) => {
 /* ── Inactive — muted, hatched ── */
 .wb--inactive {
   background: repeating-linear-gradient(-45deg,
-    color-mix(in srgb, var(--app-color) 12%, transparent),
-    color-mix(in srgb, var(--app-color) 12%, transparent) 3px,
-    color-mix(in srgb, var(--app-color) 6%, transparent) 3px,
-    color-mix(in srgb, var(--app-color) 6%, transparent) 6px);
+      color-mix(in srgb, var(--app-color) 12%, transparent),
+      color-mix(in srgb, var(--app-color) 12%, transparent) 3px,
+      color-mix(in srgb, var(--app-color) 6%, transparent) 3px,
+      color-mix(in srgb, var(--app-color) 6%, transparent) 6px);
   border-left-color: color-mix(in srgb, var(--app-color) 40%, #5a6075);
   opacity: 0.55;
 }
-.wb--inactive .wb__name { color: #8890a4; opacity: 0.7; }
-.wb--inactive .wb__avatar { opacity: 0.6; }
+
+.wb--inactive .wb__name {
+  color: #8890a4;
+  opacity: 0.7;
+}
+
+.wb--inactive .wb__avatar {
+  opacity: 0.6;
+}
 
 /* ── Compact (mobile week) ── */
-.wb--compact .wb__handle { display: none; }
+.wb--compact .wb__handle {
+  display: none;
+}
 
 .wb--compact {
   padding: 2px 1px;

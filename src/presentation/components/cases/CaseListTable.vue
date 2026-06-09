@@ -41,6 +41,12 @@ function specialistName(id) {
   return specialistMap.value.get(id) ?? null
 }
 
+function hslColor(name) {
+  let h = 0
+  for (const ch of (name || '')) h = ch.charCodeAt(0) + ((h << 5) - h)
+  return `hsl(${Math.abs(h) % 360}, 45%, 40%)`
+}
+
 const scrollEl = ref(null)
 const sentinel = ref(null)
 let observer = null
@@ -176,7 +182,7 @@ onUnmounted(() => observer?.disconnect())
             </td>
             <td class="ct__col-specialist ct__specialist">
               <div v-if="specialistName(c.specialistId)" class="ct__spec-cell">
-                <span class="ct__spec-avatar">{{ specialistName(c.specialistId).split(' ').slice(0,2).map(p => p[0]).join('').toUpperCase() }}</span>
+                <span class="ct__spec-avatar" :style="{ background: hslColor(specialistName(c.specialistId)) }">{{ specialistName(c.specialistId).split(' ').slice(0,2).map(p => p[0]).join('').toUpperCase() }}</span>
                 <span class="ct__specialist-name">{{ specialistName(c.specialistId) }}</span>
               </div>
               <span v-else class="ct__specialist-none">Sin asignar</span>
@@ -213,7 +219,11 @@ onUnmounted(() => observer?.disconnect())
 .ct__scroll {
   flex: 1;
   overflow: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-light) transparent;
 }
+.ct__scroll::-webkit-scrollbar { width: 9px; height: 9px; }
+.ct__scroll::-webkit-scrollbar-thumb { background: var(--border-light); border-radius: 5px; }
 
 /* ── Table ── */
 .ct__table {
@@ -249,7 +259,6 @@ onUnmounted(() => observer?.disconnect())
 .ct__row {
   cursor: pointer;
   transition: background 0.1s;
-  position: relative;
 }
 
 .ct__row:nth-child(even) { background: var(--bg-card); }
@@ -259,23 +268,11 @@ onUnmounted(() => observer?.disconnect())
 .ct__row--skel:hover { background: transparent; }
 
 /* Priority left border for urgent/high */
-.ct__row--urgent::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  width: 3px;
-  background: var(--priority-urgent);
+.ct__row--urgent {
+  box-shadow: inset 3px 0 0 var(--priority-urgent);
 }
-.ct__row--alta::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  width: 3px;
-  background: var(--priority-high);
+.ct__row--alta {
+  box-shadow: inset 3px 0 0 var(--priority-high);
 }
 
 .ct__row--selected {
@@ -364,7 +361,6 @@ onUnmounted(() => observer?.disconnect())
   font-weight: 800;
   font-size: 0.62rem;
   color: #fff;
-  background: var(--primary-500);
   letter-spacing: -0.02em;
   flex-shrink: 0;
 }

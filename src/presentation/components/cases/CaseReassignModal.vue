@@ -245,25 +245,31 @@ async function handleReassign() {
 .rm__overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.4);
+  background: rgba(10, 12, 20, 0.55);
+  backdrop-filter: blur(2px);
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 1000;
   padding: 1rem;
+  animation: rm-fade 0.15s ease;
 }
+@keyframes rm-fade { from { opacity: 0; } to { opacity: 1; } }
 
 .rm {
   background: var(--bg-main);
-  border-radius: var(--radius-lg);
+  border-radius: 16px;
   width: 100%;
-  max-width: 480px;
+  max-width: 460px;
   max-height: 90vh;
   box-shadow: var(--shadow-lg);
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  border: 1px solid var(--border-light);
+  animation: rm-pop 0.18s cubic-bezier(0.2, 0.9, 0.3, 1.2);
 }
+@keyframes rm-pop { from { transform: translateY(10px) scale(0.98); opacity: 0; } to { transform: none; opacity: 1; } }
 
 .rm__header {
   display: flex;
@@ -275,7 +281,7 @@ async function handleReassign() {
 }
 
 .rm__title {
-  font-size: 0.95rem;
+  font-size: 1.1rem;
   font-weight: 700;
   color: var(--text-primary);
 }
@@ -420,16 +426,19 @@ async function handleReassign() {
 }
 
 .rm__btn {
-  padding: 0.5rem 1rem;
-  border-radius: var(--radius-md);
-  font-size: 0.82rem;
+  flex: 1;
+  height: 40px;
+  padding: 0 1rem;
+  border-radius: 10px;
+  font-size: 0.85rem;
   font-weight: 600;
   cursor: pointer;
   border: none;
   display: flex;
   align-items: center;
-  gap: 0.3rem;
-  transition: all 0.12s;
+  justify-content: center;
+  gap: 0.4rem;
+  transition: all 0.15s;
 }
 
 .rm__btn--cancel {
