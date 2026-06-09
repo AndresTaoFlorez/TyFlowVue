@@ -14,27 +14,21 @@ const props = defineProps({
 
 const emit = defineEmits(['close', 'toggle', 'delete', 'update', 'back', 'disinherit', 'reinherit'])
 
-const isFuture = computed(() => {
-  if (!props.window?.startsAt) return false
-  return new Date(props.window.startsAt) > new Date()
-})
+const idCopied = ref(false)
+const inheritIdCopied = ref(false)
 
-const isInShift = computed(() => {
-  if (!props.window?.startsAt || !props.window?.endsAt) return false
-  const now = new Date()
-  return new Date(props.window.startsAt) <= now && now <= new Date(props.window.endsAt) && props.window.isActive
-})
+async function copyId(text, flagRef) {
+  try {
+    await navigator.clipboard.writeText(text)
+    flagRef.value = true
+    setTimeout(() => { flagRef.value = false }, 1500)
+  } catch { /* fallback: ignore */ }
+}
 
-const isEnded = computed(() => {
-  if (!props.window?.endsAt) return false
-  return new Date(props.window.endsAt) < new Date()
-})
-
-// Sealed = starts_at <= now (per API_CONTRACT Section 16)
-const isSealed = computed(() => {
-  if (!props.window?.startsAt) return false
-  return new Date(props.window.startsAt) <= new Date()
-})
+const isFuture = computed(() => props.window?.isFuture ?? false)
+const isInShift = computed(() => props.window?.isInShift ?? false)
+const isEnded = computed(() => props.window?.isEnded ?? false)
+const isSealed = computed(() => props.window?.isSealed ?? false)
 
 const hasInheritance = computed(() => !!(props.window.inheritedFromWindowId || props.window.inheritsOnReopen))
 const canToggleInheritance = computed(() => isFuture.value)
@@ -292,9 +286,22 @@ const statusClass = computed(() => {
             <i class='bx bx-x'></i>
           </button>
         </div>
-        <button v-else-if="canToggleInheritance" class="wm__badge wm__badge--toggle" @click="$emit('reinherit', window)" :disabled="loading">
+        <div v-if="window.inheritedFromWindowId" class="wm__inherit-target" @click="copyId(window.inheritedFromWindowId, inheritIdCopied)" title="Copiar ID de ventana heredada">
+          <i class='bx bx-subdirectory-right'></i>
+          <span class="wm__inherit-target-label">Hereda de:</span>
+          <code class="wm__id-code">{{ window.inheritedFromWindowId }}</code>
+          <i class='bx' :class="inheritIdCopied ? 'bx-check' : 'bx-copy'"></i>
+        </div>
+        <button v-else-if="!hasInheritance && canToggleInheritance" class="wm__badge wm__badge--toggle" @click="$emit('reinherit', window)" :disabled="loading">
           <i class='bx bx-link'></i> Activar herencia
         </button>
+
+        <!-- Window ID -->
+        <div class="wm__id-row" @click="copyId(window.id, idCopied)" title="Copiar ID">
+          <i class='bx bx-hash'></i>
+          <code class="wm__id-code">{{ window.id }}</code>
+          <i class='bx' :class="idCopied ? 'bx-check' : 'bx-copy'"></i>
+        </div>
 
       </div>
 
@@ -676,6 +683,78 @@ const statusClass = computed(() => {
 .wm__badge-action:disabled {
   opacity: 0.4;
   cursor: not-allowed;
+}
+
+/* ===== ID row ===== */
+.wm__id-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  padding: 4px 0;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  transition: color 0.15s;
+}
+
+.wm__id-row:hover { color: var(--text-primary); }
+
+.wm__id-row > i:first-child {
+  font-size: 14px;
+  width: 18px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.wm__id-row > i:last-child {
+  font-size: 13px;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.wm__id-code {
+  font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+  font-size: 10.5px;
+  background: var(--bg-card);
+  padding: 2px 6px;
+  border-radius: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+/* ===== Inherit target row ===== */
+.wm__inherit-target {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: #0891b2;
+  padding: 4px 0;
+  cursor: pointer;
+  transition: color 0.15s;
+}
+
+.wm__inherit-target:hover { color: #0e7490; }
+
+.wm__inherit-target > i:first-child {
+  font-size: 14px;
+  width: 18px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.wm__inherit-target > i:last-child {
+  font-size: 12px;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.wm__inherit-target-label {
+  font-weight: 600;
+  flex-shrink: 0;
 }
 
 /* ===== Footer ===== */

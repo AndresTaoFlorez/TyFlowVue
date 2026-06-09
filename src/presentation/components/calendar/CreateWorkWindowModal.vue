@@ -174,6 +174,8 @@ const totalWindows = computed(() => {
 const isPastDate = (iso) => iso < todayISO()
 
 const endTimeError = computed(() => {
+  // In range mode the end time applies to endDate, not the start date
+  if (!isMultiDay.value && endDate.value && endDate.value > todayISO()) return null
   if (!selectedDates.value.includes(todayISO())) return null
   if (!endTime.value) return null
   const [endH, endM] = endTime.value.split(':').map(Number)
@@ -329,8 +331,9 @@ const handleSubmit = () => {
                 <input v-model="endTime" type="time" class="time-input" :disabled="creating">
                 <span v-if="durationLabel" class="time-badge">{{ durationLabel }}</span>
               </div>
-              <span v-if="timeOrderError" class="row__error">{{ timeOrderError }}</span>
-              <span v-else-if="endTimeError" class="row__error">{{ endTimeError }}</span>
+            </div>
+            <div v-if="timeOrderError || endTimeError" class="row__error-row">
+              <span class="row__error">{{ timeOrderError || endTimeError }}</span>
             </div>
 
             <!-- Single/range: Google Calendar style (date+time start, date+time end) -->
@@ -368,8 +371,9 @@ const handleSubmit = () => {
                     <span v-if="durationLabel" class="time-badge">{{ durationLabel }}</span>
                   </div>
                 </div>
-                <span v-if="timeOrderError" class="row__error">{{ timeOrderError }}</span>
-                <span v-else-if="endTimeError" class="row__error">{{ endTimeError }}</span>
+              </div>
+              <div v-if="timeOrderError || endTimeError" class="row__error-row">
+                <span class="row__error">{{ timeOrderError || endTimeError }}</span>
               </div>
             </template>
 
@@ -653,10 +657,12 @@ const handleSubmit = () => {
   gap: 0.4rem;
 }
 
+.row__error-row {
+  padding: 0 1.4rem 0 3.2rem;
+}
 .row__error {
   font-size: 0.7rem;
   color: #ef4444;
-  margin-top: 0.2rem;
 }
 
 /* Chips */

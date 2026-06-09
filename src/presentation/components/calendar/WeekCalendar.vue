@@ -94,23 +94,30 @@ async function _commitPan(dx) {
   const els = _getPanEls()
   if (!els.length) { panBusy = false; return }
 
-  // Move off-screen instantly (same direction as new content will enter from)
-  // This hides old content before navigation to avoid any gap
-  const enterX = exitDir < 0 ? (W + 40) : -(W + 40)
+  // Phase 1: Slide old content off-screen (visible exit — no blank frame)
+  const exitX = exitDir < 0 ? -(W + 40) : (W + 40)
   for (const el of els) {
-    el.style.transition = 'none'
-    el.style.transform = `translateX(${enterX}px)`
+    el.style.transition = 'transform 0.15s ease-in'
+    el.style.transform = `translateX(${exitX}px)`
   }
+  await _sleep(160)
 
-  // Navigate — content swaps in DOM while off-screen
+  // Phase 2: Navigate — content swaps in DOM while fully off-screen
   panInitiatedNav = true
   if (showSingleDay.value) emit(exitDir < 0 ? 'next-day' : 'prev-day')
   else if (showCompactWeek.value) emit(exitDir < 0 ? 'next-week' : 'prev-week')
   else if (props.viewMode === 'month') emit(exitDir < 0 ? 'next-month' : 'prev-month')
   await nextTick()
 
-  // Slide new content in
+  // Phase 3: Position new content on opposite side (invisible — still off-screen)
+  const enterX = exitDir < 0 ? (W + 40) : -(W + 40)
+  for (const el of els) {
+    el.style.transition = 'none'
+    el.style.transform = `translateX(${enterX}px)`
+  }
   els.forEach(el => void el.offsetWidth) // force reflow
+
+  // Phase 4: Slide new content in
   for (const el of els) {
     el.style.transition = 'transform 0.25s ease-out'
     el.style.transform = 'translateX(0)'
@@ -328,6 +335,14 @@ const onCellMousedown = (dayIdx, slot, e) => {
     dragEndSlot.value = slot
     return
   }
+  // Block creation drag on past cells (default tool only)
+  const cellDate = props.weekDates[dayIdx]
+  if (cellDate && cellDate < todayStr.value) return
+  if (cellDate === todayStr.value) {
+    const slotEndMins = Math.floor(slot / 2) * 60 + ((slot % 2) + 1) * 30
+    const nowMins = now.value.getHours() * 60 + now.value.getMinutes()
+    if (slotEndMins <= nowMins) return
+  }
   dragging.value = true
   dragStartDay.value = dayIdx
   dragStartSlot.value = slot
@@ -401,6 +416,15 @@ let mobileTapTimer = null
 
 const onCellTap = (dayIdx, slot) => {
   if (!props.selectable || !props.isMobile) return
+
+  // Block taps on past cells
+  const cellDate = props.weekDates[dayIdx]
+  if (cellDate && cellDate < todayStr.value) return
+  if (cellDate === todayStr.value) {
+    const slotEndMins = Math.floor(slot / 2) * 60 + ((slot % 2) + 1) * 30
+    const nowMins = now.value.getHours() * 60 + now.value.getMinutes()
+    if (slotEndMins <= nowMins) return
+  }
 
   // If same slot tapped again → emit range-selected to open creation modal
   if (mobileTapSlot.value && mobileTapSlot.value.dayIdx === dayIdx && mobileTapSlot.value.slot === slot) {
@@ -565,7 +589,9 @@ const onBlockDragStart = (w, dayIdx, e) => {
   e.stopPropagation()
   blockDragging.value = true
   blockDragMoved = false
-  batchDragging.value = false
+  // If this window is part of a batch selection, drag all selected windows
+  const wId = (w._originalWindow || w).id
+  batchDragging.value = props.selectedWindowIds.has(wId) && props.selectedWindowIds.size > 1
   draggedWindow.value = w
   draggedGroup.value = null
   draggedOriginDay.value = dayIdx
@@ -590,6 +616,10 @@ const onGroupDragStart = (group, dayIdx, e) => {
   draggedOriginDay.value = dayIdx
   draggedTargetDay.value = dayIdx
   draggedTargetSlot.value = Math.round(group.startHour * 2)
+
+  // If any window from this group is in the selection, treat as batch drag
+  const hasSelected = group.windows.some(w => props.selectedWindowIds.has(w.id))
+  batchDragging.value = hasSelected && props.selectedWindowIds.size > 0
 
   const clientY = e.touches ? e.touches[0]?.clientY : e.clientY
   const elements = document.elementsFromPoint(e.clientX ?? e.touches?.[0]?.clientX ?? 0, clientY)
@@ -698,6 +728,8 @@ const onGroupTouchstart = (group, dayIdx, e) => {
       draggedOriginDay.value = pd.dayIdx
       draggedTargetDay.value = pd.dayIdx
       draggedTargetSlot.value = Math.round(pd.group.startHour * 2)
+      const hasSelected = pd.group.windows.some(w => props.selectedWindowIds.has(w.id))
+      batchDragging.value = hasSelected && props.selectedWindowIds.size > 0
       const els = document.elementsFromPoint(pd.startX, pd.startY)
       const cell = els.find(el => el.dataset.slot !== undefined)
       dragGrabOffset = cell ? parseInt(cell.dataset.slot) - Math.round(pd.group.startHour * 2) : 0
@@ -1225,8 +1257,9 @@ const windowsByDay = computed(() => {
       const last = Math.min(endIdx === -1 ? numDays - 1 : endIdx, numDays - 1)
       if (startIdx === -1 && endIdx === -1) continue
       for (let d = first; d <= last; d++) {
-        const isFirst = d === startIdx
-        const isLast = d === endIdx
+        // Expose handles on the edge-visible proxy when the real boundary is off-screen
+        const isFirst = d === startIdx || (startIdx === -1 && d === first)
+        const isLast = d === endIdx || (endIdx === -1 && d === last)
         byDay[d].push({
           ...w._toRaw(),
           id: w.id,
@@ -1260,6 +1293,7 @@ const groupedByDay = useWindowGroups(windowsByDay)
 // Multi-day position for resize handle visibility
 const _multiDayPos = (w) => {
   if (!w._multiDayProxy) return null
+  if (w._isFirstDay && w._isLastDay) return null // both handles needed
   if (w._isFirstDay) return 'first'
   if (w._isLastDay) return 'last'
   return 'middle'
@@ -1844,6 +1878,7 @@ watch(periodKey, (newKey, oldKey) => {
                 :inherited="!!(item.window.inheritedFromWindowId || item.window.inheritsOnReopen)"
                 @click="(_, ev) => onBlockClick(item.window, ev)"
                 @mousedown.stop="onBlockDragStart(item.window, dayIdx, $event)"
+                @resize-start="onResizeStart(item.window, dayIdx, $event)"
                 @touchstart.stop="onBlockTouchstart(item.window, dayIdx, $event)"
                 @touchend="onLongPressEnd()"
                 @touchmove="onLongPressMove()"

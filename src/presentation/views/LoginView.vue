@@ -168,7 +168,6 @@ const handleSubmit = async () => {
       </div>
 
       <div v-if="mostrarCarga" ref="authLoading" class="auth-loading">
-        <i class='bx bx-loader-alt bx-spin auth-loading__spinner'></i>
       </div>
 
     </div>

@@ -1,6 +1,7 @@
 <script setup>
 import ContextMenu from '@/presentation/components/shared/ContextMenu.vue'
-import { ref } from 'vue'
+import SpecialistGroupCard from '@/presentation/components/calendar/SpecialistGroupCard.vue'
+import { ref, computed } from 'vue'
 
 const props = defineProps({
   group: { type: Object, default: null },
@@ -13,7 +14,22 @@ const props = defineProps({
 
 const emit = defineEmits(['close', 'select', 'toggle', 'delete', 'delete-group', 'copy', 'cut', 'disinherit', 'reinherit'])
 
+// ---- View state: list (specialist cards) vs detail (one specialist's windows) ----
+const viewMode = ref('list')          // 'list' | 'detail'
+const detailSpecialistId = ref(null)
+
+function openDetail(specialistId) {
+  detailSpecialistId.value = specialistId
+  viewMode.value = 'detail'
+}
+function backToList() {
+  viewMode.value = 'list'
+  detailSpecialistId.value = null
+}
+
+// ---- Helpers (unchanged) ----
 const specName = (w) => props.specialists.find(s => s.specialistId === w.specialistId)?.fullName || w.specialistId
+const findSpec = (id) => props.specialists.find(s => s.specialistId === id) || { fullName: id, specialistId: id }
 const findApp = (w) => props.applications.find(a => a.id === w.applicationId)
 const appName = (w) => findApp(w)?.name || w.applicationId
 const appColor = (w) => { const a = findApp(w); return a?.color || a?.theme?.color || '#2AC78F' }
@@ -33,7 +49,42 @@ const inheritLabel = (w) => {
 const statusLabel = (w) => w.isActive ? 'Activa' : 'Inactiva'
 const statusClass = (w) => w.isActive ? 'item--active' : 'item--inactive'
 
-// Context menu per item
+// ---- Group windows by specialist ----
+const specGroups = computed(() => {
+  if (!props.group) return []
+  const map = new Map()
+  for (const w of props.group.windows) {
+    if (!map.has(w.specialistId)) map.set(w.specialistId, [])
+    map.get(w.specialistId).push(w)
+  }
+  return [...map.entries()].map(([sid, ws]) => ({
+    specialistId: sid,
+    specialist: findSpec(sid),
+    windows: ws,
+  }))
+})
+
+// Detail view: the specialist group being drilled into
+const detailGroup = computed(() =>
+  specGroups.value.find(g => g.specialistId === detailSpecialistId.value) || null
+)
+
+const initialsOf = (name) => name.split(' ').slice(0, 2).map(p => p[0]).join('').toUpperCase()
+
+// ---- Specialist-level actions ----
+function handleToggleAll(sg) {
+  for (const w of sg.windows) {
+    if (w.isActive && w.canToggle) emit('toggle', w)
+  }
+}
+
+function handleDeleteAll(sg) {
+  for (const w of sg.windows) {
+    if (w.canEdit) emit('delete', w)
+  }
+}
+
+// ---- Context menu per item (unchanged) ----
 const ctx = ref({ visible: false, x: 0, y: 0, items: [], target: null })
 
 function onItemContext(w, e) {
@@ -42,7 +93,6 @@ function onItemContext(w, e) {
   const isFuture = w.startsAt && new Date(w.startsAt) > now
   const isEnded = w.endsAt && new Date(w.endsAt) < now
   const hasInheritance = !!(w.inheritedFromWindowId || w.inheritsOnReopen)
-  // Inherit/disinherit: only future windows
   const inheritItem = isFuture
     ? (hasInheritance
       ? { label: 'Desactivar herencia', icon: 'bx-unlink', action: 'disinherit' }
@@ -50,12 +100,10 @@ function onItemContext(w, e) {
     : null
   const items = [
     { label: 'Ver detalle', icon: 'bx-expand-alt', action: 'select' },
-    // Toggle: allowed on future and in-progress, NOT ended
     ...(!isEnded ? [{ label: w.isActive ? 'Inhabilitar' : 'Habilitar', icon: w.isActive ? 'bx-block' : 'bx-check-circle', action: 'toggle' }] : []),
     ...(inheritItem ? [inheritItem] : []),
     { label: 'Copiar ventana', icon: 'bx-copy', action: 'copy' },
     ...(isFuture ? [{ label: 'Cortar ventana', icon: 'bx-cut', action: 'cut' }] : []),
-    // Delete: only future (sealed windows rejected by DB)
     ...(isFuture ? [{ label: 'Eliminar', icon: 'bx-trash', action: 'delete', danger: true }] : []),
   ]
   ctx.value = { visible: true, x: e.clientX, y: e.clientY, items, target: w }
@@ -79,89 +127,159 @@ function onCtxAction(action) {
 <template>
   <div v-if="group" class="panel-overlay" @click.self="$emit('close')" @click="ctx.visible = false">
     <div class="panel">
-      <div class="panel__header">
-        <h3>{{ group.windows.length }} ventanas</h3>
-        <div class="panel__header-actions">
-          <button
-            class="panel__delete"
-            :disabled="loading"
-            @click="$emit('delete-group', group)"
-            title="Eliminar grupo"
-          >
-            <i class='bx bx-trash'></i>
-          </button>
-          <button @click="$emit('close')" class="panel__close"><i class='bx bx-x'></i></button>
-        </div>
-      </div>
 
-      <div class="panel__body">
-        <div
-          v-for="w in group.windows"
-          :key="w.id"
-          class="item"
-          :class="[statusClass(w), { 'item--cut': cutWindowIds.has(w.id) }]"
-          :style="{ '--item-color': appColor(w) }"
-          @contextmenu="onItemContext(w, $event)"
-        >
-          <div class="item__color-dot" :style="{ background: appColor(w) }"></div>
-          <div class="item__info" @click="$emit('select', w)">
-            <span class="item__name">
-              <i v-if="w.inheritedFromWindowId || w.inheritsOnReopen" class='bx bx-link item__inherit-icon'></i>
-              {{ specName(w) }}
-            </span>
-            <span class="item__app">{{ appName(w) }}</span>
-            <span class="item__time">
-              {{ w.timeRange }}
-              <span class="item__status" :class="w.isActive ? 'item__status--active' : 'item__status--inactive'">
-                {{ statusLabel(w) }}
-              </span>
-            </span>
-            <span v-if="inheritLabel(w)" class="item__inherit-label" :title="inheritLabel(w)">
-              {{ inheritLabel(w) }}
-            </span>
-          </div>
-          <div class="item__counts">
-            <span class="item__count item__count--open" title="Apertura">
-              <i class="bx bx-log-in-circle"></i> {{ w.openingCount ?? 0 }}
-            </span>
-            <span class="item__count item__count--current" title="Actual">
-              <i class="bx bx-radio-circle-marked"></i> {{ w.currentCount ?? 0 }}
-            </span>
-            <span v-if="w.closingCount != null" class="item__count item__count--close" title="Cierre">
-              <i class="bx bx-log-out-circle"></i> {{ w.closingCount }}
-            </span>
-          </div>
-
-          <div class="item__actions">
+      <!-- ============ LIST MODE: one card per specialist ============ -->
+      <template v-if="viewMode === 'list'">
+        <div class="panel__header">
+          <h3>
+            {{ group.windows.length }} ventanas
+            <small>· {{ specGroups.length }} {{ specGroups.length === 1 ? 'especialista' : 'especialistas' }}</small>
+          </h3>
+          <div class="panel__header-actions">
             <button
-              v-if="w.canToggle"
-              class="item__btn"
-              :class="w.isActive ? 'item__btn--close' : 'item__btn--open'"
+              class="panel__delete"
               :disabled="loading"
-              @click.stop="$emit('toggle', w)"
-              :title="w.isActive ? 'Inhabilitar' : 'Habilitar'"
-            >
-              <i class='bx' :class="w.isActive ? 'bx-block' : 'bx-check-circle'"></i>
-            </button>
-            <button
-              v-if="w.canEdit"
-              class="item__btn item__btn--delete"
-              :disabled="loading"
-              @click.stop="$emit('delete', w)"
-              title="Eliminar"
+              @click="$emit('delete-group', group)"
+              title="Eliminar grupo"
             >
               <i class='bx bx-trash'></i>
             </button>
-            <button
-              class="item__btn"
-              @click.stop="onItemContext(w, $event)"
-              title="Más opciones"
-            >
-              <i class='bx bx-dots-vertical-rounded'></i>
-            </button>
+            <button @click="$emit('close')" class="panel__close"><i class='bx bx-x'></i></button>
           </div>
         </div>
-      </div>
+
+        <div class="panel__body">
+          <SpecialistGroupCard
+            v-for="sg in specGroups"
+            :key="sg.specialistId"
+            :specialist="sg.specialist"
+            :windows="sg.windows"
+            :applications="applications"
+            :all-windows="allWindows"
+            :loading="loading"
+            :cut-window-ids="cutWindowIds"
+            @show-all="openDetail(sg.specialistId)"
+            @select="(w) => $emit('select', w)"
+            @toggle-all="handleToggleAll(sg)"
+            @delete-all="handleDeleteAll(sg)"
+          />
+        </div>
+      </template>
+
+      <!-- ============ DETAIL MODE: drill-down for one specialist ============ -->
+      <template v-else-if="viewMode === 'detail' && detailGroup">
+        <div class="panel__header">
+          <button class="panel__back" title="Volver" @click="backToList"><i class="bx bx-arrow-back"></i></button>
+          <h3>
+            {{ detailGroup.windows.length }} ventanas
+            <small>· {{ detailGroup.specialist.fullName }}</small>
+          </h3>
+          <div class="panel__header-actions">
+            <button
+              class="panel__delete"
+              :disabled="loading"
+              @click="handleDeleteAll(detailGroup)"
+              title="Eliminar todas"
+            >
+              <i class='bx bx-trash'></i>
+            </button>
+            <button @click="backToList" class="panel__close"><i class='bx bx-x'></i></button>
+          </div>
+        </div>
+
+        <!-- Specialist summary header -->
+        <div class="detail-head">
+          <div class="detail-head__avatar" :style="{ background: appColor(detailGroup.windows[0]) }">
+            {{ initialsOf(detailGroup.specialist.fullName) }}
+          </div>
+          <div class="detail-head__info">
+            <div class="detail-head__name">{{ detailGroup.specialist.fullName }}</div>
+            <div class="detail-head__meta">
+              {{ [...new Set(detailGroup.windows.map(w => w.applicationId))].length }} aplicativos
+              · {{ detailGroup.windows.filter(w => w.isActive).length }}/{{ detailGroup.windows.length }} activas
+            </div>
+          </div>
+          <div class="detail-head__spacer"></div>
+          <div class="detail-head__counters">
+            <span class="detail-head__ctr detail-head__ctr--open">
+              <i class="bx bx-log-in-circle"></i>{{ detailGroup.windows.reduce((n, w) => n + (w.openingCount ?? 0), 0) }}
+            </span>
+            <span class="detail-head__ctr detail-head__ctr--current">
+              <i class="bx bx-radio-circle-marked"></i>{{ detailGroup.windows.reduce((n, w) => n + (w.currentCount ?? 0), 0) }}
+            </span>
+          </div>
+        </div>
+
+        <!-- Window rows (same markup as original flat view) -->
+        <div class="panel__body">
+          <div
+            v-for="w in detailGroup.windows"
+            :key="w.id"
+            class="item"
+            :class="[statusClass(w), { 'item--cut': cutWindowIds.has(w.id) }]"
+            :style="{ '--item-color': appColor(w) }"
+            @contextmenu="onItemContext(w, $event)"
+          >
+            <div class="item__color-dot" :style="{ background: appColor(w) }"></div>
+            <div class="item__info" @click="$emit('select', w)">
+              <span class="item__name">
+                <i v-if="w.inheritedFromWindowId || w.inheritsOnReopen" class='bx bx-link item__inherit-icon'></i>
+                {{ appName(w) }}
+              </span>
+              <span class="item__time">
+                {{ w.timeRange }}
+                <span class="item__status" :class="w.isActive ? 'item__status--active' : 'item__status--inactive'">
+                  {{ statusLabel(w) }}
+                </span>
+              </span>
+              <span v-if="inheritLabel(w)" class="item__inherit-label" :title="inheritLabel(w)">
+                {{ inheritLabel(w) }}
+              </span>
+            </div>
+            <div class="item__counts">
+              <span class="item__count item__count--open" title="Apertura">
+                <i class="bx bx-log-in-circle"></i> {{ w.openingCount ?? 0 }}
+              </span>
+              <span class="item__count item__count--current" title="Actual">
+                <i class="bx bx-radio-circle-marked"></i> {{ w.currentCount ?? 0 }}
+              </span>
+              <span v-if="w.closingCount != null" class="item__count item__count--close" title="Cierre">
+                <i class="bx bx-log-out-circle"></i> {{ w.closingCount }}
+              </span>
+            </div>
+
+            <div class="item__actions">
+              <button
+                v-if="w.canToggle"
+                class="item__btn"
+                :class="w.isActive ? 'item__btn--close' : 'item__btn--open'"
+                :disabled="loading"
+                @click.stop="$emit('toggle', w)"
+                :title="w.isActive ? 'Inhabilitar' : 'Habilitar'"
+              >
+                <i class='bx' :class="w.isActive ? 'bx-block' : 'bx-check-circle'"></i>
+              </button>
+              <button
+                v-if="w.canEdit"
+                class="item__btn item__btn--delete"
+                :disabled="loading"
+                @click.stop="$emit('delete', w)"
+                title="Eliminar"
+              >
+                <i class='bx bx-trash'></i>
+              </button>
+              <button
+                class="item__btn"
+                @click.stop="onItemContext(w, $event)"
+                title="Más opciones"
+              >
+                <i class='bx bx-dots-vertical-rounded'></i>
+              </button>
+            </div>
+          </div>
+        </div>
+      </template>
+
     </div>
 
     <ContextMenu
@@ -201,11 +319,11 @@ function onCtxAction(action) {
 .panel {
   background: var(--bg-main, white);
   width: 100%;
-  max-width: 420px;
+  max-width: 460px;
   border-radius: var(--radius-xl, 16px);
   box-shadow: 0 12px 32px rgba(20, 30, 55, 0.16);
   overflow: hidden;
-  max-height: 80vh;
+  max-height: 86vh;
   display: flex;
   flex-direction: column;
   animation: panel-pop 0.18s cubic-bezier(0.2, 0.9, 0.3, 1.2);
@@ -218,22 +336,55 @@ function onCtxAction(action) {
 
 .panel__header {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  padding: 1rem 1.25rem;
+  gap: 0.6rem;
+  padding: 0.9rem 1.1rem;
   border-bottom: 1px solid var(--border-light);
 }
 
 .panel__header h3 {
-  font-size: 0.95rem;
+  font-size: 0.98rem;
   font-weight: 700;
   color: var(--text-primary);
+  display: flex;
+  align-items: baseline;
+  gap: 0.45rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.panel__header h3 small {
+  font-size: 0.74rem;
+  font-weight: 500;
+  color: var(--text-secondary);
 }
 
 .panel__header-actions {
   display: flex;
   align-items: center;
   gap: 0.35rem;
+  flex-shrink: 0;
+}
+
+.panel__back {
+  width: 2rem;
+  height: 2rem;
+  flex-shrink: 0;
+  border: 1px solid var(--border-light);
+  background: var(--bg-main);
+  color: var(--text-secondary);
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.2rem;
+  cursor: pointer;
+  transition: all 0.12s;
+}
+
+.panel__back:hover {
+  background: var(--bg-card);
+  color: var(--text-primary);
 }
 
 .panel__delete {
@@ -271,11 +422,57 @@ function onCtxAction(action) {
 }
 
 .panel__body {
-  padding: 0.5rem;
+  padding: 0.6rem;
   overflow-y: auto;
   flex: 1;
+  scrollbar-width: thin;
 }
 
+.panel__body::-webkit-scrollbar { width: 8px; }
+.panel__body::-webkit-scrollbar-thumb { background: var(--border-light); border-radius: 4px; }
+
+/* ============================================================
+   Detail sub-view header
+   ============================================================ */
+.detail-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.7rem 1.1rem 0.5rem;
+  border-bottom: 1px solid var(--border-light);
+}
+
+.detail-head__avatar {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.66rem;
+  font-weight: 800;
+  color: #fff;
+  flex-shrink: 0;
+}
+
+.detail-head__info { min-width: 0; }
+.detail-head__name { font-size: 0.88rem; font-weight: 600; }
+.detail-head__meta { font-size: 0.68rem; color: var(--text-secondary); }
+.detail-head__spacer { flex: 1; }
+
+.detail-head__counters { display: flex; gap: 0.3rem; flex-shrink: 0; }
+.detail-head__ctr {
+  display: inline-flex; align-items: center; gap: 0.2rem;
+  font-size: 0.66rem; font-weight: 700; padding: 0.12rem 0.4rem;
+  border-radius: 5px; line-height: 1.4; white-space: nowrap;
+}
+.detail-head__ctr i { font-size: 0.82rem; }
+.detail-head__ctr--open { background: rgba(42, 199, 143, 0.14); color: var(--primary-600); }
+.detail-head__ctr--current { background: rgba(99, 102, 241, 0.14); color: #6366f1; }
+
+/* ============================================================
+   Window item rows (kept from original — detail sub-view)
+   ============================================================ */
 .item {
   display: flex;
   align-items: center;
@@ -291,7 +488,6 @@ function onCtxAction(action) {
 
 .item:hover { background: var(--bg-card); }
 
-/* Inactive window styling */
 .item--inactive {
   opacity: 0.5;
   border-left-color: var(--inactive-bar);
@@ -307,7 +503,6 @@ function onCtxAction(action) {
   opacity: 0.35;
 }
 
-/* Cut — dashed, tenue */
 .item--cut {
   opacity: 0.4;
   border-left-style: dashed;
@@ -357,12 +552,6 @@ function onCtxAction(action) {
   overflow: hidden;
   text-overflow: ellipsis;
   line-height: 1;
-}
-
-.item__app {
-  font-size: 0.72rem;
-  font-weight: 500;
-  color: var(--text-secondary);
 }
 
 .item__time {
@@ -463,13 +652,12 @@ function onCtxAction(action) {
 
   .item__counts { gap: 0.15rem; }
 
-  /* On small screens: hide text, keep only icon */
   .item__count {
     padding: 0.08rem 0.2rem;
-    font-size: 0;        /* hide number text */
+    font-size: 0;
   }
   .item__count i {
-    font-size: 0.8rem;   /* keep icon visible */
+    font-size: 0.8rem;
   }
 }
 </style>

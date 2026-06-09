@@ -33,10 +33,10 @@ const resolvedColor = () => props.appColor || '#2AC78F'
 
 const textColor = computed(() => {
   const c = resolvedColor()
-  const isDark = getLuminance(c) < 0.45
-  return isDark
-    ? 'color-mix(in oklch, var(--app-color) 70%, white)'
-    : 'color-mix(in oklch, var(--app-color) 70%, black)'
+  const lum = getLuminance(c)
+  if (lum < 0.15) return 'color-mix(in oklch, var(--app-color) 60%, var(--wb-text-anchor))'
+  if (lum < 0.45) return 'color-mix(in oklch, var(--app-color) 70%, var(--wb-text-anchor))'
+  return 'color-mix(in oklch, var(--app-color) 70%, black)'
 })
 
 const emit = defineEmits(['click', 'resize-start'])
@@ -164,11 +164,10 @@ const onHandleDown = (direction, e) => {
   transform: scale(0.99);
 }
 
-/* ── Open — uses app color ── */
+/* ── Open — uses app color tinted against a solid surface ── */
 .wb--open {
-  background: color-mix(in srgb, var(--app-color) 22%, transparent);
+  background: color-mix(in srgb, var(--app-color) 32%, var(--bg-card));
   border-left-color: var(--app-color);
-
 }
 
 .wb--open .wb__name {
@@ -244,7 +243,7 @@ const onHandleDown = (direction, e) => {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  background: color-mix(in srgb, var(--app-color) 15%, transparent);
+  background: color-mix(in srgb, var(--app-color) 25%, var(--bg-card));
   padding: 0.05rem 0.4rem 0.25rem;
   border-radius: 3px;
   width: fit-content;
@@ -342,17 +341,17 @@ const onHandleDown = (direction, e) => {
 /* ── Inactive — muted, hatched ── */
 .wb--inactive {
   background: repeating-linear-gradient(-45deg,
-      color-mix(in srgb, var(--app-color) 12%, transparent),
-      color-mix(in srgb, var(--app-color) 12%, transparent) 3px,
-      color-mix(in srgb, var(--app-color) 6%, transparent) 3px,
-      color-mix(in srgb, var(--app-color) 6%, transparent) 6px);
+      color-mix(in srgb, var(--app-color) 12%, var(--bg-card)),
+      color-mix(in srgb, var(--app-color) 12%, var(--bg-card)) 3px,
+      color-mix(in srgb, var(--app-color) 6%, var(--bg-card)) 3px,
+      color-mix(in srgb, var(--app-color) 6%, var(--bg-card)) 6px);
   border-left-color: color-mix(in srgb, var(--app-color) 40%, #5a6075);
-  opacity: 0.55;
+  opacity: 0.6;
 }
 
 .wb--inactive .wb__name {
-  color: #8890a4;
-  opacity: 0.7;
+  color: var(--text-secondary);
+  opacity: 0.8;
 }
 
 .wb--inactive .wb__avatar {
@@ -392,7 +391,7 @@ const onHandleDown = (direction, e) => {
 }
 
 .wb--compact.wb--open {
-  background: color-mix(in srgb, var(--app-color) 45%, transparent);
+  background: color-mix(in srgb, var(--app-color) 50%, var(--bg-card));
 }
 
 .wb--compact:hover {
@@ -401,8 +400,8 @@ const onHandleDown = (direction, e) => {
 }
 
 .wb--compact.wb--inactive {
-  background: color-mix(in srgb, var(--app-color) 20%, transparent);
+  background: color-mix(in srgb, var(--app-color) 15%, var(--bg-card));
   border-left-width: 0;
-  opacity: 0.45;
+  opacity: 0.5;
 }
 </style>

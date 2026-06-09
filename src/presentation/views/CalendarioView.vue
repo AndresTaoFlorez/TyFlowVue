@@ -186,10 +186,15 @@ function onGroupContext({ group, x, y }) {
 }
 
 function onCellContext({ date, time, x, y }) {
+  const isPast = date < todayISOLocal() || (date === todayISOLocal() && (() => {
+    const [h, m] = time.split(':').map(Number)
+    return h * 60 + m + 60 <= nextGridSlotMins()
+  })())
   const items = [
-    { label: 'Crear ventana', icon: 'bx-plus', action: 'create' },
-    ...(clipboard.value ? [{ label: 'Pegar ventana', icon: 'bx-paste', action: 'paste' }] : []),
+    ...(!isPast ? [{ label: 'Crear ventana', icon: 'bx-plus', action: 'create' }] : []),
+    ...(clipboard.value && !isPast ? [{ label: 'Pegar ventana', icon: 'bx-paste', action: 'paste' }] : []),
   ]
+  if (items.length === 0) return // nothing to show
   ctxMenu.value = { visible: true, x, y, items, target: { date, time }, targetType: 'cell' }
 }
 
@@ -346,6 +351,19 @@ const showToast = (msg, type = 'success') => {
 
 // ---- Seleccion en calendario ----
 const onRangeSelected = (range) => {
+  // Block creation if the entire range is in the past
+  const date = range.days?.[range.days.length - 1]?.date || range.date
+  if (date && date < todayISOLocal()) {
+    showToast('No se pueden crear ventanas en fechas pasadas.', 'error')
+    return
+  }
+  if (date === todayISOLocal()) {
+    const endMins = Math.floor(range.endHour) * 60 + Math.round((range.endHour % 1) * 60)
+    if (endMins <= nextGridSlotMins() - 30) {
+      showToast('No se pueden crear ventanas en horarios pasados.', 'error')
+      return
+    }
+  }
   prefillData.value = range
   mostrarCrear.value = true
 }
@@ -927,7 +945,7 @@ onUnmounted(() => {
       @close="toastVisible = false" />
 
     <ContextMenu :visible="ctxMenu.visible" :x="ctxMenu.x" :y="ctxMenu.y" :items="ctxMenu.items"
-      @select="handleCtxAction" @close="closeCtxMenu" />
+      :is-mobile="isMobile" @select="handleCtxAction" @close="closeCtxMenu" />
   </section>
 </template>
 

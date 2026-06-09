@@ -130,6 +130,9 @@ function shouldGroup(a, b) {
   // Exact match
   if (a.startHour === b.startHour && a.endHour === b.endHour) return true
 
+  // Same start or same end → always group
+  if (a.startHour === b.startHour || a.endHour === b.endHour) return true
+
   // Overlap > 80%
   const overlapStart = Math.max(a.startHour, b.startHour)
   const overlapEnd = Math.min(a.endHour, b.endHour)

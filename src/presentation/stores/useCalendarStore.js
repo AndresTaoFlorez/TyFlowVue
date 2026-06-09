@@ -179,7 +179,7 @@ export const useCalendarStore = defineStore('calendar', () => {
   // ---- Filter options (based on loaded windows) ----
   const specialistsConVentana = computed(() => {
     const userStore = useUserStore()
-    return userStore.users.filter(u => u.specialistId)
+    return userStore.users.filter(u => u.specialistId && u.isActive && u.specialistIsActive !== false)
   })
 
   const specOptions = computed(() => {
@@ -414,6 +414,16 @@ export const useCalendarStore = defineStore('calendar', () => {
     return windows.value.find(x => x.id === id)
   }
 
+  function _isPlaceholder(id) {
+    return typeof id === 'string' && id.startsWith('__new_')
+  }
+
+  function _daysBetween(dateStrA, dateStrB) {
+    const a = new Date(dateStrA + 'T12:00:00')
+    const b = new Date(dateStrB + 'T12:00:00')
+    return Math.round((b.getTime() - a.getTime()) / (24 * 60 * 60 * 1000))
+  }
+
   const _MESSAGE_MAP = [
     [/no previous window found.*specialist.*application/i, 'No existe una ventana anterior del mismo especialista y aplicación para heredar.'],
     [/no previous window found/i, 'No se encontró una ventana anterior para heredar.'],
@@ -505,20 +515,11 @@ export const useCalendarStore = defineStore('calendar', () => {
   }
 
   function _checkOverlap(specialistId, date, startTime, endTime, excludeIds = [], applicationId = null) {
+    const startsAt = WorkWindow.toTimestampTz(date, startTime)
+    const endsAt = WorkWindow.toTimestampTz(date, endTime)
+    if (!startsAt || !endsAt) return null
     const exclude = excludeIds instanceof Set ? excludeIds : new Set(excludeIds)
-    const newS = _timeToMinutes(startTime)
-    const newE = _timeToMinutes(endTime)
-    const conflict = windows.value.find(w => {
-      if (exclude.has(w.id)) return false
-      if (w.specialistId !== specialistId) return false
-      if (w.scheduledDate !== date) return false
-      if (!w.isActive) return false
-      if (applicationId && w.applicationId !== applicationId) return false
-      const wS = _timeToMinutes(w.startTime)
-      const wE = _timeToMinutes(w.endTime)
-      return newS < wE && newE > wS
-    })
-    return conflict || null
+    return _checkOverlapAbs(specialistId, startsAt, endsAt, exclude, applicationId)
   }
 
   function _isEnded(w) {
@@ -532,6 +533,55 @@ export const useCalendarStore = defineStore('calendar', () => {
   function _timeToMinutes(t) {
     const [h, m] = t.split(':').map(Number)
     return h * 60 + m
+  }
+
+  /**
+   * Apply a delta in milliseconds to a window's startsAt or endsAt (absolute-instant math).
+   * Returns { optimistic: WorkWindow } with the shifted timestamp, preserving each window's own date.
+   */
+  function _applyDeltaMs(orig, direction, deltaMs) {
+    const raw = orig._toRaw()
+    if (direction === 'top') {
+      const newStart = new Date(new Date(orig.startsAt).getTime() + deltaMs)
+      raw.starts_at = _dateToTimestampTz(newStart)
+    } else {
+      const newEnd = new Date(new Date(orig.endsAt).getTime() + deltaMs)
+      raw.ends_at = _dateToTimestampTz(newEnd)
+    }
+    return { optimistic: new WorkWindow(raw) }
+  }
+
+  /** Convert a Date object to a timestamptz string with local timezone offset */
+  function _dateToTimestampTz(d) {
+    const y = d.getFullYear()
+    const mo = String(d.getMonth() + 1).padStart(2, '0')
+    const dd = String(d.getDate()).padStart(2, '0')
+    const hh = String(d.getHours()).padStart(2, '0')
+    const mm = String(d.getMinutes()).padStart(2, '0')
+    const ss = String(d.getSeconds()).padStart(2, '0')
+    const offset = -d.getTimezoneOffset()
+    const sign = offset >= 0 ? '+' : '-'
+    const oh = String(Math.floor(Math.abs(offset) / 60)).padStart(2, '0')
+    const om = String(Math.abs(offset) % 60).padStart(2, '0')
+    return `${y}-${mo}-${dd}T${hh}:${mm}:${ss}${sign}${oh}:${om}`
+  }
+
+  /**
+   * Overlap check using absolute instants (startsAt/endsAt) instead of time-of-day.
+   * Correctly handles multi-day windows and windows on different dates.
+   */
+  function _checkOverlapAbs(specialistId, startsAt, endsAt, excludeIds = new Set(), applicationId = null) {
+    const newS = new Date(startsAt).getTime()
+    const newE = new Date(endsAt).getTime()
+    return windows.value.find(w => {
+      if (excludeIds.has(w.id)) return false
+      if (w.specialistId !== specialistId) return false
+      if (!w.isActive) return false
+      if (applicationId && w.applicationId !== applicationId) return false
+      const wS = new Date(w.startsAt).getTime()
+      const wE = new Date(w.endsAt).getTime()
+      return newS < wE && newE > wS
+    }) || null
   }
 
   const _toHM = (decimal) => {
@@ -596,6 +646,7 @@ export const useCalendarStore = defineStore('calendar', () => {
   }
 
   async function deleteWindow(id) {
+    if (_isPlaceholder(id)) throw { userMessage: 'La ventana aún se está creando, intenta de nuevo.' }
     const original = _findOriginal(id)
     if (original?.isSealed) {
       throw { userMessage: 'No se pueden eliminar ventanas selladas.' }
@@ -622,6 +673,7 @@ export const useCalendarStore = defineStore('calendar', () => {
   }
 
   async function toggleWindow(w) {
+    if (_isPlaceholder(w.id)) throw { userMessage: 'La ventana aún se está creando, intenta de nuevo.' }
     const snapshot = [...windows.value]
     try {
       const updated = await toggleWorkWindowUseCase(w)
@@ -637,6 +689,7 @@ export const useCalendarStore = defineStore('calendar', () => {
   }
 
   async function disinheritWindow(w) {
+    if (_isPlaceholder(w.id)) throw { userMessage: 'La ventana aún se está creando, intenta de nuevo.' }
     const results = await disinheritWorkWindowUseCase([w.id])
     const result = results[0]
     if (!result?.success) {
@@ -653,6 +706,7 @@ export const useCalendarStore = defineStore('calendar', () => {
    * The DB auto-resolves inherited_from_window_id.
    */
   async function reinheritWindow(w) {
+    if (_isPlaceholder(w.id)) throw { userMessage: 'La ventana aún se está creando, intenta de nuevo.' }
     const results = await inheritWorkWindowUseCase([w.id])
     const result = results[0]
     if (!result?.success) {
@@ -711,6 +765,9 @@ export const useCalendarStore = defineStore('calendar', () => {
   }
 
   async function deleteGroup(group) {
+    if (group.windows.some(gw => _isPlaceholder(gw.id))) {
+      throw { userMessage: 'Algunas ventanas aún se están creando, intenta de nuevo.' }
+    }
     const snapshot = [...windows.value]
     const originals = group.windows.map(w => _findOriginal(w.id)).filter(Boolean)
 
@@ -735,6 +792,8 @@ export const useCalendarStore = defineStore('calendar', () => {
   }
 
   async function batchDelete(ids) {
+    ids = ids.filter(id => !_isPlaceholder(id))
+    if (ids.length === 0) throw { userMessage: 'Las ventanas aún se están creando, intenta de nuevo.' }
     const snapshot = [...windows.value]
     const originals = ids.map(id => _findOriginal(id)).filter(Boolean)
 
@@ -760,10 +819,13 @@ export const useCalendarStore = defineStore('calendar', () => {
   }
 
   async function batchReschedule(ids, deltaDays, deltaHours) {
+    ids = ids.filter(id => !_isPlaceholder(id))
+    if (ids.length === 0) throw { userMessage: 'Las ventanas aún se están creando, intenta de nuevo.' }
     const snapshot = [...windows.value]
     const originals = new Map()
     const optimisticMap = new Map()
     const batchIds = new Set(ids)
+    const deltaMs = (deltaDays * 24 * 60 + deltaHours * 60) * 60 * 1000
 
     for (const id of ids) {
       const orig = _findOriginal(id)
@@ -773,24 +835,20 @@ export const useCalendarStore = defineStore('calendar', () => {
         throw { userMessage: 'No se puede mover una ventana en turno activo.' }
       }
       originals.set(id, orig)
-      const newDate = _addDays(orig.scheduledDate, deltaDays)
-      optimisticMap.set(id, _buildOptimistic(orig, {
-        startTime: _toHM(orig.startHour + deltaHours),
-        endTime: _toHM(orig.endHour + deltaHours),
-        targetDate: newDate,
-      }))
+      const raw = orig._toRaw()
+      raw.starts_at = _dateToTimestampTz(new Date(new Date(orig.startsAt).getTime() + deltaMs))
+      raw.ends_at = _dateToTimestampTz(new Date(new Date(orig.endsAt).getTime() + deltaMs))
+      optimisticMap.set(id, new WorkWindow(raw))
     }
 
     // Validar overlap e inheritance contra ventanas externas al batch
-    for (const orig of originals.values()) {
-      const newDate = _addDays(orig.scheduledDate, deltaDays)
-      const newStart = _toHM(orig.startHour + deltaHours)
-      const newEnd = _toHM(orig.endHour + deltaHours)
-      const conflict = _checkOverlap(orig.specialistId, newDate, newStart, newEnd, batchIds, orig.applicationId)
+    for (const [id, orig] of originals.entries()) {
+      const opt = optimisticMap.get(id)
+      const conflict = _checkOverlapAbs(orig.specialistId, opt.startsAt, opt.endsAt, batchIds, orig.applicationId)
       if (conflict) {
         throw { userMessage: 'El horario se superpone con otra ventana del mismo especialista y aplicación.' }
       }
-      const inheritErr = _checkInheritance(orig.id, newDate, newStart, newEnd)
+      const inheritErr = _checkInheritance(orig.id, opt.scheduledDate, opt.startTime, opt.endTime)
       if (inheritErr) throw { userMessage: inheritErr }
     }
 
@@ -798,19 +856,23 @@ export const useCalendarStore = defineStore('calendar', () => {
     _invalidateCache()
 
     try {
-      const items = [...originals.values()].map(w => ({
-        window: w,
-        data: {
-          startTime: _toHM(w.startHour + deltaHours),
-          endTime: _toHM(w.endHour + deltaHours),
-          targetDate: _addDays(w.scheduledDate, deltaDays),
-        },
-      }))
+      const items = [...originals.entries()].map(([id, orig]) => {
+        const opt = optimisticMap.get(id)
+        return {
+          window: orig,
+          data: {
+            startTime: opt.startTime,
+            endTime: opt.endTime,
+            targetDate: opt.scheduledDate,
+            endDate: opt.endDate,
+          },
+        }
+      })
       await batchUpdateWorkWindowsUseCase(items)
       _pushUndo(snapshot, async () => {
-        const undoItems = [...originals.values()].map(w => ({
-          window: { id: w.id, scheduledDate: _addDays(w.scheduledDate, deltaDays), startTime: w.startTime, endTime: w.endTime, endDate: w.endDate },
-          data: { startTime: w.startTime, endTime: w.endTime, targetDate: w.scheduledDate },
+        const undoItems = [...originals.values()].map(orig => ({
+          window: orig,
+          data: { startTime: orig.startTime, endTime: orig.endTime, targetDate: orig.scheduledDate, endDate: orig.endDate },
         }))
         await batchUpdateWorkWindowsUseCase(undoItems)
       })
@@ -822,11 +884,13 @@ export const useCalendarStore = defineStore('calendar', () => {
   }
 
   async function batchResize(ids, direction, deltaSlots) {
+    ids = ids.filter(id => !_isPlaceholder(id))
+    if (ids.length === 0) throw { userMessage: 'Las ventanas aún se están creando, intenta de nuevo.' }
     const snapshot = [...windows.value]
     const originals = new Map()
     const optimisticMap = new Map()
     const batchIds = new Set(ids)
-    const deltaHours = deltaSlots / 2
+    const deltaMs = deltaSlots * 30 * 60 * 1000 // each slot = 30 min
 
     for (const id of ids) {
       const orig = _findOriginal(id)
@@ -836,20 +900,18 @@ export const useCalendarStore = defineStore('calendar', () => {
         throw { userMessage: 'No se puede cambiar el inicio de una ventana en turno activo. Solo se permite ajustar el fin.' }
       }
       originals.set(id, orig)
-      const newStart = direction === 'top' ? _toHM(orig.startHour + deltaHours) : orig.startTime
-      const newEnd = direction === 'bottom' ? _toHM(orig.endHour + deltaHours) : orig.endTime
-      optimisticMap.set(id, _buildOptimistic(orig, { startTime: newStart, endTime: newEnd }))
+      const shifted = _applyDeltaMs(orig, direction, deltaMs)
+      optimisticMap.set(id, shifted.optimistic)
     }
 
     // Validate overlap & inheritance
-    for (const orig of originals.values()) {
-      const st = direction === 'top' ? _toHM(orig.startHour + deltaHours) : orig.startTime
-      const et = direction === 'bottom' ? _toHM(orig.endHour + deltaHours) : orig.endTime
-      const conflict = _checkOverlap(orig.specialistId, orig.scheduledDate, st, et, batchIds, orig.applicationId)
+    for (const [id, orig] of originals.entries()) {
+      const opt = optimisticMap.get(id)
+      const conflict = _checkOverlapAbs(orig.specialistId, opt.startsAt, opt.endsAt, batchIds, orig.applicationId)
       if (conflict) {
         throw { userMessage: 'El horario se superpone con otra ventana del mismo especialista y aplicación.' }
       }
-      const inheritErr = _checkInheritance(orig.id, orig.scheduledDate, st, et)
+      const inheritErr = _checkInheritance(id, opt.scheduledDate, opt.startTime, opt.endTime)
       if (inheritErr) throw { userMessage: inheritErr }
     }
 
@@ -857,18 +919,21 @@ export const useCalendarStore = defineStore('calendar', () => {
     _invalidateCache()
 
     try {
-      const items = [...originals.values()].map(orig => ({
-        window: orig,
-        data: {
-          ...(direction === 'top' ? { startTime: _toHM(orig.startHour + deltaHours) } : {}),
-          ...(direction === 'bottom' ? { endTime: _toHM(orig.endHour + deltaHours) } : {}),
-        },
-      }))
+      const items = [...originals.entries()].map(([id, orig]) => {
+        const opt = optimisticMap.get(id)
+        return {
+          window: orig,
+          data: {
+            ...(direction === 'top' ? { startTime: opt.startTime, targetDate: opt.scheduledDate } : {}),
+            ...(direction === 'bottom' ? { endTime: opt.endTime, endDate: opt.endDate } : {}),
+          },
+        }
+      })
       await batchUpdateWorkWindowsUseCase(items)
       _pushUndo(snapshot, async () => {
         const undoItems = [...originals.values()].map(orig => ({
           window: orig,
-          data: { startTime: orig.startTime, endTime: orig.endTime },
+          data: { startTime: orig.startTime, endTime: orig.endTime, targetDate: orig.scheduledDate, endDate: orig.endDate },
         }))
         await batchUpdateWorkWindowsUseCase(undoItems)
       })
@@ -880,8 +945,10 @@ export const useCalendarStore = defineStore('calendar', () => {
   }
 
   async function batchToggle(ids) {
+    ids = [...ids].filter(id => !_isPlaceholder(id))
+    if (ids.length === 0) throw { userMessage: 'Las ventanas aún se están creando, intenta de nuevo.' }
     const snapshot = [...windows.value]
-    const results = await WorkWindowRepository.toggleWindows([...ids])
+    const results = await WorkWindowRepository.toggleWindows(ids)
     for (const r of results) {
       const orig = _findOriginal(r.id)
       if (orig) _replaceWindow(r.id, orig.withToggled(r.is_active))
@@ -893,9 +960,53 @@ export const useCalendarStore = defineStore('calendar', () => {
     return results
   }
 
-  async function batchMerge(ids) {
+  async function batchInherit(ids) {
+    ids = ids.filter(id => !_isPlaceholder(id))
+    if (ids.length === 0) throw { userMessage: 'Las ventanas aún se están creando, intenta de nuevo.' }
     const snapshot = [...windows.value]
-    const result = await mergeWorkWindowsUseCase([...ids])
+    const results = await inheritWorkWindowUseCase(ids)
+    const failed = results.filter(r => !r.success)
+    if (failed.length === results.length) {
+      throw { userMessage: _translateMessage(failed[0]?.message) || 'No se pudo activar la herencia.' }
+    }
+    // Refresh affected windows from backend
+    const successIds = results.filter(r => r.success).map(r => r.id)
+    for (const id of successIds) {
+      const fresh = await WorkWindowRepository.fetchById(id)
+      _replaceWindow(id, fresh)
+    }
+    _pushUndo(snapshot, async () => {
+      await disinheritWorkWindowUseCase(successIds)
+    })
+    return { successCount: successIds.length, failedCount: failed.length }
+  }
+
+  async function batchDisinherit(ids) {
+    ids = ids.filter(id => !_isPlaceholder(id))
+    if (ids.length === 0) throw { userMessage: 'Las ventanas aún se están creando, intenta de nuevo.' }
+    const snapshot = [...windows.value]
+    const results = await disinheritWorkWindowUseCase(ids)
+    const failed = results.filter(r => !r.success)
+    if (failed.length === results.length) {
+      throw { userMessage: _translateMessage(failed[0]?.message) || 'No se pudo desactivar la herencia.' }
+    }
+    // Refresh affected windows from backend
+    const successIds = results.filter(r => r.success).map(r => r.id)
+    for (const id of successIds) {
+      const fresh = await WorkWindowRepository.fetchById(id)
+      _replaceWindow(id, fresh)
+    }
+    _pushUndo(snapshot, async () => {
+      await inheritWorkWindowUseCase(successIds)
+    })
+    return { successCount: successIds.length, failedCount: failed.length }
+  }
+
+  async function batchMerge(ids) {
+    const realIds = [...ids].filter(id => !_isPlaceholder(id))
+    if (realIds.length < 2) throw { userMessage: 'Las ventanas aún se están creando, intenta de nuevo.' }
+    const snapshot = [...windows.value]
+    const result = await mergeWorkWindowsUseCase(realIds)
 
     // Remove deleted windows (homogeneous merge)
     if (result.deletedIds.length) {
@@ -1054,6 +1165,7 @@ export const useCalendarStore = defineStore('calendar', () => {
   }
 
   async function updateWindow(w, payload) {
+    if (_isPlaceholder(w.id)) throw { userMessage: 'La ventana aún se está creando, intenta de nuevo.' }
     if (_isEnded(w)) throw { userMessage: 'No se puede modificar una ventana finalizada.' }
     const snapshot = [...windows.value]
     const updated = await updateWorkWindowUseCase(w, payload)
@@ -1074,6 +1186,7 @@ export const useCalendarStore = defineStore('calendar', () => {
   }
 
   async function resizeWindow({ window: w, startTime, endTime }) {
+    if (_isPlaceholder(w.id)) throw { userMessage: 'La ventana aún se está creando, intenta de nuevo.' }
     const original = _findOriginal(w.id)
     if (!original) return
     if (_isEnded(original)) throw { userMessage: 'No se puede modificar una ventana finalizada.' }
@@ -1107,6 +1220,9 @@ export const useCalendarStore = defineStore('calendar', () => {
   }
 
   async function resizeGroup({ group, startTime, endTime }) {
+    if (group.windows.some(gw => _isPlaceholder(gw.id))) {
+      throw { userMessage: 'Algunas ventanas aún se están creando, intenta de nuevo.' }
+    }
     const snapshot = [...windows.value]
     const originals = new Map()
     const optimisticMap = new Map()
@@ -1159,6 +1275,7 @@ export const useCalendarStore = defineStore('calendar', () => {
   }
 
   async function rescheduleWindow({ window: w, targetDate, startTime, endTime }) {
+    if (_isPlaceholder(w.id)) throw { userMessage: 'La ventana aún se está creando, intenta de nuevo.' }
     const original = _findOriginal(w.id)
     if (!original) return
     if (_isEnded(original)) throw { userMessage: 'No se puede mover una ventana finalizada.' }
@@ -1191,10 +1308,17 @@ export const useCalendarStore = defineStore('calendar', () => {
   }
 
   async function rescheduleGroup({ group, targetDate, deltaHours }) {
+    if (group.windows.some(gw => _isPlaceholder(gw.id))) {
+      throw { userMessage: 'Algunas ventanas aún se están creando, intenta de nuevo.' }
+    }
     const snapshot = [...windows.value]
     const originals = new Map()
     const optimisticMap = new Map()
     const groupIds = new Set(group.windows.map(gw => gw.id))
+    // Compute delta from group's first window to determine the day shift
+    const refOrig = _findOriginal(group.windows[0]?.id)
+    const deltaDays = refOrig ? _daysBetween(refOrig.scheduledDate, targetDate) : 0
+    const deltaMs = (deltaDays * 24 * 60 + deltaHours * 60) * 60 * 1000
 
     for (const gw of group.windows) {
       const orig = _findOriginal(gw.id)
@@ -1204,22 +1328,20 @@ export const useCalendarStore = defineStore('calendar', () => {
         throw { userMessage: 'No se puede mover una ventana en turno activo.' }
       }
       originals.set(gw.id, orig)
-      optimisticMap.set(gw.id, _buildOptimistic(orig, {
-        startTime: _toHM(orig.startHour + deltaHours),
-        endTime: _toHM(orig.endHour + deltaHours),
-        targetDate,
-      }))
+      const raw = orig._toRaw()
+      raw.starts_at = _dateToTimestampTz(new Date(new Date(orig.startsAt).getTime() + deltaMs))
+      raw.ends_at = _dateToTimestampTz(new Date(new Date(orig.endsAt).getTime() + deltaMs))
+      optimisticMap.set(gw.id, new WorkWindow(raw))
     }
 
     // Validar overlap e inheritance contra ventanas externas al grupo
-    for (const orig of originals.values()) {
-      const newStart = _toHM(orig.startHour + deltaHours)
-      const newEnd = _toHM(orig.endHour + deltaHours)
-      const conflict = _checkOverlap(orig.specialistId, targetDate, newStart, newEnd, groupIds, orig.applicationId)
+    for (const [id, orig] of originals.entries()) {
+      const opt = optimisticMap.get(id)
+      const conflict = _checkOverlapAbs(orig.specialistId, opt.startsAt, opt.endsAt, groupIds, orig.applicationId)
       if (conflict) {
         throw { userMessage: 'El horario se superpone con otra ventana del mismo especialista y aplicación.' }
       }
-      const inheritErr = _checkInheritance(orig.id, targetDate, newStart, newEnd)
+      const inheritErr = _checkInheritance(orig.id, opt.scheduledDate, opt.startTime, opt.endTime)
       if (inheritErr) throw { userMessage: inheritErr }
     }
 
@@ -1227,19 +1349,23 @@ export const useCalendarStore = defineStore('calendar', () => {
     _invalidateCache()
 
     try {
-      const items = [...originals.values()].map(w => ({
-        window: w,
-        data: {
-          startTime: _toHM(w.startHour + deltaHours),
-          endTime: _toHM(w.endHour + deltaHours),
-          targetDate,
-        },
-      }))
+      const items = [...originals.entries()].map(([id, orig]) => {
+        const opt = optimisticMap.get(id)
+        return {
+          window: orig,
+          data: {
+            startTime: opt.startTime,
+            endTime: opt.endTime,
+            targetDate: opt.scheduledDate,
+            endDate: opt.endDate,
+          },
+        }
+      })
       await batchUpdateWorkWindowsUseCase(items)
       _pushUndo(snapshot, async () => {
-        const undoItems = [...originals.values()].map(w => ({
-          window: { id: w.id, scheduledDate: targetDate, startTime: w.startTime, endTime: w.endTime, endDate: w.endDate },
-          data: { startTime: w.startTime, endTime: w.endTime, targetDate: w.scheduledDate },
+        const undoItems = [...originals.values()].map(orig => ({
+          window: orig,
+          data: { startTime: orig.startTime, endTime: orig.endTime, targetDate: orig.scheduledDate, endDate: orig.endDate },
         }))
         await batchUpdateWorkWindowsUseCase(undoItems)
       })
@@ -1405,6 +1531,8 @@ export const useCalendarStore = defineStore('calendar', () => {
     batchReschedule,
     batchResize,
     batchToggle,
+    batchInherit,
+    batchDisinherit,
     batchMerge,
     eraseRange,
     updateWindow,

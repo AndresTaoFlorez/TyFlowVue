@@ -17,6 +17,9 @@
   --text-secondary: #4B5563;
   --text-main: #1F2937;
 
+  /* Calendar block text anchor (light → darken text, dark → lighten text) */
+  --wb-text-anchor: black;
+
   /* Borders & Shadows */
   --border-light: #E5E7EB;
   --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.05);
@@ -174,6 +177,8 @@
   --text-primary: #F9FAFB;
   --text-secondary: #9CA3AF;
   --text-main: #F9FAFB;
+
+  --wb-text-anchor: white;
 
   /* Borders & Shadows */
   --border-light: #374151;

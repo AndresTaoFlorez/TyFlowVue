@@ -66,10 +66,10 @@ const subBars = () => {
     const barTop = ((w.startHour - gStart) / gDuration) * gH
     const barHeight = Math.max(8, ((w.endHour - w.startHour) / gDuration) * gH)
 
-    // Text color based on luminance
+    // Text color based on luminance — uses --wb-text-anchor token (black in light, white in dark)
     const isDark = getLuminance(color) < 0.45
     const textColor = isDark
-      ? 'color-mix(in oklch, var(--bar-color) 70%, white)'
+      ? 'color-mix(in oklch, var(--bar-color) 60%, var(--wb-text-anchor))'
       : 'color-mix(in oklch, var(--bar-color) 70%, black)'
 
     return {
@@ -219,7 +219,7 @@ const onHandleDown = (direction, e) => {
 .wgb__bar {
   position: absolute;
   border-radius: 3px;
-  background: color-mix(in srgb, var(--bar-color) 20%, transparent);
+  background: color-mix(in srgb, var(--bar-color) 28%, var(--bg-card, transparent));
   border-left: 3px solid var(--bar-color);
   display: flex;
   flex-direction: column;
@@ -234,7 +234,7 @@ const onHandleDown = (direction, e) => {
 }
 
 .wgb__bar--open {
-  background: color-mix(in srgb, var(--bar-color) 28%, transparent);
+  background: color-mix(in srgb, var(--bar-color) 38%, var(--bg-card, transparent));
 }
 
 /* Inactive bar — muted, hatched pattern */
