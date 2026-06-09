@@ -105,8 +105,12 @@ export const CaseRepository = {
     return Array.isArray(data) ? data : data.data ?? data.items ?? []
   },
 
-  async autopilotWdd() {
-    const { data } = await client.post('/cases/assign/wdd/autopilot')
+  async autopilotWdd(filters = {}) {
+    const body = {}
+    if (filters.applicationId)      body.application_id      = filters.applicationId
+    if (filters.supportLevelId)     body.support_level_id    = filters.supportLevelId
+    if (filters.supportCategoryId)  body.support_category_id = filters.supportCategoryId
+    const { data } = await client.post('/cases/assign/wdd/autopilot', body)
     return data // { job_id, queued }
   },
 }

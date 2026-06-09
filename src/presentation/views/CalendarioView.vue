@@ -13,10 +13,13 @@ import SectionLoader from '@/presentation/components/layout/SectionLoader.vue'
 import ToastNotification from '@/presentation/components/layout/ToastNotification.vue'
 import ContextMenu from '@/presentation/components/shared/ContextMenu.vue'
 import { BP_MOBILE } from '@/presentation/utils/breakpoints'
+import { useCalendarRealtime } from '@/presentation/composables/useCalendarRealtime'
 
 const authStore = useAuthStore()
 const userStore = useUserStore()
 const calStore = useCalendarStore()
+
+useCalendarRealtime()
 
 const {
   calView, weekDates, monthDates, currentMonth, weekLabel,

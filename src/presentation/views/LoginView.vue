@@ -30,23 +30,26 @@ onMounted(() => {
   const bannerEl = loginBanner.value.$el
   const mobile = esMobile()
 
+  // Card empieza invisible — dimensiones intactas (900px, 1fr 1fr)
   gsap.set(card, { opacity: 0 })
 
   if (!mobile) {
-    // Ambas cartas apiladas en el centro
+    // Ambas columnas empiezan superpuestas en el centro
     gsap.set(bannerEl, { x: '50%' })
-    gsap.set(form, { opacity: 0, x: '-50%' })
+    gsap.set(form, { x: '-50%', opacity: 0 })
   } else {
     gsap.set(form, { opacity: 0 })
   }
 
-  const tl = gsap.timeline()
-  tl.to(card, { opacity: 1, duration: 0.5, ease: 'power2.out' })
+  const tl = gsap.timeline({ delay: 0.15 })
+
+  // Paso 1: fade in del card
+  tl.to(card, { opacity: 1, duration: 0.4, ease: 'power2.out' })
 
   if (!mobile) {
-    // Separar: banner a la izquierda, form a la derecha
-    tl.to(bannerEl, { x: 0, duration: 0.7, ease: 'power3.out' }, '-=0.1')
-    tl.to(form, { opacity: 1, x: 0, duration: 0.7, ease: 'power3.out' }, '<')
+    // Paso 2: separar columnas desde el centro hacia sus posiciones naturales
+    tl.to(bannerEl, { x: 0, duration: 0.7, ease: 'power3.out' }, '+=0.05')
+    tl.to(form, { x: 0, opacity: 1, duration: 0.7, ease: 'power3.out' }, '<')
   } else {
     tl.to(form, { opacity: 1, duration: 0.5, ease: 'power2.out' }, '-=0.15')
   }
@@ -63,17 +66,22 @@ const handleSubmit = async () => {
     const mobile = esMobile()
     const bannerEl = loginBanner.value.$el
 
-    // Animar ambas cartas de vuelta al centro (re-apilar)
+    // Animar cierre: form se desliza detrás del banner
     const exitTl = gsap.timeline()
     if (!mobile) {
-      exitTl.to(bannerEl, { x: '50%', duration: 0.5, ease: 'power3.in' })
-      exitTl.to(authForm.value, { opacity: 0, x: '-50%', duration: 0.5, ease: 'power3.in' }, '<')
+      // Form se esconde detrás del banner (hacia la izquierda)
+      exitTl.to(authForm.value, { x: '-50%', opacity: 0, duration: 0.6, ease: 'power3.inOut' })
+      // Banner se centra
+      exitTl.to(bannerEl, { x: '50%', duration: 0.6, ease: 'power3.inOut' }, '<')
     } else {
       exitTl.to(authForm.value, { opacity: 0, duration: 0.5, ease: 'power3.in' })
     }
     await exitTl
 
-    // Mostrar overlay de carga
+    // Pausa: el banner queda solo como "loader"
+    await new Promise(r => setTimeout(r, 500))
+
+    // Overlay de carga
     mostrarCarga.value = true
     await nextTick()
 
@@ -83,7 +91,7 @@ const handleSubmit = async () => {
       ease: 'power2.out',
     })
 
-    await new Promise(r => setTimeout(r, 800))
+    await new Promise(r => setTimeout(r, 700))
 
     router.push({ name: 'dashboard' })
   } catch (error) {

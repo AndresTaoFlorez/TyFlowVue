@@ -1,14 +1,30 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useCasesStore } from '@/presentation/stores/useCasesStore'
+import { useUserStore } from '@/presentation/stores/useUserStore'
 
-const store = useCasesStore()
+const store     = useCasesStore()
+const userStore = useUserStore()
 
 const sortBy = ref('load')   // 'load' | 'active' | 'name'
 const turnoOnly = ref(false)
 
-// Use specialistWorkloads from the store (already loaded by CasesView)
-const workloads = computed(() => store.specialistWorkloads)
+// Aggregate allWorkloads by specialist (one row per person, total across all apps)
+const workloads = computed(() => {
+  const map = new Map()
+  for (const w of store.allWorkloads) {
+    const sid = w.specialist_id
+    if (!map.has(sid)) {
+      map.set(sid, { ...w })
+    } else {
+      const existing = map.get(sid)
+      existing.current_count = (existing.current_count ?? 0) + (w.current_count ?? 0)
+      existing.is_available = existing.is_available || w.is_available
+    }
+  }
+  return [...map.values()]
+})
+const loading = ref(false)
 
 const MAX_LOAD = 10
 
@@ -68,10 +84,31 @@ const kpis = computed(() => {
   return { conTurno, total: all.length, totalActive, totalCap, saturated, util }
 })
 
+async function fetchWorkloads() {
+  const apps = userStore.applications
+  if (!apps.length) return
+  loading.value = true
+  try {
+    await store.loadAllWorkloads(apps.map(a => a.id))
+  } finally {
+    loading.value = false
+  }
+}
+
 onMounted(() => {
-  // Ensure workload data is loaded
   if (workloads.value.length === 0) {
-    store.loadCases({ status: null })
+    const apps = userStore.applications
+    if (apps.length) {
+      fetchWorkloads()
+    } else {
+      // Applications may not be loaded yet — wait for them
+      const stop = watch(() => userStore.applications, (apps) => {
+        if (apps.length) {
+          stop()
+          fetchWorkloads()
+        }
+      })
+    }
   }
 })
 </script>

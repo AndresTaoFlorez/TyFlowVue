@@ -26,7 +26,7 @@ watch(wsStatus, (s) => {
   }
 })
 const mostrarCambiarClave = ref(false)
-const sidebarCollapsed = ref(false)
+const sidebarCollapsed = ref(localStorage.getItem('tyflow_sidebar_collapsed') === 'true')
 const sidebarMobileOpen = ref(false)
 const viewportWidth = ref(window.innerWidth)
 
@@ -83,10 +83,15 @@ const isFlush = computed(() => flushRoutes.some(r => route.path.startsWith(r)))
 const denseRoutes = ['/app/applications', '/app/calendar', '/app/cases']
 let userExpandedSidebar = false
 
+const persistCollapsed = (val) => {
+  sidebarCollapsed.value = val
+  localStorage.setItem('tyflow_sidebar_collapsed', String(val))
+}
+
 watch([() => route.path, viewportWidth], ([path, width]) => {
   const isDense = denseRoutes.some(r => path.startsWith(r))
   if (isDense && width < 1200 && width > 768 && !sidebarCollapsed.value && !userExpandedSidebar) {
-    sidebarCollapsed.value = true
+    persistCollapsed(true)
   }
 }, { immediate: true })
 
@@ -94,7 +99,7 @@ const toggleSidebar = () => {
   if (window.innerWidth <= BP_MOBILE) {
     sidebarMobileOpen.value = !sidebarMobileOpen.value
   } else {
-    sidebarCollapsed.value = !sidebarCollapsed.value
+    persistCollapsed(!sidebarCollapsed.value)
     userExpandedSidebar = !sidebarCollapsed.value
   }
 }

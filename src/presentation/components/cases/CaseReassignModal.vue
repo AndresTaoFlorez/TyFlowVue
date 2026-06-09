@@ -29,8 +29,10 @@ const availableLevels     = ref([])
 const availableCategories = ref([])
 const specialists         = ref([])
 const loadingCtx          = ref(false)
+const ctxError            = ref(null)
 
 const _ctxCache = new Map()
+let _ctxVersion = 0   // guard against stale async responses
 
 // Phase 1 on mount: get available levels + full specialist list
 async function loadPhase1() {
@@ -41,12 +43,16 @@ async function loadPhase1() {
     return
   }
   loadingCtx.value = true
+  ctxError.value = null
   try {
     const ctx = await CaseAssignContextRepository.fetchContext(props.caseData.id)
     _ctxCache.set(cacheKey, ctx)
     availableLevels.value = ctx.supportLevels
-  } catch { /* silent */ }
-  finally { loadingCtx.value = false }
+  } catch {
+    ctxError.value = 'No se pudieron cargar los niveles de soporte.'
+  } finally {
+    loadingCtx.value = false
+  }
 }
 
 // Phase 2: when level changes, reload specialists + categories for that level
@@ -55,6 +61,7 @@ watch(() => form.value.supportLevelId, async (levelId) => {
   form.value.newCategoryId   = ''
   availableCategories.value  = []
   specialists.value          = []
+  ctxError.value             = null
 
   if (!levelId) return
 
@@ -66,17 +73,51 @@ watch(() => form.value.supportLevelId, async (levelId) => {
     return
   }
 
+  const version = ++_ctxVersion
   loadingCtx.value = true
   try {
     const ctx = await CaseAssignContextRepository.fetchContext(props.caseData.id, levelId)
+    if (version !== _ctxVersion) return   // stale response, discard
     _ctxCache.set(cacheKey, ctx)
     availableCategories.value = ctx.supportCategories
     specialists.value         = ctx.specialists.filter(s => s.specialist_id !== props.caseData.specialistId)
-  } catch { /* silent */ }
-  finally { loadingCtx.value = false }
-}, { immediate: true })
+  } catch {
+    if (version !== _ctxVersion) return
+    ctxError.value = 'Error cargando especialistas y categorías.'
+  } finally {
+    if (version === _ctxVersion) loadingCtx.value = false
+  }
+})
 
-loadPhase1()
+// Run Phase 1 first, then Phase 2 if there's an initial level
+loadPhase1().then(() => {
+  const levelId = form.value.supportLevelId
+  if (levelId) {
+    const cacheKey = `${props.caseData.id}_${levelId}`
+    if (_ctxCache.has(cacheKey)) {
+      const c = _ctxCache.get(cacheKey)
+      availableCategories.value = c.supportCategories
+      specialists.value         = c.specialists.filter(s => s.specialist_id !== props.caseData.specialistId)
+      return
+    }
+    const version = ++_ctxVersion
+    loadingCtx.value = true
+    CaseAssignContextRepository.fetchContext(props.caseData.id, levelId)
+      .then(ctx => {
+        if (version !== _ctxVersion) return
+        _ctxCache.set(cacheKey, ctx)
+        availableCategories.value = ctx.supportCategories
+        specialists.value         = ctx.specialists.filter(s => s.specialist_id !== props.caseData.specialistId)
+      })
+      .catch(() => {
+        if (version !== _ctxVersion) return
+        ctxError.value = 'Error cargando especialistas y categorías.'
+      })
+      .finally(() => {
+        if (version === _ctxVersion) loadingCtx.value = false
+      })
+  }
+})
 
 // ── Derived state ──
 const isDifferentLevel = computed(() =>
@@ -219,6 +260,10 @@ async function handleReassign() {
         <div class="rm__field">
           <label class="rm__label">Nota <span class="rm__label-hint">(opcional)</span></label>
           <textarea v-model="form.note" class="rm__textarea" placeholder="Nota adicional" rows="2"></textarea>
+        </div>
+
+        <div v-if="ctxError" class="rm__error">
+          <i class="bx bx-error-circle"></i> {{ ctxError }}
         </div>
 
         <div v-if="error" class="rm__error">

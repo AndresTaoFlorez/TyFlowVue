@@ -49,6 +49,8 @@ onUnmounted(() => {
   color: white;
   text-align: center;
   overflow: hidden;
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-lg);
 }
 
 .banner-canvas {
@@ -111,6 +113,8 @@ onUnmounted(() => {
   .login-card__banner {
     padding: 40px 20px;
     order: 1;
+    border-radius: 0;
+    box-shadow: none;
   }
 
   .banner-content h3 {

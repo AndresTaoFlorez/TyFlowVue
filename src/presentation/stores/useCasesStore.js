@@ -444,9 +444,9 @@ export const useCasesStore = defineStore('cases', () => {
     }
   }
 
-  async function triggerAutopilot() {
+  async function triggerAutopilot(filters = {}) {
     try {
-      const result = await assignCaseWddAutopilotUseCase()
+      const result = await assignCaseWddAutopilotUseCase(filters)
       autopilotState.value = { running: true, jobId: result.job_id, processed: 0, total: null }
       return result
     } catch (e) {

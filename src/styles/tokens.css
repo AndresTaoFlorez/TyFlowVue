@@ -255,4 +255,7 @@
   --inactive-bar: #5a6075;
   --inactive-text: #8b91a7;
   --shadow-pop: 0 12px 32px rgba(0,0,0,0.45);
+
+  /* Sidebar */
+  --primary-gradient: linear-gradient(135deg, #111827 0%, #1a2234 100%);
 }

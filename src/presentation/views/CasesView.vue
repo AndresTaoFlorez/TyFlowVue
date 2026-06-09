@@ -73,7 +73,10 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown))
 async function runAutopilot() {
   autopilotError.value = null
   try {
-    await store.triggerAutopilot()
+    const apps = userStore.applications
+    const filters = {}
+    if (apps.length === 1) filters.applicationId = apps[0].id
+    await store.triggerAutopilot(filters)
   } catch (e) {
     autopilotError.value = e.message || 'Error lanzando autopilot'
     setTimeout(() => { autopilotError.value = null }, 5000)

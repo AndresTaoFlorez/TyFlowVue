@@ -1301,6 +1301,47 @@ export const useCalendarStore = defineStore('calendar', () => {
 
   function updateMobile(val) { isMobile.value = val }
 
+  // ---- Realtime handlers ----
+  function onWindowCreatedRT(data) {
+    const items = Array.isArray(data) ? data : [data]
+    const newWindows = items.map(d => new WorkWindow(d))
+    _addWindows(newWindows)
+  }
+
+  function onWindowUpdatedRT(data) {
+    const updated = new WorkWindow(data)
+    _replaceWindow(updated.id, updated)
+  }
+
+  function onWindowDeletedRT(data) {
+    const id = typeof data === 'string' ? data : data.id
+    _removeWindow(id)
+  }
+
+  function onWindowToggledRT(data) {
+    const updated = new WorkWindow(data)
+    _replaceWindow(updated.id, updated)
+  }
+
+  function onWindowMergedRT(data) {
+    // data: { mode, deleted_ids: [...], windows: [<raw window>, ...] }
+    if (data.deleted_ids) {
+      for (const id of data.deleted_ids) _removeWindow(id)
+    }
+    const items = data.windows || []
+    for (const raw of items) {
+      const ww = new WorkWindow(raw)
+      const exists = windows.value.some(w => w.id === ww.id)
+      if (exists) _replaceWindow(ww.id, ww)
+      else _addWindows([ww])
+    }
+  }
+
+  function onWindowBatchRT(data) {
+    // Bulk update: reload the full range
+    loadWindows()
+  }
+
   // ---- Helpers ----
   function findSpec(id) {
     const userStore = useUserStore()
@@ -1382,5 +1423,13 @@ export const useCalendarStore = defineStore('calendar', () => {
     updateMobile,
     density,
     setDensity,
+
+    // Realtime
+    onWindowCreatedRT,
+    onWindowUpdatedRT,
+    onWindowDeletedRT,
+    onWindowToggledRT,
+    onWindowMergedRT,
+    onWindowBatchRT,
   }
 })
