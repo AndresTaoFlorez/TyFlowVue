@@ -513,23 +513,35 @@ const handleSubmit = () => {
 .overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.4);
-  backdrop-filter: blur(3px);
+  background: rgba(10, 12, 20, 0.55);
+  backdrop-filter: blur(2px);
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 100;
+  animation: cwm-fade 0.15s ease;
+}
+
+@keyframes cwm-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 .modal {
-  background: white;
+  background: var(--bg-main, white);
   width: 100%;
   max-width: 480px;
-  border-radius: var(--radius-lg);
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.15);
+  border-radius: 16px;
+  box-shadow: 0 12px 32px rgba(20, 30, 55, 0.16);
   max-height: 90vh;
   display: flex;
   flex-direction: column;
+  animation: cwm-pop 0.18s cubic-bezier(0.2, 0.9, 0.3, 1.2);
+}
+
+@keyframes cwm-pop {
+  from { opacity: 0; transform: scale(0.96); }
+  to { opacity: 1; transform: scale(1); }
 }
 
 /* ---- Header ---- */
@@ -539,8 +551,8 @@ const handleSubmit = () => {
   justify-content: space-between;
   padding: 1.1rem 1.4rem;
   border-bottom: 1px solid var(--border-light);
-  background: white;
-  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  background: var(--bg-main, white);
+  border-radius: 16px 16px 0 0;
   flex-shrink: 0;
 }
 
@@ -599,13 +611,14 @@ const handleSubmit = () => {
 }
 
 .row__date {
-  border: 1.5px solid var(--border-light);
-  border-radius: var(--radius-sm);
-  background: none;
+  height: 38px;
+  border: 1px solid var(--border-light);
+  border-radius: 9px;
+  background: var(--bg-card);
   font-size: 0.8rem;
   font-weight: 500;
   color: var(--text-primary);
-  padding: 0.3rem 0.4rem;
+  padding: 0 0.7rem;
   cursor: pointer;
   outline: none;
   transition: border-color 0.15s;
@@ -691,20 +704,21 @@ const handleSubmit = () => {
 }
 
 .time-input {
-  border: none;
+  height: 38px;
+  border: 1px solid var(--border-light);
   background: var(--bg-card);
-  border-radius: var(--radius-sm);
-  padding: 0.3rem 0.45rem;
+  border-radius: 9px;
+  padding: 0 0.7rem;
   font-size: 0.85rem;
   font-weight: 600;
   color: var(--text-primary);
   width: 7.5rem;
   outline: none;
-  transition: box-shadow 0.12s;
+  transition: border-color 0.15s;
 }
 
 .time-input:focus {
-  box-shadow: 0 0 0 2px rgba(42, 199, 143, 0.2);
+  border-color: var(--primary-500);
 }
 
 .time-dash {
@@ -723,20 +737,21 @@ const handleSubmit = () => {
 }
 
 .weight-input {
-  border: none;
+  height: 38px;
+  border: 1px solid var(--border-light);
   background: var(--bg-card);
-  border-radius: var(--radius-sm);
-  padding: 0.3rem 0.45rem;
+  border-radius: 9px;
+  padding: 0 0.7rem;
   font-size: 0.85rem;
   font-weight: 600;
   color: var(--text-primary);
   width: 8rem;
   outline: none;
-  transition: box-shadow 0.12s;
+  transition: border-color 0.15s;
 }
 
 .weight-input:focus {
-  box-shadow: 0 0 0 2px rgba(42, 199, 143, 0.2);
+  border-color: var(--primary-500);
 }
 
 .weight-input--error {
@@ -749,7 +764,7 @@ const handleSubmit = () => {
 
 /* Section label */
 .section-label {
-  font-size: 0.68rem;
+  font-size: 0.72rem;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.04em;
@@ -973,11 +988,11 @@ const handleSubmit = () => {
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 0.5rem;
+  gap: 0.6rem;
   padding: 0.85rem 1.4rem;
   border-top: 1px solid var(--border-light);
-  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
-  background: white;
+  border-radius: 0 0 16px 16px;
+  background: var(--bg-main, white);
   flex-shrink: 0;
 }
 
@@ -989,13 +1004,14 @@ const handleSubmit = () => {
 }
 
 .btn-cancel {
-  padding: 0.45rem 0.9rem;
-  font-size: 0.82rem;
+  height: 40px;
+  padding: 0 0.9rem;
+  font-size: 0.85rem;
   font-weight: 600;
   border: 1px solid var(--border-light);
   color: var(--text-secondary);
-  background: white;
-  border-radius: var(--radius-md);
+  background: var(--bg-main, white);
+  border-radius: 9px;
   cursor: pointer;
   transition: color 0.12s;
 }
@@ -1005,14 +1021,16 @@ const handleSubmit = () => {
 .btn-save {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 0.3rem;
-  padding: 0.45rem 1rem;
+  height: 40px;
+  padding: 0 1rem;
   background: var(--primary-500);
   color: white;
   font-weight: 600;
-  font-size: 0.82rem;
+  font-size: 0.85rem;
   border: none;
-  border-radius: var(--radius-md);
+  border-radius: 9px;
   cursor: pointer;
   transition: background 0.15s;
 }
@@ -1027,14 +1045,19 @@ const handleSubmit = () => {
 .dropdown-leave-to { opacity: 0; }
 
 /* ---- Transition ---- */
-.modal-enter-active { transition: opacity 0.15s ease; }
-.modal-enter-active .modal { animation: pop-in 0.2s ease; }
-.modal-leave-active { transition: opacity 0.12s ease; }
+.modal-enter-active { transition: opacity 0.18s ease; }
+.modal-enter-active .modal { animation: pop-in 0.18s cubic-bezier(0.2, 0.9, 0.3, 1.2); }
+.modal-leave-active { transition: opacity 0.15s ease; }
+.modal-leave-active .modal { animation: pop-out 0.15s ease forwards; }
 .modal-leave-to { opacity: 0; }
 
 @keyframes pop-in {
-  from { transform: scale(0.95); opacity: 0; }
-  to { transform: scale(1); opacity: 1; }
+  from { transform: scale(0.93) translateY(6px); opacity: 0; }
+  to   { transform: scale(1)    translateY(0);   opacity: 1; }
+}
+@keyframes pop-out {
+  from { transform: scale(1)    translateY(0);   opacity: 1; }
+  to   { transform: scale(0.93) translateY(6px); opacity: 0; }
 }
 
 @media (max-width: 480px) {

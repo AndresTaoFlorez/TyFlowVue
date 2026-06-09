@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
-import WindowBlock from '@/presentation/components/WindowBlock.vue'
-import WindowGroupBlock from '@/presentation/components/WindowGroupBlock.vue'
+import WindowBlock from '@/presentation/components/calendar/WindowBlock.vue'
+import WindowGroupBlock from '@/presentation/components/calendar/WindowGroupBlock.vue'
 import { useWindowGroups } from '@/presentation/composables/useWindowGroups'
 import { fmtHM, fmtSlotTime, formatHour, formatHourCompact } from '@/presentation/helpers/formatTime'
 import { fmtDateISO } from '@/presentation/helpers/formatDate'
@@ -12,6 +12,7 @@ const props = defineProps({
   specialists: { type: Array, default: () => [] },
   applications: { type: Array, default: () => [] },
   selectable: { type: Boolean, default: false },
+  density: { type: String, default: 'comfortable' }, // 'compact' | 'comfortable' | 'spacious'
   isMobile: { type: Boolean, default: false },
   viewMode: { type: String, default: 'week' }, // 'day' | 'week' | 'month'
   monthDates: { type: Array, default: () => [] }, // 42 ISO date strings for month grid
@@ -24,10 +25,17 @@ const props = defineProps({
 
 const emit = defineEmits(['select', 'range-selected', 'group-select', 'reschedule', 'group-reschedule', 'batch-reschedule', 'batch-resize', 'next-day', 'prev-day', 'next-week', 'prev-week', 'next-month', 'prev-month', 'resize', 'group-resize', 'select-day', 'context-window', 'context-group', 'context-cell', 'horizontal-expand', 'erase', 'selection-change'])
 
-const SLOT_H = 30               // px per half-hour slot
-const HOUR_H = SLOT_H * 2       // px per hour (used by WindowBlock)
+// Density-aware slot/hour heights
+const DENSITY_MAP = {
+  compact:     { slot: 16, hour: 32 },
+  comfortable: { slot: 24, hour: 48 },
+  spacious:    { slot: 34, hour: 68 },
+}
 const COMPACT_SLOT_H = 18       // px per half-hour slot (compact mobile week)
 const COMPACT_HOUR_H = COMPACT_SLOT_H * 2 // px per hour (compact)
+
+const SLOT_H = computed(() => DENSITY_MAP[props.density]?.slot ?? 24)
+const HOUR_H = computed(() => DENSITY_MAP[props.density]?.hour ?? 48)
 const BASE_HOUR = 0
 const SLOTS = Array.from({ length: 48 }, (_, i) => i)  // 0..47 → 00:00, 00:30, …, 23:30
 const DAY_LABELS = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom']
@@ -86,36 +94,32 @@ async function _commitPan(dx) {
   const els = _getPanEls()
   if (!els.length) { panBusy = false; return }
 
-  // Slide off-screen from current position
+  // Move off-screen instantly (same direction as new content will enter from)
+  // This hides old content before navigation to avoid any gap
+  const enterX = exitDir < 0 ? (W + 40) : -(W + 40)
   for (const el of els) {
-    el.style.transition = 'transform 0.18s ease-in'
-    el.style.transform = `translateX(${exitDir < 0 ? -(W + 40) : (W + 40)}px)`
+    el.style.transition = 'none'
+    el.style.transform = `translateX(${enterX}px)`
   }
-  await _sleep(200)
 
-  // Navigate
+  // Navigate — content swaps in DOM while off-screen
   panInitiatedNav = true
   if (showSingleDay.value) emit(exitDir < 0 ? 'next-day' : 'prev-day')
   else if (showCompactWeek.value) emit(exitDir < 0 ? 'next-week' : 'prev-week')
   else if (props.viewMode === 'month') emit(exitDir < 0 ? 'next-month' : 'prev-month')
   await nextTick()
 
-  // Enter new content from opposite side
-  const enterX = exitDir < 0 ? (W + 40) : -(W + 40)
-  for (const el of els) {
-    el.style.transition = 'none'
-    el.style.transform = `translateX(${enterX}px)`
-  }
+  // Slide new content in
   els.forEach(el => void el.offsetWidth) // force reflow
   for (const el of els) {
-    el.style.transition = 'transform 0.24s cubic-bezier(0.25, 0.46, 0.45, 0.94)'
+    el.style.transition = 'transform 0.25s ease-out'
     el.style.transform = 'translateX(0)'
   }
   setTimeout(() => {
     els.forEach(el => { el.style.transition = ''; el.style.transform = '' })
     panInitiatedNav = false
     panBusy = false
-  }, 260)
+  }, 270)
 }
 
 function _springBack() {
@@ -123,10 +127,10 @@ function _springBack() {
   panX.value = 0
   const els = _getPanEls()
   for (const el of els) {
-    el.style.transition = 'transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)'
+    el.style.transition = 'transform 0.2s ease-out'
     el.style.transform = 'translateX(0)'
   }
-  setTimeout(() => { els.forEach(el => { el.style.transition = ''; el.style.transform = '' }) }, 320)
+  setTimeout(() => { els.forEach(el => { el.style.transition = ''; el.style.transform = '' }) }, 220)
 }
 
 const onCalSwipeStart = (e) => {
@@ -137,24 +141,31 @@ const onCalSwipeStart = (e) => {
 }
 
 const onCalSwipeMove = (e) => {
-  if (touchOnBlock || blockDragging.value || resizing.value || panBusy) return
+  if (blockDragging.value || resizing.value || panBusy) return
   const dx = e.touches[0].clientX - swipeStartX
   const dy = e.touches[0].clientY - swipeStartY
   if (panLock.value === null) {
     if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return
     panLock.value = Math.abs(dx) >= Math.abs(dy) ? 'h' : 'v'
+    if (panLock.value === 'h' && touchOnBlock) {
+      // Horizontal swipe confirmed — cancel any pending block/group drag
+      if (blockDragTimer !== null) {
+        clearTimeout(blockDragTimer)
+        blockDragTimer = null
+        _pendingDrag = null
+      }
+      touchOnBlock = false
+    }
     if (panLock.value === 'v') return
   }
   if (panLock.value !== 'h') return
-  e.preventDefault()
+  if (e.cancelable) e.preventDefault()
   const els = _getPanEls()
   for (const el of els) el.style.transform = `translateX(${dx}px)`
   panX.value = dx
 }
 
 const onCalSwipeEnd = (e) => {
-  if (touchOnBlock) { _springBack(); return }
-
   if (panLock.value === 'h') {
     const dx = panX.value
     panLock.value = null
@@ -239,7 +250,7 @@ watch(() => props.weekDates, () => {
 
 const currentTimeTop = computed(() => {
   const d = now.value
-  return (d.getHours() + d.getMinutes() / 60) * HOUR_H
+  return (d.getHours() + d.getMinutes() / 60) * HOUR_H.value
 })
 
 const onScrollContainer = () => {
@@ -251,7 +262,7 @@ const onScrollContainer = () => {
 const scrollToWorkHour = () => {
   if (!scrollContainer.value) return
   const targetHour = 7
-  const px = targetHour * (showCompactWeek.value ? COMPACT_HOUR_H : HOUR_H)
+  const px = targetHour * (showCompactWeek.value ? COMPACT_HOUR_H : HOUR_H.value)
   scrollContainer.value.scrollTop = Math.max(0, px - 32)
 }
 
@@ -291,8 +302,8 @@ const isDayInSelection = (dayIdx) => {
 const selectionStyle = computed(() => {
   if (!dragging.value) return null
   return {
-    top: selSlotMin.value * SLOT_H + 'px',
-    height: (selSlotMax.value - selSlotMin.value) * SLOT_H + 'px',
+    top: selSlotMin.value * SLOT_H.value + 'px',
+    height: (selSlotMax.value - selSlotMin.value) * SLOT_H.value + 'px',
   }
 })
 
@@ -420,8 +431,8 @@ const onCellTap = (dayIdx, slot) => {
 const mobilePreselectionStyle = computed(() => {
   if (!mobileTapSlot.value) return null
   return {
-    top: mobileTapSlot.value.slot * SLOT_H + 'px',
-    height: SLOT_H * 2 + 'px', // 1-hour block preview
+    top: mobileTapSlot.value.slot * SLOT_H.value + 'px',
+    height: SLOT_H.value * 2 + 'px', // 1-hour block preview
   }
 })
 
@@ -465,7 +476,7 @@ const onTouchmove = (e) => {
     _pendingDrag = null
   }
   // Navigation pan tracking for day mode (before drag checks)
-  if (showSingleDay.value && !touchOnBlock && !blockDragging.value && !resizing.value && !panBusy) {
+  if (showSingleDay.value && !blockDragging.value && !resizing.value && !panBusy) {
     onCalSwipeMove(e)
     if (panLock.value === 'h') return // horizontal pan active — skip drag processing
   }
@@ -479,7 +490,7 @@ const onTouchmove = (e) => {
   }
   if (!dragging.value && !blockDragging.value && !resizing.value && !hExpanding.value && !erasing.value) return
   // Only prevent scroll when drag is confirmed
-  e.preventDefault()
+  if (e.cancelable) e.preventDefault()
   if (blockDragging.value || resizing.value) { onBlockDragMove(e); return }
   if (hExpanding.value) { onHExpandMove(e); return }
   if (erasing.value) {
@@ -611,8 +622,8 @@ const blockDragGhostStyle = computed(() => {
   if (!blockDragging.value || !draggedWindow.value) return null
   const duration = draggedWindow.value.endHour - draggedWindow.value.startHour
   return {
-    top: draggedTargetSlot.value * SLOT_H + 'px',
-    height: duration * HOUR_H + 'px',
+    top: draggedTargetSlot.value * SLOT_H.value + 'px',
+    height: duration * HOUR_H.value + 'px',
   }
 })
 
@@ -626,6 +637,13 @@ const compactBlockDragGhostStyle = computed(() => {
 })
 
 const onBlockTouchstart = (w, dayIdx, e) => {
+  // Capture swipe start even when touching a block (for day-mode pan)
+  if (e.touches[0]) {
+    swipeStartX = e.touches[0].clientX
+    swipeStartY = e.touches[0].clientY
+    panLock.value = null
+    panX.value = 0
+  }
   touchOnBlock = true
   onWindowLongPress(w, e)
   if (props.isMobile) {
@@ -655,6 +673,13 @@ const onBlockTouchstart = (w, dayIdx, e) => {
 }
 
 const onGroupTouchstart = (group, dayIdx, e) => {
+  // Capture swipe start even when touching a group block (for day-mode pan)
+  if (e.touches[0]) {
+    swipeStartX = e.touches[0].clientX
+    swipeStartY = e.touches[0].clientY
+    panLock.value = null
+    panX.value = 0
+  }
   touchOnBlock = true
   onGroupLongPress(group, e)
   if (props.isMobile) {
@@ -822,8 +847,8 @@ const resizeGhostStyle = computed(() => {
     bottomSlot = Math.max(resizeSlot.value + 1, topSlot + 1)
   }
   return {
-    top: topSlot * SLOT_H + 'px',
-    height: (bottomSlot - topSlot) * SLOT_H + 'px',
+    top: topSlot * SLOT_H.value + 'px',
+    height: (bottomSlot - topSlot) * SLOT_H.value + 'px',
   }
 })
 
@@ -863,8 +888,8 @@ const batchResizeGhosts = computed(() => {
       bottomSlot = Math.max(origEnd + delta, origStart + 1)
     }
     const style = {
-      top: topSlot * SLOT_H + 'px',
-      height: (bottomSlot - topSlot) * SLOT_H + 'px',
+      top: topSlot * SLOT_H.value + 'px',
+      height: (bottomSlot - topSlot) * SLOT_H.value + 'px',
     }
     if (!map.has(dayIdx)) map.set(dayIdx, [])
     map.get(dayIdx).push(style)
@@ -1006,8 +1031,8 @@ const hExpandHighlight = computed(() => {
   const min = Math.min(hExpandOriginDay.value, hExpandTargetDay.value)
   const max = Math.max(hExpandOriginDay.value, hExpandTargetDay.value)
   const w = hExpandWindow.value
-  const top = (w.startHour - BASE_HOUR) * HOUR_H
-  const height = (w.endHour - w.startHour) * HOUR_H
+  const top = (w.startHour - BASE_HOUR) * HOUR_H.value
+  const height = (w.endHour - w.startHour) * HOUR_H.value
   const set = {}
   for (let d = min; d <= max; d++) {
     if (d !== hExpandOriginDay.value) set[d] = { top, height }
@@ -1060,8 +1085,8 @@ const eraseGhostStyle = computed(() => {
   const minSlot = Math.min(eraseStartSlot.value, eraseEndSlot.value)
   const maxSlot = Math.max(eraseStartSlot.value, eraseEndSlot.value) + 1
   return {
-    top: minSlot * SLOT_H + 'px',
-    height: (maxSlot - minSlot) * SLOT_H + 'px',
+    top: minSlot * SLOT_H.value + 'px',
+    height: (maxSlot - minSlot) * SLOT_H.value + 'px',
   }
 })
 
@@ -1207,6 +1232,8 @@ const windowsByDay = computed(() => {
           id: w.id,
           _multiDayProxy: true,
           _originalWindow: w,
+          _isFirstDay: isFirst,
+          _isLastDay: isLast,
           get startHour() { return isFirst ? w.startHour : 0 },
           get endHour() { return isLast ? w.endHour : 24 },
           get startTime() { return isFirst ? w.startTime : '00:00' },
@@ -1229,6 +1256,22 @@ const windowsByDay = computed(() => {
 })
 
 const groupedByDay = useWindowGroups(windowsByDay)
+
+// Multi-day position for resize handle visibility
+const _multiDayPos = (w) => {
+  if (!w._multiDayProxy) return null
+  if (w._isFirstDay) return 'first'
+  if (w._isLastDay) return 'last'
+  return 'middle'
+}
+const _groupMultiDayPos = (group) => {
+  if (!group.windows.every(w => w._multiDayProxy)) return null
+  // All windows are multi-day proxies — derive position from any (all share same day)
+  const w = group.windows[0]
+  if (w._isFirstDay) return 'first'
+  if (w._isLastDay) return 'last'
+  return 'middle'
+}
 
 // Suppress click after drag — click fires after mouseup on the same element
 let hExpandJustEnded = false
@@ -1469,10 +1512,10 @@ watch(periodKey, (newKey, oldKey) => {
   }
   els.forEach(el => void el.offsetWidth)
   for (const el of els) {
-    el.style.transition = 'transform 0.24s cubic-bezier(0.25, 0.46, 0.45, 0.94)'
+    el.style.transition = 'transform 0.2s ease-out'
     el.style.transform = 'translateX(0)'
   }
-  setTimeout(() => { els.forEach(el => { el.style.transition = ''; el.style.transform = '' }) }, 260)
+  setTimeout(() => { els.forEach(el => { el.style.transition = ''; el.style.transform = '' }) }, 220)
 }, { flush: 'post' })
 </script>
 
@@ -1480,6 +1523,7 @@ watch(periodKey, (newKey, oldKey) => {
   <div
     class="cal"
     :class="{ 'cal--selectable': selectable, 'cal--eraser': activeTool === 'eraser', 'cal--select-tool': activeTool === 'select' }"
+    :data-density="density"
     @mouseleave="cancelDrag"
     @mouseup="onMouseup(); onBlockDragEnd(); onResizeEnd(); onHExpandEnd(); onEraserEnd()"
     @mousemove="onBlockDragMove"
@@ -1630,6 +1674,7 @@ watch(periodKey, (newKey, oldKey) => {
                 :specialists="specialists"
                 :applications="applications"
                 :selectable="selectable"
+                :multi-day-pos="_groupMultiDayPos(item)"
                 :selected-ids="selectedWindowIds"
                 :cut-ids="cutWindowIds"
                 @click="(_, ev) => onGroupClick(item, ev)"
@@ -1651,6 +1696,7 @@ watch(periodKey, (newKey, oldKey) => {
                 :col="0"
                 :total-cols="1"
                 :selectable="selectable"
+                :multi-day-pos="_multiDayPos(item.window)"
                 :selected="selectedWindowIds.has((item.window._originalWindow || item.window).id)"
                 :cut="cutWindowIds.has((item.window._originalWindow || item.window).id)"
                 :inherited="!!(item.window.inheritedFromWindowId || item.window.inheritsOnReopen)"
@@ -1771,6 +1817,7 @@ watch(periodKey, (newKey, oldKey) => {
                 :applications="applications"
                 :selectable="selectable"
                 :compact="true"
+                :multi-day-pos="_groupMultiDayPos(item)"
                 :selected-ids="selectedWindowIds"
                 :cut-ids="cutWindowIds"
                 @click="(_, ev) => onGroupClick(item, ev)"
@@ -1791,6 +1838,7 @@ watch(periodKey, (newKey, oldKey) => {
                 :total-cols="item._totalCols"
                 :selectable="selectable"
                 :compact="true"
+                :multi-day-pos="_multiDayPos(item.window)"
                 :selected="selectedWindowIds.has((item.window._originalWindow || item.window).id)"
                 :cut="cutWindowIds.has((item.window._originalWindow || item.window).id)"
                 :inherited="!!(item.window.inheritedFromWindowId || item.window.inheritsOnReopen)"
@@ -1897,8 +1945,8 @@ watch(periodKey, (newKey, oldKey) => {
               'cal-header__day--weekend': isWeekend(i),
             }"
           >
-            <span class="cal-header__num">{{ parseInt(date.split('-')[2]) }}</span>
             <span class="cal-header__label">{{ DAY_LABELS[i] }}</span>
+            <span class="cal-header__num" :class="{ 'cal-header__num--today': i === todayIndex }">{{ parseInt(date.split('-')[2]) }}</span>
             <div
               v-if="i < weekDates.length - 1"
               class="cal-header__resize"
@@ -1987,6 +2035,7 @@ watch(periodKey, (newKey, oldKey) => {
                 :specialists="specialists"
                 :applications="applications"
                 :selectable="selectable"
+                :multi-day-pos="_groupMultiDayPos(item)"
                 :selected-ids="selectedWindowIds"
                 :cut-ids="cutWindowIds"
                 @click="(_, ev) => onGroupClick(item, ev)"
@@ -2005,6 +2054,7 @@ watch(periodKey, (newKey, oldKey) => {
                 :col="item._col"
                 :total-cols="item._totalCols"
                 :selectable="selectable"
+                :multi-day-pos="_multiDayPos(item.window)"
                 :selected="selectedWindowIds.has((item.window._originalWindow || item.window).id)"
                 :cut="cutWindowIds.has((item.window._originalWindow || item.window).id)"
                 :inherited="!!(item.window.inheritedFromWindowId || item.window.inheritsOnReopen)"
@@ -2058,9 +2108,9 @@ watch(periodKey, (newKey, oldKey) => {
 <style scoped>
 /* ========== Shell ========== */
 .cal {
-  background: #292d3e;
-  border: 1px solid #3b3f54;
-  border-radius: var(--radius-lg);
+  background: var(--cal-shell);
+  border: 1px solid var(--cal-border);
+  border-radius: 14px;
   overflow: hidden;
   user-select: none;
   display: flex;
@@ -2076,31 +2126,31 @@ watch(periodKey, (newKey, oldKey) => {
   min-height: 0;
   -webkit-overflow-scrolling: touch;
   scrollbar-width: thin;
-  scrollbar-color: #3b3f54 transparent;
+  scrollbar-color: var(--cal-border) transparent;
 }
 
 .cal-scroll::-webkit-scrollbar { width: 6px; height: 6px; }
 .cal-scroll::-webkit-scrollbar-track { background: transparent; }
-.cal-scroll::-webkit-scrollbar-thumb { background: #3b3f54; border-radius: 3px; }
-.cal-scroll::-webkit-scrollbar-thumb:hover { background: #4f5470; }
+.cal-scroll::-webkit-scrollbar-thumb { background: var(--cal-border); border-radius: 3px; }
+.cal-scroll::-webkit-scrollbar-thumb:hover { background: color-mix(in srgb, var(--cal-border) 80%, var(--cal-text)); }
 
 /* ========== Sticky header ========== */
 .cal-header {
   display: grid;
   grid-template-columns: 3.5rem repeat(7, 1fr);
-  border-bottom: 1px solid #3b3f54;
-  background: #252839;
+  border-bottom: 1px solid var(--cal-border);
+  background: var(--cal-header);
   position: sticky;
   top: 0;
   z-index: 20;
 }
 
 .cal-header__gutter {
-  border-right: 1px solid #3b3f54;
+  border-right: 1px solid var(--cal-border);
   position: sticky;
   left: 0;
   z-index: 21;
-  background: #252839;
+  background: var(--cal-header);
 }
 
 .cal-header__day {
@@ -2108,7 +2158,7 @@ watch(periodKey, (newKey, oldKey) => {
   flex-direction: column;
   align-items: center;
   padding: 0.55rem 0 0.45rem;
-  border-right: 1px solid #3b3f54;
+  border-right: 1px solid var(--cal-border);
   gap: 0.05rem;
   min-width: 0;
 }
@@ -2116,33 +2166,40 @@ watch(periodKey, (newKey, oldKey) => {
 .cal-header__day:last-child { border-right: none; }
 
 .cal-header__day--today { background: rgba(42, 199, 143, 0.06); }
-.cal-header__day--weekend:not(.cal-header__day--today) { background: #242736; }
-
-.cal-header__num {
-  font-size: 1.3rem;
-  font-weight: 700;
-  color: #c8cdd8;
-  line-height: 1.2;
-}
-
-.cal-header__day--today .cal-header__num {
-  color: var(--primary-500);
-}
-
-.cal-header__day--weekend:not(.cal-header__day--today) .cal-header__num {
-  color: #6c7293;
-}
+.cal-header__day--weekend:not(.cal-header__day--today) { background: var(--cal-col-other); }
 
 .cal-header__label {
   font-size: 0.62rem;
   font-weight: 600;
-  color: #6c7293;
+  color: var(--cal-text-dim);
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
 
 .cal-header__day--today .cal-header__label {
   color: var(--primary-500);
+}
+
+.cal-header__num {
+  font-size: 1.3rem;
+  font-weight: 700;
+  color: var(--cal-text);
+  line-height: 1.2;
+  width: 1.9rem;
+  height: 1.9rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+}
+
+.cal-header__num--today {
+  background: var(--primary-500);
+  color: #fff;
+}
+
+.cal-header__day--weekend:not(.cal-header__day--today) .cal-header__num {
+  color: var(--cal-text-dim);
 }
 
 .cal-header__day--compact-cell.cal-header__day--today {
@@ -2183,8 +2240,8 @@ watch(periodKey, (newKey, oldKey) => {
 
 /* ========== Gutter ========== */
 .cal-gutter {
-  border-right: 1px solid #3b3f54;
-  background: #252839;
+  border-right: 1px solid var(--cal-border);
+  background: var(--cal-header);
   position: sticky;
   left: 0;
   z-index: 5;
@@ -2201,7 +2258,7 @@ watch(periodKey, (newKey, oldKey) => {
 .cal-gutter__label {
   font-size: 0.58rem;
   font-weight: 500;
-  color: #6c7293;
+  color: var(--cal-text-dim);
   line-height: 1;
   margin-top: -0.3em;
   white-space: nowrap;
@@ -2215,13 +2272,13 @@ watch(periodKey, (newKey, oldKey) => {
 /* ========== Day columns ========== */
 .cal-col {
   position: relative;
-  border-right: 1px solid #3b3f54;
-  background: #292d3e;
+  border-right: 1px solid var(--cal-border);
+  background: var(--cal-col);
 }
 
 .cal-col:last-child { border-right: none; }
 .cal-col--today { background: rgba(42, 199, 143, 0.03); }
-.cal-col--weekend:not(.cal-col--today) { background: #262938; }
+.cal-col--weekend:not(.cal-col--today) { background: var(--cal-col-alt); }
 
 /* Half-hour cells */
 .cal-col__cell {
@@ -2230,12 +2287,12 @@ watch(periodKey, (newKey, oldKey) => {
 
 /* Top of hour — solid border */
 .cal-col__cell--top {
-  border-top: 1px solid #33374a;
+  border-top: 1px solid var(--cal-grid);
 }
 
 /* Bottom of hour (half mark) — dashed subtle border */
 .cal-col__cell--bottom {
-  border-top: 1px dashed #2e3244;
+  border-top: 1px dashed var(--cal-grid-half);
 }
 
 /* First cell: no double border with header */
@@ -2244,7 +2301,7 @@ watch(periodKey, (newKey, oldKey) => {
 }
 
 .cal--selectable .cal-col__cell {
-  cursor: crosshair;
+  cursor: cell;
 }
 
 .cal--selectable .cal-col__cell:hover {
@@ -2269,7 +2326,7 @@ watch(periodKey, (newKey, oldKey) => {
   background: var(--primary-500);
   flex-shrink: 0;
   margin-left: -5px;
-  box-shadow: 0 0 6px rgba(42, 199, 143, 0.5);
+  box-shadow: 0 0 8px rgba(42, 199, 143, 0.6);
 }
 
 .cal-now__line {
@@ -2299,7 +2356,7 @@ watch(periodKey, (newKey, oldKey) => {
   font-size: 0.7rem;
   font-weight: 700;
   color: var(--primary-500);
-  background: rgba(37, 40, 57, 0.92);
+  background: var(--cal-col);
   padding: 0.12rem 0.55rem;
   border-radius: 3px;
   white-space: nowrap;
@@ -2408,7 +2465,7 @@ watch(periodKey, (newKey, oldKey) => {
   font-size: 0.65rem;
   font-weight: 600;
   color: var(--primary-500);
-  background: rgba(37, 40, 57, 0.9);
+  background: var(--cal-header);
   padding: 0.1rem 0.5rem;
   border-radius: 3px;
   white-space: nowrap;
@@ -2418,8 +2475,8 @@ watch(periodKey, (newKey, oldKey) => {
 .cal-mobile-nav {
   display: flex;
   align-items: center;
-  background: #252839;
-  border-bottom: 1px solid #3b3f54;
+  background: var(--cal-header);
+  border-bottom: 1px solid var(--cal-border);
   padding: 0.4rem 0.25rem;
   gap: 0.25rem;
   flex-shrink: 0;
@@ -2433,7 +2490,7 @@ watch(periodKey, (newKey, oldKey) => {
   justify-content: center;
   background: transparent;
   border: none;
-  color: #6c7293;
+  color: var(--cal-text-dim);
   font-size: 1.2rem;
   border-radius: var(--radius-sm);
   flex-shrink: 0;
@@ -2442,8 +2499,8 @@ watch(periodKey, (newKey, oldKey) => {
 }
 
 .cal-mobile-nav__arrow:not(:disabled):hover {
-  color: #c8cdd8;
-  background: rgba(255,255,255,0.05);
+  color: var(--cal-text);
+  background: var(--cal-hover);
 }
 
 .cal-mobile-nav__arrow:disabled {
@@ -2484,7 +2541,7 @@ watch(periodKey, (newKey, oldKey) => {
 .cal-mobile-nav__label {
   font-size: 0.5rem;
   font-weight: 600;
-  color: #6c7293;
+  color: var(--cal-text-dim);
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
@@ -2492,7 +2549,7 @@ watch(periodKey, (newKey, oldKey) => {
 .cal-mobile-nav__num {
   font-size: 0.9rem;
   font-weight: 600;
-  color: #c8cdd8;
+  color: var(--cal-text);
   line-height: 1;
 }
 
@@ -2530,8 +2587,8 @@ watch(periodKey, (newKey, oldKey) => {
 .mcal__header {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
-  background: #252839;
-  border-bottom: 1px solid #3b3f54;
+  background: var(--cal-header);
+  border-bottom: 1px solid var(--cal-border);
 }
 
 .mcal__header-cell {
@@ -2539,7 +2596,7 @@ watch(periodKey, (newKey, oldKey) => {
   text-align: center;
   font-size: 0.65rem;
   font-weight: 600;
-  color: #6c7293;
+  color: var(--cal-text-dim);
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
@@ -2550,13 +2607,14 @@ watch(periodKey, (newKey, oldKey) => {
   flex: 1;
   min-height: 0;
   overflow: hidden;
+  -webkit-overflow-scrolling: touch;
 }
 
 .mcal__row {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
   min-height: 0;
-  border-bottom: 1px solid #33374a;
+  border-bottom: 1px solid var(--cal-grid);
   overflow: hidden;
 }
 
@@ -2571,8 +2629,8 @@ watch(periodKey, (newKey, oldKey) => {
   justify-content: flex-start;
   padding: 0;
   gap: 0;
-  border-right: 1px solid #33374a;
-  background: #292d3e;
+  border-right: 1px solid var(--cal-grid);
+  background: var(--cal-col);
   cursor: pointer;
   border-top: none;
   border-bottom: none;
@@ -2594,23 +2652,23 @@ watch(periodKey, (newKey, oldKey) => {
 
 /* Heat-based subtle tint for cells with windows */
 .mcal__cell--has-windows {
-  background: color-mix(in srgb, rgba(42, 199, 143, 0.06) calc(var(--cell-heat, 0) * 100%), #292d3e);
+  background: color-mix(in srgb, rgba(42, 199, 143, 0.06) calc(var(--cell-heat, 0) * 100%), var(--cal-col));
 }
 
 .mcal__cell--other {
-  background: #242736;
+  background: var(--cal-col-other);
 }
 
 .mcal__cell--other .mcal__day {
-  color: #4a4e66;
+  color: var(--cal-text-other);
 }
 
 .mcal__cell--other.mcal__cell--has-windows {
-  background: color-mix(in srgb, rgba(42, 199, 143, 0.04) calc(var(--cell-heat, 0) * 100%), #242736);
+  background: color-mix(in srgb, rgba(42, 199, 143, 0.04) calc(var(--cell-heat, 0) * 100%), var(--cal-col-other));
 }
 
 .mcal__cell--weekend:not(.mcal__cell--today) {
-  background: #262938;
+  background: var(--cal-col-alt);
 }
 
 .mcal__cell--today {
@@ -2652,7 +2710,7 @@ watch(periodKey, (newKey, oldKey) => {
 .mcal__day {
   font-size: 0.78rem;
   font-weight: 600;
-  color: #c8cdd8;
+  color: var(--cal-text);
   line-height: 1;
   margin: 0.35rem 0 0.2rem;
   align-self: center;
@@ -2661,7 +2719,7 @@ watch(periodKey, (newKey, oldKey) => {
 /* --- Coverage bar --- */
 .mcal__coverage {
   height: 3px;
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--cal-overlay);
   border-radius: 2px;
   margin: 0.15rem 0.4rem 0;
   overflow: hidden;
@@ -2687,8 +2745,8 @@ watch(periodKey, (newKey, oldKey) => {
 .mcal__spec {
   font-size: 0.5rem;
   font-weight: 700;
-  color: #c8cdd8;
-  background: rgba(255, 255, 255, 0.08);
+  color: var(--cal-text);
+  background: var(--cal-overlay);
   border-radius: 50%;
   width: 1.25rem;
   height: 1.25rem;
@@ -2737,6 +2795,15 @@ watch(periodKey, (newKey, oldKey) => {
 }
 
 @media (max-width: 768px) {
+  .mcal__body {
+    overflow-y: auto;
+    grid-template-rows: repeat(6, minmax(4.5rem, auto));
+  }
+
+  .mcal__row {
+    overflow: visible;
+  }
+
   .mcal__cell {
     min-height: 0;
   }
@@ -2877,12 +2944,12 @@ watch(periodKey, (newKey, oldKey) => {
   justify-content: center;
   gap: 0.4rem;
   padding: 0.3rem 0.75rem;
-  background: rgba(37, 40, 57, 0.92);
-  border: 1px solid #3b3f54;
+  background: var(--cal-header);
+  border: 1px solid var(--cal-border);
   border-radius: 999px;
   font-size: 0.78rem;
   font-weight: 600;
-  color: #c8cdd8;
+  color: var(--cal-text);
   backdrop-filter: blur(8px);
   z-index: 30;
   pointer-events: none;

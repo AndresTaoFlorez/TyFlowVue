@@ -1,9 +1,9 @@
 <script setup>
 import { computed } from 'vue'
 import { useCasesStore } from '@/presentation/stores/useCasesStore'
-import CaseStatusTimeline from '@/presentation/components/CaseStatusTimeline.vue'
-import CaseAssignPanel from '@/presentation/components/CaseAssignPanel.vue'
-import CaseReassignModal from '@/presentation/components/CaseReassignModal.vue'
+import CaseStatusTimeline from '@/presentation/components/cases/CaseStatusTimeline.vue'
+import CaseAssignPanel from '@/presentation/components/cases/CaseAssignPanel.vue'
+import CaseReassignModal from '@/presentation/components/cases/CaseReassignModal.vue'
 import { useCaseDetail } from '@/presentation/composables/useCaseDetail'
 
 const store = useCasesStore()
@@ -239,19 +239,19 @@ function fmtDateTime(iso) {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
-  border-radius: var(--radius-sm);
-  border: none;
-  background: transparent;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  border: 1px solid var(--border-light);
+  background: var(--bg-main);
   color: var(--text-secondary);
   font-size: 1.1rem;
   cursor: pointer;
-  transition: background 0.1s, color 0.1s;
+  transition: all 0.12s;
 }
 .cdp__nav-btn:hover:not(:disabled) {
-  background: var(--bg-main);
   color: var(--text-primary);
+  border-color: var(--primary-500);
 }
 .cdp__nav-btn:disabled {
   opacity: 0.3;
@@ -261,8 +261,9 @@ function fmtDateTime(iso) {
 .cdp__id {
   font-size: 0.78rem;
   font-weight: 700;
-  color: var(--primary-500);
+  color: var(--text-secondary);
   margin-left: 0.3rem;
+  font-variant-numeric: tabular-nums;
 }
 
 
@@ -270,19 +271,20 @@ function fmtDateTime(iso) {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
-  border-radius: var(--radius-sm);
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
   background: transparent;
   border: none;
   color: var(--text-secondary);
-  font-size: 1.2rem;
+  font-size: 1.5rem;
+  line-height: 1;
   cursor: pointer;
-  transition: background 0.1s, color 0.1s;
+  transition: all 0.12s;
 }
 .cdp__close:hover {
-  background: var(--bg-main);
   color: var(--text-primary);
+  background: var(--bg-card);
 }
 
 /* ── Loading / Error ─────────────────────────────────── */
@@ -318,36 +320,36 @@ function fmtDateTime(iso) {
 
 /* ── Hero ────────────────────────────────────────────── */
 .cdp__hero {
-  padding: 1rem 1.1rem 0.75rem;
+  padding: 1.1rem 1.25rem 0.9rem;
   border-bottom: 1px solid var(--border-light);
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: 0.7rem;
 }
 
 .cdp__title {
-  font-size: 1rem;
+  font-size: 1.12rem;
   font-weight: 700;
   color: var(--text-primary);
-  line-height: 1.4;
+  line-height: 1.3;
   margin: 0;
 }
 
 .cdp__badges {
   display: flex;
   align-items: center;
-  gap: 0.3rem;
+  gap: 0.4rem;
   flex-wrap: wrap;
 }
 
 .cdp__badge {
   display: inline-flex;
   align-items: center;
-  gap: 0.2rem;
-  padding: 0.15rem 0.5rem;
-  border-radius: var(--radius-sm);
-  font-size: 0.66rem;
-  font-weight: 700;
+  gap: 0.35rem;
+  padding: 0.2rem 0.6rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 600;
 }
 
 /* ── Actions ─────────────────────────────────────────── */
@@ -364,17 +366,20 @@ function fmtDateTime(iso) {
 .cdp__action {
   display: flex;
   align-items: center;
-  gap: 0.25rem;
-  padding: 0.35rem 0.65rem;
-  border-radius: var(--radius-md);
+  justify-content: center;
+  gap: 0.4rem;
+  height: 36px;
+  padding: 0 0.8rem;
+  border-radius: 9px;
   border: 1px solid var(--border-light);
   background: var(--bg-main);
   color: var(--text-primary);
-  font-size: 0.75rem;
+  font-size: 0.8rem;
   font-weight: 600;
   cursor: pointer;
-  transition: all 0.12s;
+  transition: all 0.15s;
 }
+.cdp__action i { font-size: 1.05rem; }
 .cdp__action:hover { border-color: var(--primary-500); color: var(--primary-500); }
 .cdp__action--active {
   background: var(--primary-500);
@@ -396,69 +401,75 @@ function fmtDateTime(iso) {
   white-space: nowrap;
 }
 .cdp__status-select {
-  padding: 0.28rem 0.4rem;
+  height: 36px;
+  padding: 0 1.9rem 0 0.7rem;
   border: 1px solid var(--border-light);
-  border-radius: var(--radius-md);
-  font-size: 0.73rem;
+  border-radius: 9px;
+  font-size: 0.8rem;
+  font-weight: 600;
   color: var(--text-primary);
-  background: var(--bg-main);
+  background: var(--bg-card);
   cursor: pointer;
   outline: none;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%238b91a7' stroke-width='3' stroke-linecap='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.6rem center;
 }
 .cdp__status-select:focus { border-color: var(--primary-500); }
 
 /* ── Section ─────────────────────────────────────────── */
 .cdp__section {
-  padding: 0.75rem 1.1rem;
+  padding: 1.1rem 1.25rem;
   border-bottom: 1px solid var(--border-light);
   display: flex;
   flex-direction: column;
-  gap: 0.55rem;
+  gap: 0.7rem;
 }
 
 .cdp__section-title {
-  font-size: 0.62rem;
+  font-size: 0.64rem;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--text-secondary);
 }
 
-/* ── Grid of fields (Outlook-style inline wrap) ─────── */
+/* ── Grid of fields ──────────────────────────────────── */
 .cdp__grid {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.3rem 1.1rem;
-  align-items: baseline;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem 1.2rem;
 }
 
 .cdp__field {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 0.25rem;
-  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
   min-width: 0;
 }
 
 .cdp__label {
-  font-size: 0.6rem;
+  font-size: 0.64rem;
   font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.03em;
+  letter-spacing: 0.06em;
   color: var(--text-secondary);
   white-space: nowrap;
   flex-shrink: 0;
 }
-.cdp__label::after { content: ':'; }
 
 .cdp__value {
-  font-size: 0.78rem;
+  font-size: 0.88rem;
   color: var(--text-primary);
-  font-weight: 500;
+  font-weight: 600;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   max-width: 220px;
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
 }
 
 .cdp__value--specialist {
@@ -471,9 +482,9 @@ function fmtDateTime(iso) {
 
 /* ── Description ─────────────────────────────────────── */
 .cdp__desc {
-  font-size: 0.82rem;
+  font-size: 0.86rem;
   color: var(--text-primary);
-  line-height: 1.6;
+  line-height: 1.5;
   white-space: pre-wrap;
   margin: 0;
 }

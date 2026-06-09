@@ -5,11 +5,11 @@ import { useCasesStore } from '@/presentation/stores/useCasesStore'
 import { useUserStore } from '@/presentation/stores/useUserStore'
 import { useAuthStore } from '@/presentation/stores/useAuthStore'
 import { useCasesRealtime } from '@/presentation/composables/useCasesRealtime'
-import CaseFiltersBar from '@/presentation/components/CaseFiltersBar.vue'
-import CaseListTable from '@/presentation/components/CaseListTable.vue'
-import CaseLoadsView from '@/presentation/components/CaseLoadsView.vue'
-import CaseDetailModal from '@/presentation/components/CaseDetailModal.vue'
-import CaseCreateModal from '@/presentation/components/CaseCreateModal.vue'
+import CaseFiltersBar from '@/presentation/components/cases/CaseFiltersBar.vue'
+import CaseListTable from '@/presentation/components/cases/CaseListTable.vue'
+import CaseLoadsView from '@/presentation/components/cases/CaseLoadsView.vue'
+import CaseDetailModal from '@/presentation/components/cases/CaseDetailModal.vue'
+import CaseCreateModal from '@/presentation/components/cases/CaseCreateModal.vue'
 
 const store = useCasesStore()
 const userStore = useUserStore()
@@ -19,9 +19,11 @@ const router = useRouter()
 const autopilotError = ref(null)
 
 // Derived from route — no local state needed
-const activeTab = computed(() =>
-  route.name?.startsWith('casos-cargas') ? 'cargas' : 'lista'
-)
+const activeTab = computed(() => {
+  if (route.name === 'cases-specialists') return 'especialistas'
+  if (route.name?.startsWith('cases-loads')) return 'cargas'
+  return 'lista'
+})
 
 // ── Resizable detail panel ────────────────────────────
 const PANEL_MIN = 320
@@ -79,6 +81,7 @@ async function runAutopilot() {
 
 const tabs = [
   { id: 'lista', label: 'Lista', icon: 'bx-list-ul' },
+  { id: 'especialistas', label: 'Especialistas', icon: 'bx-group' },
   { id: 'cargas', label: 'Cargas', icon: 'bx-bar-chart-alt-2' },
 ]
 
@@ -104,15 +107,15 @@ watch(() => route.params.id, (id) => {
 
 // Close detail → navigate back to list (keep status param)
 watch(() => store.showDetailModal, (open) => {
-  if (!open && route.name === 'casos-lista-detail') {
-    router.replace({ name: 'casos-lista', params: { status: route.params.status } })
+  if (!open && route.name === 'cases-list-detail') {
+    router.replace({ name: 'cases-list', params: { status: route.params.status } })
   }
 })
 
 // Prev/Next navigation → replace URL without extra history entry
 watch(() => store.selectedCase?.id, (id) => {
   if (store.showDetailModal && id && route.params.id !== id) {
-    router.replace({ name: 'casos-lista-detail', params: { status: route.params.status ?? 'open', id } })
+    router.replace({ name: 'cases-list-detail', params: { status: route.params.status ?? 'open', id } })
   }
 })
 
@@ -123,7 +126,7 @@ watch(() => route.params.status, (newStatus, oldStatus) => {
 })
 
 function openCase(id) {
-  router.push({ name: 'casos-lista-detail', params: { status: route.params.status ?? 'open', id } })
+  router.push({ name: 'cases-list-detail', params: { status: route.params.status ?? 'open', id } })
 }
 
 // ── Init ─────────────────────────────────────────────
@@ -152,8 +155,10 @@ onMounted(async () => {
         class="cv__tab"
         :class="{ 'cv__tab--active': activeTab === tab.id }"
         @click="tab.id === 'cargas'
-          ? router.push({ name: 'casos-cargas' })
-          : router.push({ name: 'casos-lista', params: { status: route.params.status ?? 'open' } })"
+          ? router.push({ name: 'cases-loads' })
+          : tab.id === 'especialistas'
+            ? router.push({ name: 'cases-specialists' })
+            : router.push({ name: 'cases-list', params: { status: route.params.status ?? 'open' } })"
       >
         <i :class="'bx ' + tab.icon + ' cv__tab-icon'"></i>
         {{ tab.label }}
@@ -219,6 +224,11 @@ onMounted(async () => {
       />
     </div>
 
+    <!-- Especialistas tab -->
+    <div v-show="activeTab === 'especialistas'" class="cv__cargas">
+      <!-- TODO: specialist work overview component -->
+    </div>
+
     <!-- Cargas tab (admin only) -->
     <div v-show="activeTab === 'cargas' && authStore.isAdmin" class="cv__cargas">
       <CaseLoadsView />
@@ -243,41 +253,48 @@ onMounted(async () => {
   display: flex;
   align-items: center;
   border-bottom: 1px solid var(--border-light);
-  padding: 0 1rem;
+  padding: 0 1.25rem;
+  background: var(--bg-card);
   flex-shrink: 0;
 }
 
 .cv__tab {
   display: flex;
   align-items: center;
-  gap: 0.4rem;
-  padding: 0.75rem 0.9rem;
-  font-size: 0.82rem;
+  gap: 0.5rem;
+  padding: 0.85rem 0.4rem;
+  margin: 0 0.7rem 0 0.2rem;
+  font-size: 0.92rem;
   font-weight: 600;
   color: var(--text-secondary);
   background: none;
   border: none;
   border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
   cursor: pointer;
-  transition: color 0.12s, border-color 0.12s;
+  transition: color 0.15s;
   white-space: nowrap;
 }
 .cv__tab:hover { color: var(--text-primary); }
 .cv__tab--active { color: var(--primary-500); border-bottom-color: var(--primary-500); }
-.cv__tab-icon { font-size: 0.95rem; }
+.cv__tab-icon { font-size: 1.1rem; }
 
 .cv__tab-badge {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 18px;
-  height: 18px;
-  padding: 0 4px;
+  font-size: 0.66rem;
+  font-weight: 700;
+  padding: 1px 7px;
+  border-radius: 999px;
   background: var(--primary-500);
   color: white;
-  border-radius: var(--radius-full);
-  font-size: 0.6rem;
-  font-weight: 700;
+  line-height: 1.5;
+}
+.cv__tab:not(.cv__tab--active) .cv__tab-badge {
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-light);
 }
 
 .cv__tabs-end {
@@ -290,21 +307,21 @@ onMounted(async () => {
 .cv__autopilot-btn {
   display: flex;
   align-items: center;
-  gap: 0.3rem;
-  padding: 0.4rem 0.75rem;
+  gap: 0.45rem;
+  padding: 0.55rem 0.95rem;
   background: var(--bg-card);
-  color: var(--text-secondary);
+  color: var(--text-primary);
   border: 1px solid var(--border-light);
-  border-radius: var(--radius-md);
-  font-size: 0.78rem;
+  border-radius: 10px;
+  font-size: 0.84rem;
   font-weight: 600;
   cursor: pointer;
-  transition: all 0.12s;
+  transition: all 0.15s;
   white-space: nowrap;
 }
 .cv__autopilot-btn:hover:not(:disabled) { border-color: var(--primary-500); color: var(--primary-500); }
 .cv__autopilot-btn:disabled { opacity: 0.55; cursor: not-allowed; }
-.cv__autopilot-btn i { font-size: 1rem; }
+.cv__autopilot-btn i { font-size: 1.05rem; }
 
 .cv__autopilot-pill {
   display: flex;
@@ -324,20 +341,22 @@ onMounted(async () => {
 .cv__create-btn {
   display: flex;
   align-items: center;
-  gap: 0.3rem;
-  padding: 0.4rem 0.75rem;
+  gap: 0.45rem;
+  padding: 0.6rem 1.05rem;
   background: var(--primary-500);
   color: white;
   border: none;
-  border-radius: var(--radius-md);
-  font-size: 0.78rem;
+  border-radius: 10px;
+  font-size: 0.88rem;
   font-weight: 600;
   cursor: pointer;
-  transition: background 0.12s;
+  box-shadow: 0 2px 8px rgba(42,199,143,0.3);
+  transition: all 0.15s;
   white-space: nowrap;
 }
-.cv__create-btn:hover { background: var(--primary-600); }
-.cv__create-btn i { font-size: 1rem; }
+.cv__create-btn:hover { background: var(--primary-600); box-shadow: 0 4px 14px rgba(42,199,143,0.4); transform: translateY(-1px); }
+.cv__create-btn:active { transform: translateY(0) scale(0.98); }
+.cv__create-btn i { font-size: 1.15rem; }
 
 /* ── Split layout ────────────────────────────────────── */
 .cv__split {

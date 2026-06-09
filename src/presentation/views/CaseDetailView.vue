@@ -1,12 +1,12 @@
 <script setup>
-import { computed, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useCasesStore } from '@/presentation/stores/useCasesStore'
 import { useUserStore } from '@/presentation/stores/useUserStore'
 import { useCasesRealtime } from '@/presentation/composables/useCasesRealtime'
-import CaseStatusTimeline from '@/presentation/components/CaseStatusTimeline.vue'
-import CaseAssignPanel from '@/presentation/components/CaseAssignPanel.vue'
-import CaseReassignModal from '@/presentation/components/CaseReassignModal.vue'
+import CaseStatusTimeline from '@/presentation/components/cases/CaseStatusTimeline.vue'
+import CaseAssignPanel from '@/presentation/components/cases/CaseAssignPanel.vue'
+import CaseReassignModal from '@/presentation/components/cases/CaseReassignModal.vue'
 import { useCaseDetail } from '@/presentation/composables/useCaseDetail'
 
 const route = useRoute()
@@ -34,7 +34,7 @@ onMounted(async () => {
 })
 
 function goBack() {
-  router.push({ name: 'casos-lista', params: { status: 'open' } })
+  router.push({ name: 'cases-list', params: { status: 'open' } })
 }
 
 function onAssignDone() {
@@ -46,10 +46,46 @@ function onReassignDone() {
   showReassign.value = false
   store.loadCaseById(route.params.id)
 }
+
+// ── Swipe navigation between cases ──
+let swipeX0 = 0
+let swipeY0 = 0
+const swipeBusy = ref(false)
+const SWIPE_THRESHOLD = 80
+
+function onSwipeStart(e) {
+  if (swipeBusy.value) return
+  const t = e.touches[0]
+  swipeX0 = t.clientX
+  swipeY0 = t.clientY
+}
+
+async function onSwipeEnd(e) {
+  if (swipeBusy.value) return
+  const t = e.changedTouches[0]
+  const dx = t.clientX - swipeX0
+  const dy = t.clientY - swipeY0
+  if (Math.abs(dx) < SWIPE_THRESHOLD || Math.abs(dx) < Math.abs(dy) * 0.8) return
+
+  swipeBusy.value = true
+  const status = route.params.status ?? 'open'
+  if (dx < 0 && store.hasNext) {
+    await store.goToNext()
+    if (store.selectedCase) {
+      router.replace({ name: 'cases-list-detail', params: { status, id: store.selectedCase.id } })
+    }
+  } else if (dx > 0 && store.hasPrev) {
+    store.goToPrev()
+    if (store.selectedCase) {
+      router.replace({ name: 'cases-list-detail', params: { status, id: store.selectedCase.id } })
+    }
+  }
+  swipeBusy.value = false
+}
 </script>
 
 <template>
-  <div class="cd">
+  <div class="cd" @touchstart.passive="onSwipeStart" @touchend.passive="onSwipeEnd">
     <!-- Loading -->
     <div v-if="store.loadingDetail" class="cd__loading">
       <i class="bx bx-loader-alt bx-spin"></i> Cargando caso...

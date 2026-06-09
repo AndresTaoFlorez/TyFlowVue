@@ -22,6 +22,7 @@ const props = defineProps({
   compact: { type: Boolean, default: false },
   selectedIds: { type: Object, default: () => new Set() },
   cutIds: { type: Object, default: () => new Set() },
+  multiDayPos: { type: String, default: null }, // 'first' | 'middle' | 'last' | null
 })
 
 const emit = defineEmits(['click', 'resize-start'])
@@ -56,6 +57,7 @@ const subBars = () => {
     const app = props.applications.find(a => a.id === w.applicationId)
     const color = app?.color || app?.theme?.color || '#8b8fea'
     const fullName = spec?.fullName ?? ''
+    const appName = app?.name || ''
     const initials = fullName
       ? fullName.split(' ').slice(0, 2).map(p => p[0]).join('').toUpperCase()
       : '?'
@@ -74,6 +76,8 @@ const subBars = () => {
       id: w.id,
       label: fullName || initials,
       initials,
+      appName,
+      timeRange: w.timeRange || '',
       color,
       textColor,
       isOpen: w.isActive,
@@ -86,6 +90,17 @@ const subBars = () => {
     }
   })
 }
+
+const showTopHandle = computed(() => {
+  if (!props.selectable) return false
+  if (props.multiDayPos === 'last' || props.multiDayPos === 'middle') return false
+  return true
+})
+const showBottomHandle = computed(() => {
+  if (!props.selectable) return false
+  if (props.multiDayPos === 'first' || props.multiDayPos === 'middle') return false
+  return true
+})
 
 const onHandleDown = (direction, e) => {
   e.stopPropagation()
@@ -108,7 +123,7 @@ const onHandleDown = (direction, e) => {
     width: width(),
   }" @click="$emit('click', group, $event)">
     <!-- Resize handle top -->
-    <div v-if="selectable" class="wgb__handle wgb__handle--top" @mousedown="onHandleDown('top', $event)"
+    <div v-if="showTopHandle" class="wgb__handle wgb__handle--top" @mousedown="onHandleDown('top', $event)"
       @touchstart.stop.prevent="onHandleDown('top', $event)"></div>
 
     <!-- Sub-bars -->
@@ -127,8 +142,13 @@ const onHandleDown = (direction, e) => {
         '--bar-text-color': bar.textColor,
       }">
         <template v-if="!compact">
-          <span class="wgb__bar-name">{{ bar.label }}</span>
+          <div class="wgb__bar-head">
+            <span class="wgb__bar-avatar">{{ bar.initials }}</span>
+            <span class="wgb__bar-name">{{ bar.label }}</span>
+          </div>
           <span class="wgb__bar-initials">{{ bar.initials }}</span>
+          <span v-if="bar.timeRange && bar.barHeight > 36" class="wgb__bar-time">{{ bar.timeRange }}</span>
+          <span v-if="bar.appName && bar.barHeight > 50" class="wgb__bar-app">{{ bar.appName }}</span>
         </template>
         <span v-if="compact && bar.barHeight >= 16" class="wgb__bar-initials wgb__bar-initials--compact">{{ bar.initials }}</span>
       </div>
@@ -138,7 +158,7 @@ const onHandleDown = (direction, e) => {
     <div class="wgb__badge">{{ count() }}</div>
 
     <!-- Resize handle bottom -->
-    <div v-if="selectable" class="wgb__handle wgb__handle--bottom" @mousedown="onHandleDown('bottom', $event)"
+    <div v-if="showBottomHandle" class="wgb__handle wgb__handle--bottom" @mousedown="onHandleDown('bottom', $event)"
       @touchstart.stop.prevent="onHandleDown('bottom', $event)"></div>
   </div>
 </template>
@@ -202,12 +222,15 @@ const onHandleDown = (direction, e) => {
   background: color-mix(in srgb, var(--bar-color) 20%, transparent);
   border-left: 3px solid var(--bar-color);
   display: flex;
+  flex-direction: column;
   align-items: flex-start;
-  justify-content: center;
+  justify-content: flex-start;
   box-sizing: border-box;
   padding: 4px 2px;
   transition: filter 0.12s;
   container-type: size;
+  overflow: hidden;
+  gap: 1px;
 }
 
 .wgb__bar--open {
@@ -248,18 +271,43 @@ const onHandleDown = (direction, e) => {
   filter: brightness(1.1);
 }
 
+/* Head row (avatar + name) */
+.wgb__bar-head {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  min-width: 0;
+  width: 100%;
+  padding: 0 2px;
+}
+
+.wgb__bar-avatar {
+  width: 14px;
+  height: 14px;
+  min-width: 14px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.42rem;
+  font-weight: 700;
+  color: white;
+  background: var(--bar-color);
+  flex-shrink: 0;
+  line-height: 1;
+}
+
 /* Full name — shown when bar is wide enough */
 .wgb__bar-name {
-  font-size: clamp(0.55rem, 50cqh, 0.8rem);
+  font-size: clamp(0.42rem, 22cqh, 0.72rem);
   font-weight: 700;
   color: var(--bar-text-color);
   line-height: 1.1;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  width: 100%;
-  text-align: left;
-  padding: 0 4px;
+  min-width: 0;
+  flex: 1;
 }
 
 /* Initials — shown when bar is too narrow for full name */
@@ -274,16 +322,47 @@ const onHandleDown = (direction, e) => {
   overflow: hidden;
 }
 
-/* Default: wide bars (>80px) — show full name, hide initials */
-.wgb__bar-name { display: block; }
+/* Time range */
+.wgb__bar-time {
+  font-size: clamp(0.36rem, 16cqh, 0.58rem);
+  font-weight: 500;
+  color: var(--bar-text-color);
+  opacity: 0.85;
+  padding: 0 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  width: 100%;
+  text-align: left;
+}
+
+/* App name pill */
+.wgb__bar-app {
+  font-size: clamp(0.34rem, 14cqh, 0.52rem);
+  font-weight: 600;
+  color: var(--bar-text-color);
+  opacity: 0.8;
+  background: color-mix(in srgb, var(--bar-color) 15%, transparent);
+  padding: 0.03rem 4px;
+  border-radius: 2px;
+  margin: 0 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: calc(100% - 4px);
+  text-align: left;
+}
+
+/* Default: show head (avatar+name), hide plain initials */
+.wgb__bar-head { display: flex; }
 .wgb__bar-initials:not(.wgb__bar-initials--compact) { display: none; }
 
-/* Narrow bars (<80px) — show initials, hide name */
-@container (max-width: 80px) {
-  .wgb__bar-name { display: none; }
+/* Very narrow bars (<35px) — only initials fit */
+@container (max-width: 35px) {
+  .wgb__bar-head { display: none; }
   .wgb__bar-initials:not(.wgb__bar-initials--compact) { display: block; }
-  .wgb__bar-name,
-  .wgb__bar-initials { padding: 0; }
+  .wgb__bar-time { display: none; }
+  .wgb__bar-app { display: none; }
 }
 
 

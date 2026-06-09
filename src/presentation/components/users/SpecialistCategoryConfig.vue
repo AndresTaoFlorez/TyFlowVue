@@ -291,6 +291,7 @@ defineExpose({ commitPending })
             <button
               v-for="cat in categoriesPerPair[pairKey(pair.application_id, pair.support_level_id)]"
               :key="cat.id"
+              type="button"
               class="scc__chip"
               :class="{
                 'scc__chip--excluded': isExcluded(pair.application_id, cat.id),

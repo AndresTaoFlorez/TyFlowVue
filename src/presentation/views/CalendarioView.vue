@@ -4,14 +4,14 @@ import { storeToRefs } from 'pinia'
 import { useAuthStore } from '@/presentation/stores/useAuthStore'
 import { useUserStore } from '@/presentation/stores/useUserStore'
 import { useCalendarStore } from '@/presentation/stores/useCalendarStore'
-import WeekCalendar from '@/presentation/components/WeekCalendar.vue'
-import WorkWindowModal from '@/presentation/components/WorkWindowModal.vue'
-import CreateWorkWindowModal from '@/presentation/components/CreateWorkWindowModal.vue'
-import WindowGroupPanel from '@/presentation/components/WindowGroupPanel.vue'
+import WeekCalendar from '@/presentation/components/calendar/WeekCalendar.vue'
+import WorkWindowModal from '@/presentation/components/calendar/WorkWindowModal.vue'
+import CreateWorkWindowModal from '@/presentation/components/calendar/CreateWorkWindowModal.vue'
+import WindowGroupPanel from '@/presentation/components/calendar/WindowGroupPanel.vue'
 import { fmtHM, fmtTimeFromMins } from '@/presentation/helpers/formatTime'
-import SectionLoader from '@/presentation/components/SectionLoader.vue'
-import ToastNotification from '@/presentation/components/ToastNotification.vue'
-import ContextMenu from '@/presentation/components/ContextMenu.vue'
+import SectionLoader from '@/presentation/components/layout/SectionLoader.vue'
+import ToastNotification from '@/presentation/components/layout/ToastNotification.vue'
+import ContextMenu from '@/presentation/components/shared/ContextMenu.vue'
 import { BP_MOBILE } from '@/presentation/utils/breakpoints'
 
 const authStore = useAuthStore()
@@ -22,7 +22,7 @@ const {
   calView, weekDates, monthDates, currentMonth, weekLabel,
   loading, windowsFiltradas, monthOffset,
   filtroSpecialist, filtroApp, specOptions, appOptions, specialistsConVentana,
-  isMobile, canUndo,
+  isMobile, canUndo, density,
 } = storeToRefs(calStore)
 
 // ---- Date picker ----
@@ -76,21 +76,52 @@ const cutWindowIds = ref(new Set())
 
 function closeCtxMenu() { ctxMenu.value.visible = false }
 
+function nextGridSlotMins() {
+  const now = new Date()
+  const mins = now.getHours() * 60 + now.getMinutes()
+  return Math.ceil((mins + 1) / 30) * 30
+}
+
+function todayISOLocal() {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
 async function pasteOnSlot(date, startTime, endTime) {
   if (!clipboard.value) return
   const pasteWindows = clipboard.value.type === 'group' ? clipboard.value.data : [clipboard.value.data]
+
+  const [tH, tM] = startTime.split(':').map(Number)
+  let targetStartMins = tH * 60 + tM
+
+  if (date === todayISOLocal()) {
+    const nextSlot = nextGridSlotMins()
+    if (targetStartMins < nextSlot) targetStartMins = nextSlot
+  }
+
+  const fw = pasteWindows[0]
+  const [fH, fM] = fw.startTime.split(':').map(Number)
+  const offsetMins = targetStartMins - (fH * 60 + fM)
+
   try {
-    const createData = pasteWindows.map(w => ({
-      specialistId: w.specialistId,
-      applicationId: w.applicationId,
-      startTime,
-      endTime,
-      scheduledDate: date,
-      inheritsOnReopen: w.inheritsOnReopen || false,
-      affinityWeight: w.affinityWeight ?? null,
-    }))
+    const createData = pasteWindows.map(w => {
+      const [wSH, wSM] = w.startTime.split(':').map(Number)
+      const [wEH, wEM] = w.endTime.split(':').map(Number)
+      const dur = (wEH * 60 + wEM) - (wSH * 60 + wSM)
+      const newStart = Math.max(0, Math.min(wSH * 60 + wSM + offsetMins, 1410))
+      const newEnd = Math.max(newStart + 30, Math.min(newStart + dur, 1440))
+      return {
+        specialistId: w.specialistId,
+        applicationId: w.applicationId,
+        startTime: fmtTimeFromMins(newStart),
+        endTime: fmtTimeFromMins(newEnd),
+        scheduledDate: date,
+        inheritsOnReopen: w.inheritsOnReopen || false,
+        affinityWeight: w.affinityWeight ?? null,
+      }
+    })
     await calStore.createWindows(createData)
-    if (clipboard.value.cut) {
+    if (clipboard.value?.cut) {
       const cutIds = pasteWindows.map(w => w.id).filter(Boolean)
       if (cutIds.length > 0) await calStore.batchDelete(cutIds)
       cutWindowIds.value = new Set()
@@ -103,37 +134,50 @@ async function pasteOnSlot(date, startTime, endTime) {
 }
 
 function onWindowContext({ window: w, x, y }) {
-  const isFutureWindow = w.startsAt && new Date(w.startsAt) > new Date()
-  const isEndedWindow = w.endsAt && new Date(w.endsAt) < new Date()
+  // Seal rules per API_CONTRACT Section 16:
+  // Future (starts_at > now): full edit, delete, merge, inherit
+  // In-progress (starts_at <= now <= ends_at): toggle only
+  // Ended (ends_at < now): read-only
+  const now = new Date()
+  const isFuture = w.startsAt && new Date(w.startsAt) > now
+  const isEnded = w.endsAt && new Date(w.endsAt) < now
+  const isInProgress = !isFuture && !isEnded
   const hasInheritance = !!(w.inheritedFromWindowId || w.inheritsOnReopen)
-  const inheritItem = isFutureWindow
+  const inheritItem = isFuture
     ? (hasInheritance
       ? { label: 'Desactivar herencia', icon: 'bx-unlink', action: 'disinherit' }
       : { label: 'Activar herencia', icon: 'bx-link', action: 'reinherit' })
     : null
   const items = [
-    ...(!isEndedWindow ? [{ label: 'Editar', icon: 'bx-pencil', action: 'edit' }] : []),
-    { label: 'Agregar especialista', icon: 'bx-user-plus', action: 'add-specialist' },
-    ...(!isEndedWindow ? [{ label: w.isActive ? 'Inhabilitar' : 'Habilitar', icon: w.isActive ? 'bx-block' : 'bx-check-circle', action: 'toggle' }] : []),
+    // Edit: only future windows (sealed windows rejected by DB)
+    ...(isFuture ? [{ label: 'Editar', icon: 'bx-pencil', action: 'edit' }] : []),
+    ...(isFuture ? [{ label: 'Agregar especialista', icon: 'bx-user-plus', action: 'add-specialist' }] : []),
+    // Toggle: allowed on future and in-progress, NOT ended
+    ...(!isEnded ? [{ label: w.isActive ? 'Inhabilitar' : 'Habilitar', icon: w.isActive ? 'bx-block' : 'bx-check-circle', action: 'toggle' }] : []),
     ...(inheritItem ? [inheritItem] : []),
     { label: 'Copiar ventana', icon: 'bx-copy', action: 'copy' },
-    ...(isFutureWindow ? [{ label: 'Cortar ventana', icon: 'bx-cut', action: 'cut' }] : []),
+    // Cut: only future (will be deleted after paste)
+    ...(isFuture ? [{ label: 'Cortar ventana', icon: 'bx-cut', action: 'cut' }] : []),
     ...(clipboard.value ? [{ label: 'Pegar aquí', icon: 'bx-paste', action: 'paste-on-window' }] : []),
     { label: 'Copiar ID', icon: 'bx-hash', action: 'copy-id' },
-    { label: 'Eliminar', icon: 'bx-trash', action: 'delete', danger: true },
+    // Delete: only future (sealed windows rejected by DB)
+    ...(isFuture ? [{ label: 'Eliminar', icon: 'bx-trash', action: 'delete', danger: true }] : []),
   ]
   ctxMenu.value = { visible: true, x, y, items, target: w, targetType: 'window' }
 }
 
 function onGroupContext({ group, x, y }) {
-  const allGroupFuture = group.windows.every(w => w.startsAt && new Date(w.startsAt) > new Date())
+  const now = new Date()
+  const allGroupFuture = group.windows.every(w => w.startsAt && new Date(w.startsAt) > now)
+  const allGroupEnded = group.windows.every(w => w.endsAt && new Date(w.endsAt) < now)
   const items = [
     { label: 'Ver grupo', icon: 'bx-expand-alt', action: 'view-group' },
-    { label: 'Agregar especialista', icon: 'bx-user-plus', action: 'add-to-group' },
+    ...(allGroupFuture ? [{ label: 'Agregar especialista', icon: 'bx-user-plus', action: 'add-to-group' }] : []),
     { label: 'Copiar grupo', icon: 'bx-copy', action: 'copy-group' },
     ...(allGroupFuture ? [{ label: 'Cortar grupo', icon: 'bx-cut', action: 'cut-group' }] : []),
     ...(clipboard.value ? [{ label: 'Pegar aquí', icon: 'bx-paste', action: 'paste-on-group' }] : []),
-    { label: 'Eliminar grupo', icon: 'bx-trash', action: 'delete-group', danger: true },
+    // Delete group: only if all future
+    ...(allGroupFuture ? [{ label: 'Eliminar grupo', icon: 'bx-trash', action: 'delete-group', danger: true }] : []),
   ]
   ctxMenu.value = { visible: true, x, y, items, target: group, targetType: 'group' }
 }
@@ -197,14 +241,18 @@ async function handleCtxAction(action) {
       case 'view-group': selectedGroup.value = group; break
       case 'add-to-group': {
         const firstW = group.windows[0]
-        const startH = Math.floor(group.startHour)
-        const startM = Math.round((group.startHour % 1) * 60)
-        const endH = Math.floor(group.endHour)
-        const endM = Math.round((group.endHour % 1) * 60)
+        const startMins = Math.floor(group.startHour) * 60 + Math.round((group.startHour % 1) * 60)
+        const endMins = Math.floor(group.endHour) * 60 + Math.round((group.endHour % 1) * 60)
+        const dur = endMins - startMins
+        let adjustedStart = startMins
+        if (firstW.scheduledDate === todayISOLocal() && startMins < nextGridSlotMins()) {
+          adjustedStart = nextGridSlotMins()
+        }
+        const adjustedEnd = Math.min(adjustedStart + dur, 1440)
         prefillData.value = {
           dates: [firstW.scheduledDate],
-          startTime: fmtHM(startH, startM),
-          endTime: fmtHM(endH, endM),
+          startTime: fmtTimeFromMins(adjustedStart),
+          endTime: fmtTimeFromMins(adjustedEnd),
         }
         mostrarCrear.value = true
         break
@@ -238,12 +286,14 @@ async function handleCtxAction(action) {
         prefillData.value = { dates: [date], startTime: time, endTime }
         mostrarCrear.value = true
         break
-      case 'paste':
+      case 'paste': {
         if (!clipboard.value) break
         const pasteWindows = clipboard.value.type === 'group' ? clipboard.value.data : [clipboard.value.data]
         try {
-          // Calculate offset from cell time to shift all pasted windows
-          const cellMins = parseInt(time.split(':')[0]) * 60 + parseInt(time.split(':')[1])
+          let cellMins = parseInt(time.split(':')[0]) * 60 + parseInt(time.split(':')[1])
+          if (date === todayISOLocal() && cellMins < nextGridSlotMins()) {
+            cellMins = nextGridSlotMins()
+          }
           const firstW = pasteWindows[0]
           const firstMins = parseInt(firstW.startTime.split(':')[0]) * 60 + parseInt(firstW.startTime.split(':')[1])
           const offsetMins = cellMins - firstMins
@@ -251,8 +301,9 @@ async function handleCtxAction(action) {
           const createData = pasteWindows.map(w => {
             const wStartMins = parseInt(w.startTime.split(':')[0]) * 60 + parseInt(w.startTime.split(':')[1])
             const wEndMins = parseInt(w.endTime.split(':')[0]) * 60 + parseInt(w.endTime.split(':')[1])
-            const newStart = Math.max(0, Math.min(wStartMins + offsetMins, 1439))
-            const newEnd = Math.max(newStart + 30, Math.min(wEndMins + offsetMins, 1440))
+            const dur = wEndMins - wStartMins
+            const newStart = Math.max(0, Math.min(wStartMins + offsetMins, 1410))
+            const newEnd = Math.max(newStart + 30, Math.min(newStart + dur, 1440))
             return {
               specialistId: w.specialistId,
               applicationId: w.applicationId,
@@ -264,7 +315,7 @@ async function handleCtxAction(action) {
             }
           })
           await calStore.createWindows(createData)
-          if (clipboard.value.cut) {
+          if (clipboard.value?.cut) {
             const cutIds = pasteWindows.map(w => w.id).filter(Boolean)
             if (cutIds.length > 0) await calStore.batchDelete(cutIds)
             cutWindowIds.value = new Set()
@@ -275,6 +326,7 @@ async function handleCtxAction(action) {
           showToast(e.userMessage || 'Error al pegar.', 'error')
         }
         break
+      }
     }
   }
 }
@@ -659,7 +711,7 @@ onUnmounted(() => {
         <button class="toolbar__arrow" @click="slideDir = 'slide-right'; calStore.prevNav()">
           <i class='bx bx-chevron-left'></i>
         </button>
-        <button class="toolbar__today" @click="slideDir = ''; calStore.goToday()" :class="{ 'toolbar__today--hidden-mobile': isMobile }">Hoy</button>
+        <button class="toolbar__today" @click="slideDir = ''; calStore.goToday()">Hoy</button>
         <button class="toolbar__arrow" @click="slideDir = 'slide-left'; calStore.nextNav()">
           <i class='bx bx-chevron-right'></i>
         </button>
@@ -701,6 +753,22 @@ onUnmounted(() => {
           title="Deshacer (Ctrl+Z)">
           <i class='bx bx-undo'></i>
         </button>
+
+        <!-- Density selector (desktop only) -->
+        <div v-if="!isMobile" class="toolbar__density">
+          <button class="toolbar__density-btn" :class="{ 'toolbar__density-btn--active': density === 'compact' }"
+            @click="calStore.setDensity('compact')" title="Compacto">
+            <i class='bx bx-menu'></i>
+          </button>
+          <button class="toolbar__density-btn" :class="{ 'toolbar__density-btn--active': density === 'comfortable' }"
+            @click="calStore.setDensity('comfortable')" title="Normal">
+            <i class='bx bx-align-justify'></i>
+          </button>
+          <button class="toolbar__density-btn" :class="{ 'toolbar__density-btn--active': density === 'spacious' }"
+            @click="calStore.setDensity('spacious')" title="Espacioso">
+            <i class='bx bx-expand-vertical'></i>
+          </button>
+        </div>
 
         <!-- Filter toggle (mobile only, collapses filters) -->
         <button v-if="isMobile" class="toolbar__filter-toggle"
@@ -785,7 +853,7 @@ onUnmounted(() => {
 
       <!-- Calendario -->
       <WeekCalendar v-else :windows="windowsFiltradas" :week-dates="weekDates" :specialists="userStore.users"
-        :applications="userStore.applications" :selectable="authStore.isAdmin" :is-mobile="isMobile" :view-mode="calView"
+        :applications="userStore.applications" :selectable="authStore.isAdmin" :density="density" :is-mobile="isMobile" :view-mode="calView"
         :month-dates="monthDates" :current-month="currentMonth" :active-tool="activeTool"
         :selected-window-ids="selectedWindows" :cut-window-ids="cutWindowIds" :slide-dir="slideDir"
         @select="selectedWindow = $event"
@@ -800,13 +868,15 @@ onUnmounted(() => {
     </div>
 
     <!-- Modal detalle -->
-    <WorkWindowModal v-if="selectedWindow" :window="selectedWindow" :specialist-name="calStore.specName(selectedWindow)"
-      :application-name="calStore.appName(selectedWindow)" :loading="modalLoading"
-      :start-in-edit-mode="openModalInEdit"
-      :show-back-button="!!returnToGroup"
-      @close="closeWindowModal" @back="closeWindowModal"
-      @delete="handleDelete" @update="handleUpdate" @toggle="handleToggle"
-      @disinherit="handleDisinherit" @reinherit="handleReinherit" />
+    <Transition name="ww-modal">
+      <WorkWindowModal v-if="selectedWindow" :window="selectedWindow" :specialist-name="calStore.specName(selectedWindow)"
+        :application-name="calStore.appName(selectedWindow)" :loading="modalLoading"
+        :start-in-edit-mode="openModalInEdit"
+        :show-back-button="!!returnToGroup"
+        @close="closeWindowModal" @back="closeWindowModal"
+        @delete="handleDelete" @update="handleUpdate" @toggle="handleToggle"
+        @disinherit="handleDisinherit" @reinherit="handleReinherit" />
+    </Transition>
 
     <!-- Panel grupo -->
     <WindowGroupPanel v-if="selectedGroup" :group="selectedGroup" :specialists="userStore.users"
@@ -879,21 +949,22 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: 0.45rem;
-  padding: 0.55rem 1rem;
+  padding: 0.6rem 1.05rem;
   background-color: var(--primary-500);
   color: white;
   font-weight: 600;
-  font-size: 0.85rem;
-  border-radius: var(--radius-md);
+  font-size: 0.88rem;
+  border-radius: 10px;
   border: none;
   cursor: pointer;
-  transition: background-color 0.15s, box-shadow 0.15s, transform 0.1s;
-  box-shadow: 0 1px 3px rgba(42, 199, 143, 0.25);
+  transition: all 0.15s;
+  box-shadow: 0 2px 8px rgba(42, 199, 143, 0.3);
 }
 
 .btn-create:hover {
   background-color: var(--primary-600);
-  box-shadow: 0 3px 10px rgba(42, 199, 143, 0.3);
+  box-shadow: 0 4px 14px rgba(42, 199, 143, 0.4);
+  transform: translateY(-1px);
 }
 
 .btn-create:active {
@@ -943,11 +1014,13 @@ onUnmounted(() => {
   border: 1px solid var(--border-light);
   color: var(--text-secondary);
   font-size: 1.1rem;
-  padding: 0.25rem 0.4rem;
-  border-radius: var(--radius-sm);
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
   cursor: pointer;
   display: flex;
   align-items: center;
+  justify-content: center;
   transition: all 0.15s;
 }
 
@@ -959,7 +1032,7 @@ onUnmounted(() => {
 /* ---- Toolbar ---- */
 .toolbar {
   background: var(--bg-main);
-  padding: 0.5rem 0.75rem;
+  padding: 0.7rem 1.25rem;
   border-radius: var(--radius-md);
   border: 1px solid var(--border-light);
   display: flex;
@@ -982,12 +1055,14 @@ onUnmounted(() => {
   background: none;
   border: 1px solid var(--border-light);
   color: var(--text-secondary);
-  font-size: 1rem;
-  padding: 0.2rem 0.3rem;
-  border-radius: var(--radius-sm);
+  font-size: 1.1rem;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
   cursor: pointer;
   display: flex;
   align-items: center;
+  justify-content: center;
   transition: all 0.15s;
   flex-shrink: 0;
 }
@@ -1001,9 +1076,10 @@ onUnmounted(() => {
 .toolbar__today {
   background: none;
   border: 1px solid var(--border-light);
-  padding: 0.2rem 0.5rem;
-  border-radius: var(--radius-sm);
-  font-size: 0.72rem;
+  height: 32px;
+  padding: 0 0.8rem;
+  border-radius: 8px;
+  font-size: 0.78rem;
   font-weight: 600;
   color: var(--text-primary);
   cursor: pointer;
@@ -1021,10 +1097,11 @@ onUnmounted(() => {
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;
-  padding: 0.25rem 0.55rem;
+  height: 32px;
+  padding: 0 0.75rem;
   background: var(--bg-main);
   border: 1px solid var(--border-light);
-  border-radius: var(--radius-sm);
+  border-radius: 8px;
   cursor: pointer;
   margin-right: auto;
   transition: all 0.15s;
@@ -1066,24 +1143,25 @@ onUnmounted(() => {
   overflow: hidden;
 }
 
-/* View toggle */
+/* View toggle (segmented control) */
 .toolbar__views {
   display: flex;
   border: 1px solid var(--border-light);
-  border-radius: var(--radius-sm);
+  border-radius: 8px;
   overflow: hidden;
   flex-shrink: 0;
 }
 
 .toolbar__view-btn {
-  padding: 0.2rem 0.5rem;
-  font-size: 0.68rem;
+  padding: 0 0.7rem;
+  height: 32px;
+  font-size: 0.74rem;
   font-weight: 600;
   color: var(--text-secondary);
   background: var(--bg-main);
   border: none;
   cursor: pointer;
-  transition: all 0.15s;
+  transition: all 0.12s;
 }
 
 .toolbar__view-short { display: none; }
@@ -1112,15 +1190,16 @@ onUnmounted(() => {
 .toolbar__tools {
   display: flex;
   border: 1px solid var(--border-light);
-  border-radius: var(--radius-sm);
+  border-radius: 8px;
   overflow: hidden;
   flex-shrink: 0;
   margin-left: 0.25rem;
 }
 
 .toolbar__tool-btn {
-  padding: 0.2rem 0.4rem;
-  font-size: 0.78rem;
+  width: 32px;
+  height: 32px;
+  font-size: 1rem;
   color: var(--text-secondary);
   background: var(--bg-main);
   border: none;
@@ -1128,6 +1207,7 @@ onUnmounted(() => {
   transition: all 0.15s;
   display: flex;
   align-items: center;
+  justify-content: center;
 }
 
 .toolbar__tool-btn+.toolbar__tool-btn {
@@ -1149,18 +1229,63 @@ onUnmounted(() => {
   color: white;
 }
 
-/* Undo button */
-.toolbar__undo-btn {
-  padding: 0.2rem 0.4rem;
-  font-size: 0.85rem;
-  color: var(--text-secondary);
-  background: none;
+/* Density selector */
+.toolbar__density {
+  display: flex;
   border: 1px solid var(--border-light);
-  border-radius: var(--radius-sm);
+  border-radius: 8px;
+  overflow: hidden;
+  flex-shrink: 0;
+  margin-left: 0.15rem;
+}
+
+.toolbar__density-btn {
+  width: 32px;
+  height: 32px;
+  font-size: 1rem;
+  color: var(--text-secondary);
+  background: var(--bg-main);
+  border: none;
   cursor: pointer;
   transition: all 0.15s;
   display: flex;
   align-items: center;
+  justify-content: center;
+}
+
+.toolbar__density-btn+.toolbar__density-btn {
+  border-left: 1px solid var(--border-light);
+}
+
+.toolbar__density-btn:hover {
+  color: var(--text-primary);
+  background: var(--bg-card);
+}
+
+.toolbar__density-btn--active {
+  background: var(--primary-500);
+  color: white;
+}
+
+.toolbar__density-btn--active:hover {
+  background: var(--primary-600);
+  color: white;
+}
+
+/* Undo button */
+.toolbar__undo-btn {
+  width: 32px;
+  height: 32px;
+  font-size: 1.05rem;
+  color: var(--text-secondary);
+  background: none;
+  border: 1px solid var(--border-light);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.15s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   flex-shrink: 0;
   margin-left: 0.15rem;
 }
@@ -1270,10 +1395,12 @@ onUnmounted(() => {
 }
 
 .toolbar__select {
-  padding: 0.25rem 0.4rem;
+  height: 32px;
+  padding: 0 1.8rem 0 0.7rem;
   border: 1px solid var(--border-light);
-  border-radius: var(--radius-sm);
-  font-size: 0.72rem;
+  border-radius: 8px;
+  font-size: 0.76rem;
+  font-weight: 500;
   color: var(--text-primary);
   background: var(--bg-main);
   cursor: pointer;

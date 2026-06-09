@@ -1,5 +1,5 @@
 <script setup>
-import UserCard from '@/presentation/components/UserCard.vue'
+import UserCard from '@/presentation/components/users/UserCard.vue'
 
 defineProps({
   users: { type: Array, required: true },

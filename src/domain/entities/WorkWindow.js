@@ -63,23 +63,46 @@ export class WorkWindow {
     return d.getHours() + d.getMinutes() / 60
   }
 
-  // --- Temporal guards (match backend fn_update_work_window rules) ---
+  // --- Temporal guards (match backend seal rules from API_CONTRACT) ---
+  // A window is **sealed** once starts_at <= Timeline (server now).
+  // Frontend uses Date.now() as an approximation; the backend enforces the real Timeline.
 
-  /** Window is currently in shift: now() between starts_at and ends_at AND active */
-  get isInShift() {
-    if (!this.startsAt || !this.endsAt || !this.isActive) return false
-    const now = Date.now()
-    return now >= new Date(this.startsAt).getTime() && now <= new Date(this.endsAt).getTime()
+  /** Future: starts_at > now — fully editable, deletable, mergeable */
+  get isFuture() {
+    if (!this.startsAt) return false
+    return Date.now() < new Date(this.startsAt).getTime()
   }
 
-  /** Window start has already passed */
-  get hasStarted() {
+  /** Sealed: starts_at <= now — all structural mutations rejected by DB */
+  get isSealed() {
     if (!this.startsAt) return false
     return Date.now() >= new Date(this.startsAt).getTime()
   }
 
-  /** Can starts_at be changed? Blocked only while in-shift */
-  get canEditStart() { return !this.isInShift }
+  /** Window start has already passed (alias for isSealed for readability) */
+  get hasStarted() { return this.isSealed }
+
+  /** In-progress: starts_at <= now <= ends_at — only toggle allowed */
+  get isInShift() {
+    if (!this.startsAt || !this.endsAt) return false
+    const now = Date.now()
+    return now >= new Date(this.startsAt).getTime() && now <= new Date(this.endsAt).getTime()
+  }
+
+  /** Ended: ends_at < now — fully read-only, toggle blocked too */
+  get isEnded() {
+    if (!this.endsAt) return false
+    return Date.now() > new Date(this.endsAt).getTime()
+  }
+
+  /** Can this window be structurally edited (starts_at, ends_at, delete, merge)? Only if future. */
+  get canEdit() { return this.isFuture }
+
+  /** Can starts_at be changed? Only if not yet started */
+  get canEditStart() { return this.isFuture }
+
+  /** Can toggle is_active? Allowed on future and in-progress, NOT on ended */
+  get canToggle() { return !this.isEnded }
 
   get timeRange() {
     const fmt = (t) => {
@@ -89,6 +112,8 @@ export class WorkWindow {
     }
     return `${fmt(this.startTime)} – ${fmt(this.endTime)}`
   }
+
+  toJSON() { return this._toRaw() }
 
   _toRaw() {
     return {
@@ -119,13 +144,32 @@ export class WorkWindow {
 
   static toTimestampTz(date, time) {
     if (!date || !time) return null
-    const t = time.length === 5 ? `${time}:00` : time
-    // Use browser's local timezone offset for the given date/time
-    const d = new Date(`${date}T${t}`)
-    const offset = -d.getTimezoneOffset() // minutes, positive = east of UTC
+    // Parse and clamp the time — handle overflow past 24:00 by rolling to next day
+    const [rawH, rawM] = time.split(':').map(Number)
+    if (isNaN(rawH) || isNaN(rawM)) return null
+    const totalMins = rawH * 60 + rawM
+    const clampedMins = Math.max(0, Math.min(totalMins, 1440)) // cap at 24:00
+    const h = Math.floor(clampedMins / 60)
+    const m = clampedMins % 60
+
+    let finalDate = date
+    let finalTime
+    if (h >= 24) {
+      // Roll to midnight of the next day
+      const nextDay = new Date(`${date}T00:00:00`)
+      nextDay.setDate(nextDay.getDate() + 1)
+      finalDate = `${nextDay.getFullYear()}-${String(nextDay.getMonth() + 1).padStart(2, '0')}-${String(nextDay.getDate()).padStart(2, '0')}`
+      finalTime = '00:00:00'
+    } else {
+      finalTime = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:00`
+    }
+
+    const d = new Date(`${finalDate}T${finalTime}`)
+    if (isNaN(d.getTime())) return null
+    const offset = -d.getTimezoneOffset()
     const sign = offset >= 0 ? '+' : '-'
     const oh = String(Math.floor(Math.abs(offset) / 60)).padStart(2, '0')
     const om = String(Math.abs(offset) % 60).padStart(2, '0')
-    return `${date}T${t}${sign}${oh}:${om}`
+    return `${finalDate}T${finalTime}${sign}${oh}:${om}`
   }
 }

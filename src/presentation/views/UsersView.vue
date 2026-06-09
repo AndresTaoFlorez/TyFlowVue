@@ -3,13 +3,13 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useUserStore } from '@/presentation/stores/useUserStore'
 import { useAuthStore } from '@/presentation/stores/useAuthStore'
 import { useRouter } from 'vue-router'
-import SkeletonCard from '@/presentation/components/SkeletonCard.vue'
-import UserTable from '@/presentation/components/UserTable.vue'
-import UserCardGrid from '@/presentation/components/UserCardGrid.vue'
-import ToastNotification from '@/presentation/components/ToastNotification.vue'
-import SpecialistFields from '@/presentation/components/SpecialistFields.vue'
-import SpecialistCategoryConfig from '@/presentation/components/SpecialistCategoryConfig.vue'
-import ChipSelect from '@/presentation/components/ChipSelect.vue'
+import SkeletonCard from '@/presentation/components/layout/SkeletonCard.vue'
+import UserTable from '@/presentation/components/users/UserTable.vue'
+import UserCardGrid from '@/presentation/components/users/UserCardGrid.vue'
+import ToastNotification from '@/presentation/components/layout/ToastNotification.vue'
+import SpecialistFields from '@/presentation/components/users/SpecialistFields.vue'
+import SpecialistCategoryConfig from '@/presentation/components/users/SpecialistCategoryConfig.vue'
+import ChipSelect from '@/presentation/components/shared/ChipSelect.vue'
 import { usePendingFields } from '@/presentation/composables/usePendingFields'
 
 const userStore = useUserStore()
@@ -378,6 +378,7 @@ onUnmounted(() => {
     />
 
     <!-- Modal Crear Usuario -->
+    <Transition name="uv-modal">
     <div v-if="mostrarModal" class="modal-overlay">
       <div class="modal-content">
         <div class="modal-header">
@@ -509,6 +510,7 @@ onUnmounted(() => {
         </form>
       </div>
     </div>
+    </Transition>
 
     <ToastNotification
       :visible="toastVisible"
@@ -681,6 +683,22 @@ onUnmounted(() => {
   width: 100%;
   color: var(--text-primary);
   background: transparent;
+}
+
+/* Modal open/close transitions */
+.uv-modal-enter-active { transition: opacity 0.18s ease; }
+.uv-modal-enter-active .modal-content { animation: uv-pop-in 0.22s cubic-bezier(0.34, 1.56, 0.64, 1); }
+.uv-modal-leave-active { transition: opacity 0.15s ease; }
+.uv-modal-leave-active .modal-content { animation: uv-pop-out 0.15s ease forwards; }
+.uv-modal-enter-from, .uv-modal-leave-to { opacity: 0; }
+
+@keyframes uv-pop-in {
+  from { transform: scale(0.93) translateY(8px); opacity: 0; }
+  to   { transform: scale(1)    translateY(0);   opacity: 1; }
+}
+@keyframes uv-pop-out {
+  from { transform: scale(1)    translateY(0);   opacity: 1; }
+  to   { transform: scale(0.93) translateY(8px); opacity: 0; }
 }
 
 .modal-overlay {

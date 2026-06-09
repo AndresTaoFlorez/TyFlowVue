@@ -1,6 +1,6 @@
 <script setup>
 import { ref } from 'vue'
-import NodeGraphCanvas from '@/presentation/components/NodeGraphCanvas.vue'
+import NodeGraphCanvas from '@/presentation/components/shared/NodeGraphCanvas.vue'
 
 const activeStep = ref(null)
 

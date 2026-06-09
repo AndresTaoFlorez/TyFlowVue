@@ -30,6 +30,12 @@ const isEnded = computed(() => {
   return new Date(props.window.endsAt) < new Date()
 })
 
+// Sealed = starts_at <= now (per API_CONTRACT Section 16)
+const isSealed = computed(() => {
+  if (!props.window?.startsAt) return false
+  return new Date(props.window.startsAt) <= new Date()
+})
+
 const hasInheritance = computed(() => !!(props.window.inheritedFromWindowId || props.window.inheritsOnReopen))
 const canToggleInheritance = computed(() => isFuture.value)
 
@@ -304,6 +310,7 @@ const statusClass = computed(() => {
         </template>
         <template v-else>
           <button
+            v-if="!isSealed"
             class="wm__btn wm__btn--delete"
             :disabled="loading"
             @click="$emit('delete', window)"
@@ -333,7 +340,7 @@ const statusClass = computed(() => {
 <style scoped>
 .modal-overlay {
   position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-  background: rgba(0, 0, 0, 0.4); backdrop-filter: blur(3px);
+  background: rgba(10, 12, 20, 0.55); backdrop-filter: blur(2px);
   display: flex; align-items: center; justify-content: center;
   z-index: 100;
   padding: 1rem;
@@ -343,9 +350,9 @@ const statusClass = computed(() => {
 .wm {
   background: var(--bg-main);
   width: 100%;
-  max-width: 400px;
-  border-radius: var(--radius-lg);
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.15), 0 0 0 1px rgba(0, 0, 0, 0.04);
+  max-width: 420px;
+  border-radius: 16px;
+  box-shadow: 0 12px 32px rgba(20, 30, 55, 0.16);
   overflow: hidden;
   max-height: 90dvh;
   display: flex;
@@ -354,7 +361,7 @@ const statusClass = computed(() => {
 
 /* ===== Color bar ===== */
 .wm__bar {
-  height: 4px;
+  height: 5px;
 }
 
 .wm__bar--open { background: var(--primary-500); }
@@ -482,8 +489,8 @@ const statusClass = computed(() => {
 }
 
 .wm__edit-row-fields label {
-  font-size: 10px;
-  font-weight: 600;
+  font-size: 0.72rem;
+  font-weight: 700;
   color: var(--text-secondary);
   text-transform: uppercase;
   letter-spacing: 0.03em;
@@ -496,13 +503,14 @@ const statusClass = computed(() => {
 
 .wm__date-input,
 .wm__time-input {
-  padding: 6px 8px;
-  border: 1.5px solid var(--border-light);
-  border-radius: var(--radius-sm);
+  height: 38px;
+  padding: 0 0.7rem;
+  border: 1px solid var(--border-light);
+  border-radius: 9px;
   font-size: 13px;
   font-weight: 500;
   color: var(--text-primary);
-  background: var(--bg-main);
+  background: var(--bg-card);
   outline: none;
   transition: border-color 0.15s;
 }
@@ -547,12 +555,13 @@ const statusClass = computed(() => {
 
 .wm__note-input {
   flex: 1;
-  padding: 6px 8px;
-  border: 1.5px solid var(--border-light);
-  border-radius: var(--radius-sm);
+  height: 38px;
+  padding: 0 0.7rem;
+  border: 1px solid var(--border-light);
+  border-radius: 9px;
   font-size: 13px;
   color: var(--text-primary);
-  background: var(--bg-main);
+  background: var(--bg-card);
   outline: none;
   transition: border-color 0.15s;
 }
@@ -674,28 +683,32 @@ const statusClass = computed(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: 0.6rem;
   padding: 12px 16px;
   border-top: 1px solid var(--border-light);
-  background: #fafafa;
   flex-shrink: 0;
 }
 
 .wm__footer-right {
   display: flex;
-  gap: 8px;
+  gap: 0.6rem;
+  flex: 1;
 }
+
+.wm__footer-right .wm__btn { flex: 1; }
 
 /* ===== Buttons ===== */
 .wm__btn {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 5px;
-  padding: 7px 14px;
-  font-size: 13px;
+  height: 40px;
+  padding: 0 14px;
+  font-size: 0.85rem;
   font-weight: 600;
   border: none;
-  border-radius: var(--radius-md);
+  border-radius: 9px;
   cursor: pointer;
   transition: background 0.15s, color 0.15s, opacity 0.15s;
 }
@@ -737,6 +750,22 @@ const statusClass = computed(() => {
   color: var(--error-500);
   border-color: var(--error-500);
   background: var(--error-bg);
+}
+
+/* Modal open/close transitions (applied by parent <Transition name="ww-modal">) */
+.ww-modal-enter-active { transition: opacity 0.18s ease; }
+.ww-modal-enter-active .wm { animation: wm-pop-in 0.18s cubic-bezier(0.2, 0.9, 0.3, 1.2); }
+.ww-modal-leave-active { transition: opacity 0.15s ease; }
+.ww-modal-leave-active .wm { animation: wm-pop-out 0.15s ease forwards; }
+.ww-modal-enter-from, .ww-modal-leave-to { opacity: 0; }
+
+@keyframes wm-pop-in {
+  from { transform: scale(0.93) translateY(8px); opacity: 0; }
+  to   { transform: scale(1)    translateY(0);   opacity: 1; }
+}
+@keyframes wm-pop-out {
+  from { transform: scale(1)    translateY(0);   opacity: 1; }
+  to   { transform: scale(0.93) translateY(8px); opacity: 0; }
 }
 
 @media (max-width: 480px) {

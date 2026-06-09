@@ -2,14 +2,14 @@
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useApplicationStore } from '@/presentation/stores/useApplicationStore'
 import { useUserStore } from '@/presentation/stores/useUserStore'
-import FolderTree from '@/presentation/components/FolderTree.vue'
-import CreateApplicationModal from '@/presentation/components/CreateApplicationModal.vue'
-import CreateFolderModal from '@/presentation/components/CreateFolderModal.vue'
-import ConversationPanel from '@/presentation/components/ConversationPanel.vue'
-import ContextMenu from '@/presentation/components/ContextMenu.vue'
-import ManageSpecialistsModal from '@/presentation/components/ManageSpecialistsModal.vue'
-import SectionLoader from '@/presentation/components/SectionLoader.vue'
-import ToastNotification from '@/presentation/components/ToastNotification.vue'
+import FolderTree from '@/presentation/components/applications/FolderTree.vue'
+import CreateApplicationModal from '@/presentation/components/applications/CreateApplicationModal.vue'
+import CreateFolderModal from '@/presentation/components/applications/CreateFolderModal.vue'
+import ConversationPanel from '@/presentation/components/applications/ConversationPanel.vue'
+import ContextMenu from '@/presentation/components/shared/ContextMenu.vue'
+import ManageSpecialistsModal from '@/presentation/components/applications/ManageSpecialistsModal.vue'
+import SectionLoader from '@/presentation/components/layout/SectionLoader.vue'
+import ToastNotification from '@/presentation/components/layout/ToastNotification.vue'
 
 const appStore = useApplicationStore()
 const userStore = useUserStore()

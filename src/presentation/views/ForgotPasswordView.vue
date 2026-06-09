@@ -1,7 +1,7 @@
 <script setup>
 import { ref } from 'vue'
 import { recoverPasswordUseCase } from '@/application/use-cases/auth/RecoverPasswordUseCase'
-import LoginBanner from '@/presentation/components/LoginBanner.vue'
+import LoginBanner from '@/presentation/components/layout/LoginBanner.vue'
 
 const email = ref('')
 const successMessage = ref('')

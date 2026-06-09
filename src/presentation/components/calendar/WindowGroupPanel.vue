@@ -1,5 +1,5 @@
 <script setup>
-import ContextMenu from '@/presentation/components/ContextMenu.vue'
+import ContextMenu from '@/presentation/components/shared/ContextMenu.vue'
 import { ref } from 'vue'
 
 const props = defineProps({
@@ -38,20 +38,25 @@ const ctx = ref({ visible: false, x: 0, y: 0, items: [], target: null })
 
 function onItemContext(w, e) {
   e.preventDefault()
-  const isFutureWindow = w.startsAt && new Date(w.startsAt) > new Date()
+  const now = new Date()
+  const isFuture = w.startsAt && new Date(w.startsAt) > now
+  const isEnded = w.endsAt && new Date(w.endsAt) < now
   const hasInheritance = !!(w.inheritedFromWindowId || w.inheritsOnReopen)
-  const inheritItem = isFutureWindow
+  // Inherit/disinherit: only future windows
+  const inheritItem = isFuture
     ? (hasInheritance
       ? { label: 'Desactivar herencia', icon: 'bx-unlink', action: 'disinherit' }
       : { label: 'Activar herencia', icon: 'bx-link', action: 'reinherit' })
     : null
   const items = [
     { label: 'Ver detalle', icon: 'bx-expand-alt', action: 'select' },
-    { label: w.isActive ? 'Inhabilitar' : 'Habilitar', icon: w.isActive ? 'bx-block' : 'bx-check-circle', action: 'toggle' },
+    // Toggle: allowed on future and in-progress, NOT ended
+    ...(!isEnded ? [{ label: w.isActive ? 'Inhabilitar' : 'Habilitar', icon: w.isActive ? 'bx-block' : 'bx-check-circle', action: 'toggle' }] : []),
     ...(inheritItem ? [inheritItem] : []),
     { label: 'Copiar ventana', icon: 'bx-copy', action: 'copy' },
-    ...(isFutureWindow ? [{ label: 'Cortar ventana', icon: 'bx-cut', action: 'cut' }] : []),
-    { label: 'Eliminar', icon: 'bx-trash', action: 'delete', danger: true },
+    ...(isFuture ? [{ label: 'Cortar ventana', icon: 'bx-cut', action: 'cut' }] : []),
+    // Delete: only future (sealed windows rejected by DB)
+    ...(isFuture ? [{ label: 'Eliminar', icon: 'bx-trash', action: 'delete', danger: true }] : []),
   ]
   ctx.value = { visible: true, x: e.clientX, y: e.clientY, items, target: w }
 }
@@ -129,6 +134,7 @@ function onCtxAction(action) {
 
           <div class="item__actions">
             <button
+              v-if="w.canToggle"
               class="item__btn"
               :class="w.isActive ? 'item__btn--close' : 'item__btn--open'"
               :disabled="loading"
@@ -138,6 +144,7 @@ function onCtxAction(action) {
               <i class='bx' :class="w.isActive ? 'bx-block' : 'bx-check-circle'"></i>
             </button>
             <button
+              v-if="w.canEdit"
               class="item__btn item__btn--delete"
               :disabled="loading"
               @click.stop="$emit('delete', w)"
@@ -175,26 +182,38 @@ function onCtxAction(action) {
   left: 0;
   width: 100%;
   height: 100%;
-  background: rgba(0, 0, 0, 0.5);
-  backdrop-filter: blur(4px);
+  background: rgba(10, 12, 20, 0.55);
+  backdrop-filter: blur(2px);
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 100;
   padding: 1rem;
   box-sizing: border-box;
+  animation: panel-fade-in 0.15s ease;
+}
+
+@keyframes panel-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 .panel {
-  background: white;
+  background: var(--bg-main, white);
   width: 100%;
   max-width: 420px;
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-lg);
+  border-radius: var(--radius-xl, 16px);
+  box-shadow: 0 12px 32px rgba(20, 30, 55, 0.16);
   overflow: hidden;
   max-height: 80vh;
   display: flex;
   flex-direction: column;
+  animation: panel-pop 0.18s cubic-bezier(0.2, 0.9, 0.3, 1.2);
+}
+
+@keyframes panel-pop {
+  from { opacity: 0; transform: scale(0.96); }
+  to { opacity: 1; transform: scale(1); }
 }
 
 .panel__header {
@@ -265,7 +284,7 @@ function onCtxAction(action) {
   padding-top: 1.4rem;
   border-radius: var(--radius-md);
   margin-bottom: 0.25rem;
-  border-left: 3px solid var(--item-color, var(--primary-500));
+  border-left: 4px solid var(--item-color, var(--primary-500));
   transition: background 0.1s, opacity 0.15s;
   position: relative;
 }
@@ -275,7 +294,7 @@ function onCtxAction(action) {
 /* Inactive window styling */
 .item--inactive {
   opacity: 0.5;
-  border-left-color: #9ca3af;
+  border-left-color: var(--inactive-bar);
   background: rgba(100, 110, 130, 0.06);
 }
 

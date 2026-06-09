@@ -35,7 +35,7 @@ const applications = computed(() => userStore.applications ?? [])
 
 function setStatusFilter(routeStatus) {
   store.clearSearch()
-  router.push({ name: 'casos-lista', params: { status: routeStatus } })
+  router.push({ name: 'cases-list', params: { status: routeStatus } })
 }
 
 function setFilter(key, value) {
@@ -73,7 +73,7 @@ function clearSearch() {
         v-for="s in statuses"
         :key="s.routeStatus"
         class="fb__chip"
-        :class="{ 'fb__chip--active': route.name?.startsWith('casos-lista') && route.params.status === s.routeStatus && !store.searchMode }"
+        :class="{ 'fb__chip--active': route.name?.startsWith('cases-list') && route.params.status === s.routeStatus && !store.searchMode }"
         @click="setStatusFilter(s.routeStatus)"
       >{{ s.label }}</button>
     </div>
@@ -135,7 +135,7 @@ function clearSearch() {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  padding: 0.75rem 1rem;
+  padding: 0.7rem 1.25rem;
   border-bottom: 1px solid var(--border-light);
   flex-wrap: wrap;
   flex-shrink: 0;
@@ -147,40 +147,52 @@ function clearSearch() {
 }
 
 .fb__chip {
-  padding: 0.3rem 0.65rem;
+  padding: 0.4rem 0.85rem;
   border-radius: var(--radius-full);
-  font-size: 0.72rem;
+  font-size: 0.78rem;
   font-weight: 600;
   border: 1px solid var(--border-light);
-  background: transparent;
+  background: var(--bg-card);
   color: var(--text-secondary);
   cursor: pointer;
-  transition: all 0.12s;
+  transition: all 0.14s;
   white-space: nowrap;
 }
-.fb__chip:hover { color: var(--text-primary); border-color: var(--text-secondary); }
+.fb__chip:hover { color: var(--text-primary); border-color: var(--primary-500); }
 .fb__chip--active {
   background: var(--primary-500);
   color: white;
   border-color: var(--primary-500);
 }
+.fb__chip--active:hover {
+  background: var(--primary-600);
+  color: white;
+}
 
 .fb__sep {
   width: 1px;
-  height: 20px;
+  align-self: stretch;
   background: var(--border-light);
   flex-shrink: 0;
+  margin: 0.1rem 0.4rem;
 }
 
 .fb__select {
-  padding: 0.3rem 0.5rem;
+  height: 34px;
+  padding: 0 1.9rem 0 0.7rem;
   border: 1px solid var(--border-light);
   border-radius: var(--radius-md);
-  font-size: 0.72rem;
+  font-size: 0.78rem;
+  font-weight: 500;
   color: var(--text-primary);
-  background: var(--bg-main);
+  background: var(--bg-card);
   cursor: pointer;
   outline: none;
+  appearance: none;
+  transition: border-color 0.15s;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%238b91a7' stroke-width='3' stroke-linecap='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.6rem center;
 }
 .fb__select:focus { border-color: var(--primary-500); }
 
@@ -189,12 +201,12 @@ function clearSearch() {
   display: flex;
   align-items: center;
   gap: 0.25rem;
-  padding: 0.2rem 0.65rem;
+  padding: 0.35rem 0.8rem;
   background: var(--bg-card);
   border: 1px solid var(--border-light);
-  border-radius: var(--radius-full);
-  font-size: 0.7rem;
-  font-weight: 700;
+  border-radius: var(--radius-md);
+  font-size: 0.76rem;
+  font-weight: 600;
   color: var(--text-secondary);
   white-space: nowrap;
 }
@@ -211,20 +223,20 @@ function clearSearch() {
   align-items: center;
   border: 1px solid var(--border-light);
   border-radius: var(--radius-md);
-  background: var(--bg-main);
-  padding: 0 0.35rem;
-  gap: 0.2rem;
-  height: 28px;
-  width: 170px;
+  background: var(--bg-card);
+  padding: 0 0.75rem;
+  gap: 0.45rem;
+  height: 34px;
+  min-width: 200px;
   flex-shrink: 0;
-  transition: border-color 0.12s;
+  transition: border-color 0.15s;
 }
 .fb__search:focus-within { border-color: var(--primary-500); }
 .fb__search--active { border-color: var(--primary-500); background: rgba(42,199,143,0.04); }
 .fb__search--error { border-color: var(--error, #e53e3e); }
 
 .fb__search-icon {
-  font-size: 0.85rem;
+  font-size: 1rem;
   color: var(--text-secondary);
   flex-shrink: 0;
   pointer-events: none;
@@ -235,9 +247,10 @@ function clearSearch() {
   border: none;
   background: transparent;
   outline: none;
-  font-size: 0.72rem;
+  font-size: 0.8rem;
   color: var(--text-primary);
   min-width: 0;
+  width: 100%;
   font-family: inherit;
 }
 .fb__search-input::placeholder { color: var(--text-secondary); opacity: 0.6; }
@@ -290,6 +303,6 @@ function clearSearch() {
   }
   .fb__group::-webkit-scrollbar { display: none; }
   .fb__sep { display: none; }
-  .fb__search { width: 140px; }
+  .fb__search { min-width: 140px; }
 }
 </style>

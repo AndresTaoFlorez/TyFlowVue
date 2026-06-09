@@ -3,11 +3,11 @@ import { ref, computed, onMounted } from 'vue'
 import { useAuthStore } from '@/presentation/stores/useAuthStore'
 import { useSettingsStore } from '@/presentation/stores/useSettingsStore'
 import { useUserStore } from '@/presentation/stores/useUserStore'
-import SettingsAppearance from '@/presentation/components/SettingsAppearance.vue'
-import SettingsNotifications from '@/presentation/components/SettingsNotifications.vue'
-import SettingsCalendar from '@/presentation/components/SettingsCalendar.vue'
-import SettingsRoles from '@/presentation/components/SettingsRoles.vue'
-import SettingsHierarchy from '@/presentation/components/SettingsHierarchy.vue'
+import SettingsAppearance from '@/presentation/components/settings/SettingsAppearance.vue'
+import SettingsNotifications from '@/presentation/components/settings/SettingsNotifications.vue'
+import SettingsCalendar from '@/presentation/components/settings/SettingsCalendar.vue'
+import SettingsRoles from '@/presentation/components/settings/SettingsRoles.vue'
+import SettingsHierarchy from '@/presentation/components/settings/SettingsHierarchy.vue'
 
 const authStore = useAuthStore()
 const settingsStore = useSettingsStore()

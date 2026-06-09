@@ -51,13 +51,13 @@ const handleLogout = () => {
         </RouterLink>
       </li>
       <li class="sidebar__item">
-        <RouterLink :to="{ name: 'calendario' }" class="sidebar__link" active-class="sidebar__link--active" @click="$emit('navigate')">
+        <RouterLink :to="{ name: 'calendar' }" class="sidebar__link" active-class="sidebar__link--active" @click="$emit('navigate')">
           <i class='bx bx-calendar sidebar__icon'></i>
           <span class="sidebar__label">Calendario</span>
         </RouterLink>
       </li>
       <li v-if="prefs.menus.cases" class="sidebar__item">
-        <RouterLink :to="{ name: 'casos-lista', params: { status: 'open' } }" class="sidebar__link" active-class="sidebar__link--active" @click="$emit('navigate')">
+        <RouterLink :to="{ name: 'cases-list', params: { status: 'open' } }" class="sidebar__link" active-class="sidebar__link--active" @click="$emit('navigate')">
           <i class='bx bx-task sidebar__icon'></i>
           <span class="sidebar__label">Casos</span>
         </RouterLink>

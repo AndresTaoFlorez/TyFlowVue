@@ -12,6 +12,7 @@ import { mergeWorkWindowsUseCase } from '@/application/use-cases/work-windows/Me
 import { batchUpdateWorkWindowsUseCase } from '@/application/use-cases/work-windows/BatchUpdateWorkWindowsUseCase'
 import { WorkWindowRepository } from '@/infrastructure/repositories/WorkWindowRepository'
 import { WorkWindow } from '@/domain/entities/WorkWindow'
+import { SyncEngine } from '@/infrastructure/sync/SyncEngine'
 import { useUserStore } from '@/presentation/stores/useUserStore'
 import { fmtHM } from '@/presentation/helpers/formatTime'
 import { fmtDateISO } from '@/presentation/helpers/formatDate'
@@ -24,8 +25,16 @@ export const useCalendarStore = defineStore('calendar', () => {
   const dayOffset = ref(0)
   const monthOffset = ref(0)
 
+  // ---- SyncEngine (cache persistence) ----
+  const _sync = new SyncEngine({
+    cacheKey: 'tyflow_work_windows',
+    hydrate: (raw) => new WorkWindow(raw),
+    fetchRemote: () => Promise.resolve([]),   // range-based fetch, not used
+    getId: (item) => item.id,
+  })
+
   // ---- Windows ----
-  const windows = ref([])
+  const windows = ref(_sync.loadFromCache())
   const loading = ref(false)
 
   // ---- Fetched range tracking (accumulative strategy) ----
@@ -58,6 +67,15 @@ export const useCalendarStore = defineStore('calendar', () => {
     }
     // Re-fetch current view (silent — windows.value has snapshot data)
     await loadWindows()
+  }
+
+  // ---- Density ----
+  const DENSITY_KEY = 'tyflow_cal_density'
+  const density = ref(localStorage.getItem(DENSITY_KEY) || 'comfortable')
+
+  function setDensity(val) {
+    density.value = val
+    localStorage.setItem(DENSITY_KEY, val)
   }
 
   // ---- Filters ----
@@ -175,20 +193,66 @@ export const useCalendarStore = defineStore('calendar', () => {
     return userStore.applications.filter(a => ids.has(a.id))
   })
 
-  // ---- Sync offsets when switching views ----
+  // ---- Sync offsets when switching views (preserves the currently visible date) ----
   let _skipViewSync = false
-  watch(calView, (newView) => {
+  watch(calView, (newView, oldView) => {
     if (_skipViewSync) { _skipViewSync = false; return }
-    if (newView === 'day') dayOffset.value = 0
-    else if (newView === 'week') weekOffset.value = 0
-    else if (newView === 'month') monthOffset.value = 0
+
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+
+    // Compute anchor date from the PREVIOUS view before it changes
+    let anchor = new Date(today)
+    if (oldView === 'day') {
+      anchor.setDate(today.getDate() + dayOffset.value)
+    } else if (oldView === 'week') {
+      const dow = today.getDay()
+      const toMon = dow === 0 ? -6 : 1 - dow
+      anchor.setDate(today.getDate() + toMon + weekOffset.value * 7)
+      anchor.setHours(0, 0, 0)
+    } else if (oldView === 'month') {
+      anchor = new Date(today.getFullYear(), today.getMonth() + monthOffset.value, 1)
+    }
+
+    // Set the new view's offset so it shows the anchor date
+    if (newView === 'day') {
+      dayOffset.value = Math.round((anchor.getTime() - today.getTime()) / 86400000)
+    } else if (newView === 'week') {
+      const aDow = anchor.getDay()
+      const anchorMon = new Date(anchor)
+      anchorMon.setDate(anchor.getDate() + (aDow === 0 ? -6 : 1 - aDow))
+      const tDow = today.getDay()
+      const todayMon = new Date(today)
+      todayMon.setDate(today.getDate() + (tDow === 0 ? -6 : 1 - tDow))
+      weekOffset.value = Math.round((anchorMon.getTime() - todayMon.getTime()) / (7 * 86400000))
+    } else if (newView === 'month') {
+      monthOffset.value = (anchor.getFullYear() - today.getFullYear()) * 12 + (anchor.getMonth() - today.getMonth())
+    }
+  })
+
+  // ---- Cache persistence (debounced) ----
+  let _cacheTimer = null
+  watch(windows, (val) => {
+    clearTimeout(_cacheTimer)
+    _cacheTimer = setTimeout(() => _sync.writeToCache(val), 200)
   })
 
   // ---- Range helpers ----
   const _fmtDate = fmtDateISO
 
   function _isRangeCovered(from, to) {
-    return _fetchedRanges.some(r => r.from <= from && r.to >= to)
+    // Union-of-ranges: check if overlapping/adjacent fetched ranges cover [from, to]
+    const overlapping = _fetchedRanges
+      .filter(r => r.to >= from && r.from <= to)
+      .sort((a, b) => a.from.localeCompare(b.from))
+    if (overlapping.length === 0) return false
+    if (overlapping[0].from > from) return false
+    let coveredTo = overlapping[0].to
+    for (let i = 1; i < overlapping.length; i++) {
+      if (overlapping[i].from > _addDays(coveredTo, 1)) return false
+      if (overlapping[i].to > coveredTo) coveredTo = overlapping[i].to
+    }
+    return coveredTo >= to
   }
 
   function _getInitialRange() {
@@ -215,6 +279,19 @@ export const useCalendarStore = defineStore('calendar', () => {
     ]
   }
 
+  /** Compute the 42-cell grid range for a given month offset (same algo as monthDates) */
+  function _monthGridRange(offset) {
+    const now = new Date()
+    const first = new Date(now.getFullYear(), now.getMonth() + offset, 1)
+    const day = first.getDay()
+    const toMonday = day === 0 ? -6 : 1 - day
+    const start = new Date(first)
+    start.setDate(first.getDate() + toMonday)
+    const end = new Date(start)
+    end.setDate(start.getDate() + 41) // 42 cells
+    return { from: _fmtDate(start), to: _fmtDate(end) }
+  }
+
   function _prefetchAdjacent() {
     const ranges = []
     if (calView.value === 'week') {
@@ -227,13 +304,9 @@ export const useCalendarStore = defineStore('calendar', () => {
       ranges.push({ from: _addDays(day, -7), to: _addDays(day, -1) })
       ranges.push({ from: _addDays(day, 1), to: _addDays(day, 7) })
     } else if (calView.value === 'month') {
-      const now = new Date()
-      const prevFirst = new Date(now.getFullYear(), now.getMonth() + monthOffset.value - 1, 1)
-      const prevLast = new Date(now.getFullYear(), now.getMonth() + monthOffset.value, 0)
-      const nextFirst = new Date(now.getFullYear(), now.getMonth() + monthOffset.value + 1, 1)
-      const nextLast = new Date(now.getFullYear(), now.getMonth() + monthOffset.value + 2, 0)
-      ranges.push({ from: _fmtDate(prevFirst), to: _fmtDate(prevLast) })
-      ranges.push({ from: _fmtDate(nextFirst), to: _fmtDate(nextLast) })
+      // Use full 42-cell grid range so swiped-to month data is ready
+      ranges.push(_monthGridRange(monthOffset.value - 1))
+      ranges.push(_monthGridRange(monthOffset.value + 1))
     }
     for (const { from, to } of ranges) {
       if (_isRangeCovered(from, to)) continue
@@ -462,9 +535,10 @@ export const useCalendarStore = defineStore('calendar', () => {
   }
 
   const _toHM = (decimal) => {
-    const h = Math.floor(decimal)
-    const m = Math.round((decimal % 1) * 60)
-    return fmtHM(h, m)
+    const clamped = Math.max(0, Math.min(decimal, 24))
+    const h = Math.floor(clamped)
+    const m = Math.round((clamped % 1) * 60)
+    return fmtHM(Math.min(h, 23), h >= 24 ? 0 : m)
   }
 
   // ---- CRUD Actions ----
@@ -523,6 +597,9 @@ export const useCalendarStore = defineStore('calendar', () => {
 
   async function deleteWindow(id) {
     const original = _findOriginal(id)
+    if (original?.isSealed) {
+      throw { userMessage: 'No se pueden eliminar ventanas selladas.' }
+    }
     const snapshot = [...windows.value]
 
     // Optimistic
@@ -1303,5 +1380,7 @@ export const useCalendarStore = defineStore('calendar', () => {
     appName,
     isMobile,
     updateMobile,
+    density,
+    setDensity,
   }
 })

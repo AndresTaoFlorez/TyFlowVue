@@ -140,6 +140,8 @@ onUnmounted(() => observer?.disconnect())
             :class="{
               'ct__row--out-of-section': isOutOfSection(c),
               'ct__row--selected': store.selectedCase?.id === c.id,
+              'ct__row--urgent': c.priority === 'urgent',
+              'ct__row--alta': c.priority === 'high',
             }"
             tabindex="0"
             role="button"
@@ -163,6 +165,7 @@ onUnmounted(() => observer?.disconnect())
             </td>
             <td>
               <span class="ct__badge" :style="{ background: c.priorityBg, color: c.priorityColor }">
+                <span class="ct__dot" :style="{ background: c.priorityColor }"></span>
                 {{ c.priorityLabel }}
               </span>
             </td>
@@ -172,10 +175,11 @@ onUnmounted(() => observer?.disconnect())
               </span>
             </td>
             <td class="ct__col-specialist ct__specialist">
-              <span v-if="specialistName(c.specialistId)" class="ct__specialist-name">
-                {{ specialistName(c.specialistId) }}
-              </span>
-              <span v-else class="ct__specialist-none">—</span>
+              <div v-if="specialistName(c.specialistId)" class="ct__spec-cell">
+                <span class="ct__spec-avatar">{{ specialistName(c.specialistId).split(' ').slice(0,2).map(p => p[0]).join('').toUpperCase() }}</span>
+                <span class="ct__specialist-name">{{ specialistName(c.specialistId) }}</span>
+              </div>
+              <span v-else class="ct__specialist-none">Sin asignar</span>
             </td>
             <td class="ct__time">{{ c.waitingTime }}</td>
           </tr>
@@ -215,26 +219,28 @@ onUnmounted(() => observer?.disconnect())
 .ct__table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 0.82rem;
+  font-size: 0.86rem;
 }
 
 .ct__table th {
   text-align: left;
-  padding: 0.6rem 0.75rem;
-  font-size: 0.7rem;
+  padding: 0.7rem 0.9rem;
+  font-size: 0.66rem;
   font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.06em;
   color: var(--text-secondary);
   border-bottom: 1px solid var(--border-light);
   background: var(--bg-card);
   position: sticky;
   top: 0;
-  z-index: 1;
+  z-index: 4;
+  white-space: nowrap;
+  user-select: none;
 }
 
 .ct__table td {
-  padding: 0.55rem 0.75rem;
+  padding: 0.7rem 0.9rem;
   border-bottom: 1px solid var(--border-light);
   color: var(--text-primary);
   vertical-align: middle;
@@ -243,12 +249,34 @@ onUnmounted(() => observer?.disconnect())
 .ct__row {
   cursor: pointer;
   transition: background 0.1s;
+  position: relative;
 }
 
-.ct__row:hover { background: var(--bg-card); }
+.ct__row:nth-child(even) { background: var(--bg-card); }
+.ct__row:hover { background: color-mix(in srgb, var(--bg-card) 70%, var(--border-light)); }
 
 .ct__row--skel { cursor: default; }
 .ct__row--skel:hover { background: transparent; }
+
+/* Priority left border for urgent/high */
+.ct__row--urgent::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: var(--priority-urgent);
+}
+.ct__row--alta::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: var(--priority-high);
+}
 
 .ct__row--selected {
   background: rgba(42, 199, 143, 0.07) !important;
@@ -271,53 +299,86 @@ onUnmounted(() => observer?.disconnect())
 
 .ct__id {
   font-weight: 700;
-  font-size: 0.75rem;
-  color: var(--primary-500);
+  font-size: 0.82rem;
+  color: var(--text-secondary);
   white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 
 .ct__subject {
-  max-width: 300px;
+  max-width: 30rem;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  font-weight: 600;
+  font-weight: 500;
+  color: var(--text-primary);
 }
 
 .ct__badge {
   display: inline-flex;
   align-items: center;
-  gap: 0.2rem;
-  padding: 0.15rem 0.5rem;
-  border-radius: var(--radius-sm);
-  font-size: 0.68rem;
-  font-weight: 700;
+  gap: 0.35rem;
+  padding: 0.2rem 0.6rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 600;
   white-space: nowrap;
+}
+
+.ct__dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
 }
 
 .ct__time {
-  font-size: 0.72rem;
+  font-size: 0.74rem;
   color: var(--text-secondary);
   white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 
 .ct__specialist {
-  max-width: 140px;
+  max-width: 180px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
+.ct__spec-cell {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  white-space: nowrap;
+}
+
+.ct__spec-avatar {
+  width: 26px;
+  height: 26px;
+  min-width: 26px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  font-size: 0.62rem;
+  color: #fff;
+  background: var(--primary-500);
+  letter-spacing: -0.02em;
+  flex-shrink: 0;
+}
+
 .ct__specialist-name {
-  font-size: 0.76rem;
+  font-size: 0.74rem;
   color: var(--text-primary);
   font-weight: 500;
 }
 
 .ct__specialist-none {
-  font-size: 0.72rem;
+  font-size: 0.74rem;
   color: var(--text-secondary);
-  opacity: 0.5;
+  font-style: italic;
 }
 
 /* ── Skeleton shimmer ── */

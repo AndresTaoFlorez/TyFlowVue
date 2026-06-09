@@ -3,7 +3,7 @@ import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { changePasswordUseCase } from '@/application/use-cases/auth/ChangePasswordUseCase'
 import { TOKEN_KEY } from '@/infrastructure/http/client'
-import LoginBanner from '@/presentation/components/LoginBanner.vue'
+import LoginBanner from '@/presentation/components/layout/LoginBanner.vue'
 
 const router = useRouter()
 

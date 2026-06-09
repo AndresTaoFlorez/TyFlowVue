@@ -26,6 +26,7 @@ const props = defineProps({
   inherited: { type: Boolean, default: false },
   inheritLabel: { type: String, default: '' },
   compact: { type: Boolean, default: false },
+  multiDayPos: { type: String, default: null }, // 'first' | 'middle' | 'last' | null
 })
 
 const resolvedColor = () => props.appColor || '#2AC78F'
@@ -68,6 +69,22 @@ const statusClass = () => {
   return 'wb--open'
 }
 
+const showTopHandle = computed(() => {
+  if (!props.selectable) return false
+  if (props.multiDayPos === 'last' || props.multiDayPos === 'middle') return false
+  return true
+})
+const showBottomHandle = computed(() => {
+  if (!props.selectable) return false
+  if (props.multiDayPos === 'first' || props.multiDayPos === 'middle') return false
+  return true
+})
+const showSideHandles = computed(() => {
+  if (!props.selectable) return false
+  if (props.multiDayPos === 'middle') return false
+  return true
+})
+
 const onHandleDown = (direction, e) => {
   e.stopPropagation()
   emit('resize-start', { direction, event: e })
@@ -90,7 +107,7 @@ const onHandleDown = (direction, e) => {
   >
     <!-- Resize handle top -->
     <div
-      v-if="selectable"
+      v-if="showTopHandle"
       class="wb__handle wb__handle--top"
       @mousedown="onHandleDown('top', $event)"
       @touchstart.stop.prevent="onHandleDown('top', $event)"
@@ -98,17 +115,20 @@ const onHandleDown = (direction, e) => {
 
     <!-- Resize handle left -->
     <div
-      v-if="selectable"
+      v-if="showSideHandles"
       class="wb__handle wb__handle--left"
       @mousedown="onHandleDown('left', $event)"
       @touchstart.stop.prevent="onHandleDown('left', $event)"
     ></div>
 
     <template v-if="!compact">
-      <span class="wb__name">
-        <i v-if="inherited" class='bx bx-link wb__inherit-icon'></i>
-        {{ specialistName }}
-      </span>
+      <div class="wb__head">
+        <span class="wb__avatar">{{ initials }}</span>
+        <span class="wb__name">
+          <i v-if="inherited" class='bx bx-link wb__inherit-icon'></i>
+          {{ specialistName }}
+        </span>
+      </div>
       <span v-if="height() > 42" class="wb__time">{{ window.timeRange }}</span>
       <span v-if="height() > 60" class="wb__app">{{ applicationName }}</span>
       <span v-if="inheritLabel && height() > 48" class="wb__inherit-label" :title="inheritLabel">{{ inheritLabel }}</span>
@@ -121,7 +141,7 @@ const onHandleDown = (direction, e) => {
 
     <!-- Resize handle bottom -->
     <div
-      v-if="selectable"
+      v-if="showBottomHandle"
       class="wb__handle wb__handle--bottom"
       @mousedown="onHandleDown('bottom', $event)"
       @touchstart.stop.prevent="onHandleDown('bottom', $event)"
@@ -129,7 +149,7 @@ const onHandleDown = (direction, e) => {
 
     <!-- Resize handle right -->
     <div
-      v-if="selectable"
+      v-if="showSideHandles"
       class="wb__handle wb__handle--right"
       @mousedown="onHandleDown('right', $event)"
       @touchstart.stop.prevent="onHandleDown('right', $event)"
@@ -164,7 +184,95 @@ const onHandleDown = (direction, e) => {
   transform: scale(0.99);
 }
 
-/* Resize handles */
+/* ── Open — uses app color ── */
+.wb--open {
+  background: color-mix(in srgb, var(--app-color) 22%, transparent);
+  border-left-color: var(--app-color);
+}
+.wb--open .wb__name { color: var(--app-text-color); }
+.wb--open .wb__time { color: var(--app-text-color); opacity: 0.85; }
+.wb--open .wb__app { color: var(--app-text-color); opacity: 0.75; }
+
+/* ── Head (avatar + name row) ── */
+.wb__head {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.wb__avatar {
+  width: 17px;
+  height: 17px;
+  min-width: 17px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.54rem;
+  font-weight: 700;
+  color: white;
+  background: var(--app-color);
+  flex-shrink: 0;
+  line-height: 1;
+}
+
+/* ── Name ── */
+.wb__name {
+  font-size: clamp(0.5rem, 22cqh, 0.85rem);
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.3;
+  display: flex;
+  align-items: center;
+  gap: 0.15rem;
+  min-width: 0;
+  flex: 1;
+}
+
+.wb__inherit-icon {
+  font-size: clamp(0.5rem, 22cqh, 0.85rem);
+  opacity: 0.85;
+  flex-shrink: 0;
+}
+
+/* ── Time ── */
+.wb__time {
+  font-size: clamp(0.45rem, 16cqh, 0.7rem);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+/* ── App ── */
+.wb__app {
+  font-size: clamp(0.4rem, 14cqh, 0.62rem);
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  background: color-mix(in srgb, var(--app-color) 15%, transparent);
+  padding: 0.05rem 0.3rem;
+  border-radius: 3px;
+  width: fit-content;
+  max-width: 100%;
+}
+
+/* ── Inherit label ── */
+.wb__inherit-label {
+  font-size: clamp(0.4rem, 14cqh, 0.6rem);
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.45);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: auto;
+  line-height: 1;
+  letter-spacing: 0.01em;
+}
+
+/* ── Resize handles ── */
 .wb__handle {
   position: absolute;
   left: 0;
@@ -179,9 +287,7 @@ const onHandleDown = (direction, e) => {
   transition: opacity 0.15s;
 }
 
-.wb:hover .wb__handle {
-  opacity: 1;
-}
+.wb:hover .wb__handle { opacity: 1; }
 
 .wb__handle::after {
   content: '';
@@ -191,69 +297,51 @@ const onHandleDown = (direction, e) => {
   background: rgba(255, 255, 255, 0.5);
 }
 
-.wb__handle--top {
-  top: 0;
-}
-
-.wb__handle--bottom {
-  bottom: 0;
-}
+.wb__handle--top { top: 0; }
+.wb__handle--bottom { bottom: 0; }
 
 .wb__handle--left,
 .wb__handle--right {
-  top: 0;
-  bottom: 0;
-  left: auto;
-  right: auto;
-  width: 8px;
-  height: auto;
+  top: 0; bottom: 0; left: auto; right: auto;
+  width: 8px; height: auto;
   cursor: ew-resize;
   flex-direction: column;
 }
-
-.wb__handle--left {
-  left: 0;
-}
-
-.wb__handle--right {
-  right: 0;
-}
-
+.wb__handle--left { left: 0; }
+.wb__handle--right { right: 0; }
 .wb__handle--left::after,
-.wb__handle--right::after {
-  width: 3px;
-  height: 24px;
-}
+.wb__handle--right::after { width: 3px; height: 24px; }
 
-/* Open — uses app color */
-.wb--open {
-  background: color-mix(in srgb, var(--app-color) 22%, transparent);
-  border-left-color: var(--app-color);
-}
-.wb--open .wb__name { color: var(--app-text-color); }
-.wb--open .wb__time { color: var(--app-text-color); opacity: 0.85; }
-.wb--open .wb__app { color: var(--app-text-color); opacity: 0.75; }
-
-/* Selected — highlighted */
+/* ── Selected ── */
 .wb--selected {
   outline: 2px solid #60a5fa;
   outline-offset: -1px;
   filter: brightness(1.1);
 }
 
-/* Cut — dashed border, tenue */
+/* ── Cut ── */
 .wb--cut {
   opacity: 0.4;
   border-left-style: dashed;
   filter: grayscale(0.5);
 }
 
-/* Hide resize handles in compact mode (not usable on touch) */
-.wb--compact .wb__handle {
-  display: none;
+/* ── Inactive — muted, hatched ── */
+.wb--inactive {
+  background: repeating-linear-gradient(-45deg,
+    color-mix(in srgb, var(--app-color) 12%, transparent),
+    color-mix(in srgb, var(--app-color) 12%, transparent) 3px,
+    color-mix(in srgb, var(--app-color) 6%, transparent) 3px,
+    color-mix(in srgb, var(--app-color) 6%, transparent) 6px);
+  border-left-color: color-mix(in srgb, var(--app-color) 40%, #5a6075);
+  opacity: 0.55;
 }
+.wb--inactive .wb__name { color: #8890a4; opacity: 0.7; }
+.wb--inactive .wb__avatar { opacity: 0.6; }
 
-/* Compact — minimal info for mobile week */
+/* ── Compact (mobile week) ── */
+.wb--compact .wb__handle { display: none; }
+
 .wb--compact {
   padding: 2px 1px;
   border-left-width: 0;
@@ -290,60 +378,9 @@ const onHandleDown = (direction, e) => {
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
 }
 
-/* Inactive — muted */
-.wb--inactive {
-  background: rgba(100, 110, 130, 0.15);
-  border-left-color: #5a6075;
-  opacity: 0.5;
-}
-.wb--inactive .wb__name { color: #8890a4; }
-
 .wb--compact.wb--inactive {
-  background: rgba(100, 110, 130, 0.25);
+  background: color-mix(in srgb, var(--app-color) 20%, transparent);
   border-left-width: 0;
-}
-
-.wb__name {
-  font-size: clamp(0.5rem, 22cqh, 0.85rem);
-  font-weight: 700;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  line-height: 1.3;
-  display: flex;
-  align-items: center;
-  gap: 0.15rem;
-}
-
-.wb__inherit-icon {
-  font-size: clamp(0.5rem, 22cqh, 0.85rem);
-  opacity: 0.85;
-  flex-shrink: 0;
-}
-
-.wb__inherit-label {
-  font-size: clamp(0.4rem, 14cqh, 0.6rem);
-  font-weight: 600;
-  color: rgba(255, 255, 255, 0.45);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  margin-top: auto;
-  line-height: 1;
-  letter-spacing: 0.01em;
-}
-
-.wb__time {
-  font-size: clamp(0.45rem, 16cqh, 0.7rem);
-  font-weight: 500;
-  white-space: nowrap;
-}
-
-.wb__app {
-  font-size: clamp(0.4rem, 14cqh, 0.65rem);
-  font-weight: 500;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  opacity: 0.45;
 }
 </style>

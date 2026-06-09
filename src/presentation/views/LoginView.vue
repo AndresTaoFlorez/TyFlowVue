@@ -3,7 +3,7 @@ import { ref } from 'vue'
 import { useAuthStore } from '@/presentation/stores/useAuthStore'
 import { useRouter } from 'vue-router'
 import { checkEmailUseCase } from '@/application/use-cases/auth/CheckEmailUseCase'
-import LoginBanner from '@/presentation/components/LoginBanner.vue'
+import LoginBanner from '@/presentation/components/layout/LoginBanner.vue'
 
 const router = useRouter()
 const authStore = useAuthStore()

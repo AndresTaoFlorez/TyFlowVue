@@ -1,6 +1,6 @@
 <script setup>
 import { computed } from 'vue'
-import FolderTreeNode from '@/presentation/components/FolderTreeNode.vue'
+import FolderTreeNode from '@/presentation/components/applications/FolderTreeNode.vue'
 
 const props = defineProps({
   folders: { type: Array, default: () => [] },

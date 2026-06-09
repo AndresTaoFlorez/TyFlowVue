@@ -1,9 +1,9 @@
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
-import AppTopbar from '@/presentation/components/AppTopbar.vue'
-import AppSidebar from '@/presentation/components/AppSidebar.vue'
-import ChangePasswordModal from '@/presentation/components/ChangePasswordModal.vue'
+import AppTopbar from '@/presentation/components/layout/AppTopbar.vue'
+import AppSidebar from '@/presentation/components/layout/AppSidebar.vue'
+import ChangePasswordModal from '@/presentation/components/users/ChangePasswordModal.vue'
 import { BP_MOBILE } from '@/presentation/utils/breakpoints'
 import { wsStatus } from '@/infrastructure/realtime/wsClient'
 
@@ -76,11 +76,11 @@ const onSidebarResizeDblclick = () => {
   localStorage.setItem('tyflow_sidebar_width', String(SIDEBAR_DEFAULT))
 }
 
-const flushRoutes = ['/app/applications', '/app/calendario', '/app/casos']
+const flushRoutes = ['/app/applications', '/app/calendar', '/app/cases']
 const isFlush = computed(() => flushRoutes.some(r => route.path.startsWith(r)))
 
 // Auto-collapse sidebar on dense views when viewport is narrow
-const denseRoutes = ['/app/applications', '/app/calendario', '/app/casos']
+const denseRoutes = ['/app/applications', '/app/calendar', '/app/cases']
 let userExpandedSidebar = false
 
 watch([() => route.path, viewportWidth], ([path, width]) => {

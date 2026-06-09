@@ -20,6 +20,7 @@ const ERROR_MAP = [
   [/Cannot change starts_at.*in shift/i, 'No se puede cambiar la hora de inicio durante el turno. Solo la hora de fin puede modificarse.'],
   [/overlap/i, 'El horario se superpone con otra ventana existente del mismo especialista y aplicación.'],
   // Status
+  [/cannot delete a sealed work window/i, 'No se puede eliminar una ventana sellada.'],
   [/already open/i, 'Esta ventana ya tiene una sesión abierta.'],
   [/already closed|already deactivated/i, 'Esta ventana ya está cerrada.'],
   [/already deleted/i, 'Esta ventana ya fue eliminada.'],
@@ -28,6 +29,11 @@ const ERROR_MAP = [
   [/has already ended.*cannot merge/i, 'No se pueden agrupar ventanas que ya finalizaron.'],
   [/has already ended/i, 'Una de las ventanas ya finalizó.'],
   [/not found.*deleted/i, 'Una o más ventanas no fueron encontradas o están eliminadas.'],
+  // Seal — DB-enforced immutability (starts_at <= Timeline)
+  [/is sealed/i, 'Esta ventana ya inició y no puede ser modificada.'],
+  [/Cannot create a work window starting in the past/i, 'No se puede crear una ventana con inicio en el pasado.'],
+  [/Cannot create a work window that has already ended/i, 'No se puede crear una ventana que ya finalizó.'],
+  [/Cannot activate a work window that has already ended/i, 'No se puede activar una ventana que ya finalizó.'],
   // General
   [/not found/i, 'Ventana de trabajo no encontrada.'],
   [/unauthorized|forbidden|row-level security/i, 'No tienes permisos para esta acción.'],

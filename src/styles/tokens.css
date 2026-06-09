@@ -110,6 +110,56 @@
   --bp-sm: 480px;
   --bp-md: 768px;
   --bp-lg: 1024px;
+
+  /* Calendar density (default: comfortable) */
+  --cal-hour-h: 48px;
+  --cal-slot-h: 24px;
+  --cal-gutter-w: 4rem;
+
+  /* Calendar color system (light defaults) */
+  --cal-shell: #ffffff;
+  --cal-header: #f8f9fb;
+  --cal-col: #ffffff;
+  --cal-col-alt: #f8f9fb;
+  --cal-col-other: #f4f5f7;
+  --cal-border: #e6e8ee;
+  --cal-grid: #eceef3;
+  --cal-grid-half: #f2f3f7;
+  --cal-text: #4a5068;
+  --cal-text-dim: #8f95aa;
+  --cal-text-other: #b0b5c0;
+  --cal-today-tint: rgba(42,199,143,0.045);
+  --cal-hover: rgba(0,0,0,0.03);
+  --cal-overlay: rgba(0,0,0,0.06);
+  --block-mix-bg: #ffffff;
+  --block-text-light: 0%;
+  --block-name: 0.82rem;
+  --block-meta: 0.68rem;
+  --row-pad: 3px;
+  --inactive-fill: #f1f2f4;
+  --inactive-stripe: #e8eaed;
+  --inactive-bar: #c1c7d0;
+  --inactive-text: #9aa3b2;
+  --shadow-pop: 0 12px 32px rgba(20,30,55,0.16);
+}
+
+/* Calendar density variants */
+[data-density="compact"] {
+  --cal-hour-h: 32px;
+  --cal-slot-h: 16px;
+  --cal-gutter-w: 3.4rem;
+  --row-pad: 2px;
+  --block-name: 0.74rem;
+  --block-meta: 0.6rem;
+}
+
+[data-density="spacious"] {
+  --cal-hour-h: 68px;
+  --cal-slot-h: 34px;
+  --cal-gutter-w: 4.6rem;
+  --row-pad: 4px;
+  --block-name: 0.92rem;
+  --block-meta: 0.74rem;
 }
 
 /* =========================================
@@ -183,4 +233,26 @@
   --priority-high-bg: #7C2D12;
   --priority-urgent-bg: #7F1D1D;
 
+  /* Calendar color system (dark) */
+  --cal-shell: #292d3e;
+  --cal-header: #252839;
+  --cal-col: #292d3e;
+  --cal-col-alt: #262938;
+  --cal-col-other: #242736;
+  --cal-border: #3b3f54;
+  --cal-grid: #33374a;
+  --cal-grid-half: #2c3042;
+  --cal-text: #c8cdd8;
+  --cal-text-dim: #6c7293;
+  --cal-text-other: #4a4e66;
+  --cal-today-tint: rgba(42,199,143,0.045);
+  --cal-hover: rgba(255,255,255,0.035);
+  --cal-overlay: rgba(255,255,255,0.08);
+  --block-mix-bg: #292d3e;
+  --block-text-light: 78%;
+  --inactive-fill: rgba(120, 128, 150, 0.10);
+  --inactive-stripe: rgba(120, 128, 150, 0.16);
+  --inactive-bar: #5a6075;
+  --inactive-text: #8b91a7;
+  --shadow-pop: 0 12px 32px rgba(0,0,0,0.45);
 }

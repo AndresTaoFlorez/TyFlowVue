@@ -6,7 +6,7 @@ import UsersView from '@/presentation/views/UsersView.vue'
 import ProfileView from '@/presentation/views/ProfileView.vue'
 import ApplicationsView from '@/presentation/views/ApplicationsView.vue'
 import CalendarioView from '@/presentation/views/CalendarioView.vue'
-import CasosView from '@/presentation/views/CasosView.vue'
+import CasesView from '@/presentation/views/CasesView.vue'
 import SettingsView from '@/presentation/views/SettingsView.vue'
 
 const LoginView = () => import('@/presentation/views/LoginView.vue')
@@ -55,43 +55,49 @@ const router = createRouter({
           meta: { requiresAdmin: true, title: 'Aplicaciones' },
         },
         {
-          path: 'calendario',
-          name: 'calendario',
+          path: 'calendar',
+          name: 'calendar',
           component: CalendarioView,
           meta: { title: 'Calendario' },
         },
         {
-          path: 'casos',
-          redirect: { name: 'casos-lista', params: { status: 'open' } },
+          path: 'cases',
+          redirect: { name: 'cases-list', params: { status: 'open' } },
         },
         {
-          path: 'casos/lista/:status',
-          name: 'casos-lista',
-          component: CasosView,
+          path: 'cases/list/:status',
+          name: 'cases-list',
+          component: CasesView,
           meta: { title: 'Casos' },
         },
         {
-          path: 'casos/lista/:status/:id',
-          name: 'casos-lista-detail',
-          component: CasosView,
+          path: 'cases/list/:status/:id',
+          name: 'cases-list-detail',
+          component: CasesView,
           meta: { title: 'Caso' },
         },
         {
-          path: 'casos/cargas',
-          name: 'casos-cargas',
-          component: CasosView,
+          path: 'cases/specialists',
+          name: 'cases-specialists',
+          component: CasesView,
+          meta: { title: 'Especialistas' },
+        },
+        {
+          path: 'cases/loads',
+          name: 'cases-loads',
+          component: CasesView,
           meta: { title: 'Cargas' },
         },
         {
-          path: 'casos/cargas/:specialistId',
-          name: 'casos-cargas-specialist',
-          component: CasosView,
+          path: 'cases/loads/:specialistId',
+          name: 'cases-loads-specialist',
+          component: CasesView,
           meta: { title: 'Cargas' },
         },
         {
-          path: 'casos/cargas/:specialistId/:caseId',
-          name: 'casos-cargas-case',
-          component: CasosView,
+          path: 'cases/loads/:specialistId/:caseId',
+          name: 'cases-loads-case',
+          component: CasesView,
           meta: { title: 'Cargas' },
         },
         {
@@ -107,6 +113,14 @@ const router = createRouter({
           meta: { title: 'Mi Perfil' },
         },
       ],
+    },
+    {
+      path: '/:pathMatch(.*)*',
+      name: 'not-found',
+      redirect: (to) => {
+        const authStore = useAuthStore()
+        return authStore.isAuthenticated ? { name: 'dashboard' } : { name: 'login' }
+      },
     },
   ],
 })
