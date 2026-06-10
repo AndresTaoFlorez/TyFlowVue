@@ -1120,7 +1120,7 @@ onUnmounted(() => {
   gap: 0.4rem;
   height: 32px;
   padding: 0 0.75rem;
-  background: var(--bg-main);
+  background: none;
   border: 1px solid var(--border-light);
   border-radius: 8px;
   cursor: pointer;
@@ -1150,7 +1150,7 @@ onUnmounted(() => {
 
 .toolbar__date-btn i {
   font-size: 0.9rem;
-  color: var(--text-tertiary);
+  color: var(--text-secondary);
   flex-shrink: 0;
   transition: color 0.15s;
 }

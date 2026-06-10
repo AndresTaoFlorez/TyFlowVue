@@ -119,10 +119,6 @@ function goToFeature(feature) {
   padding: 3rem 2rem;
   max-width: 640px;
   animation: fadeUp 0.8s ease-out both;
-  background: color-mix(in srgb, var(--bg-main) 45%, transparent);
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
-  border-radius: var(--radius-lg);
 }
 
 .hero__icon-wrap {
