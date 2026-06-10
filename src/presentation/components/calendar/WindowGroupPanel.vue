@@ -200,14 +200,6 @@ function onCtxAction(action) {
             </div>
           </div>
           <div class="detail-head__spacer"></div>
-          <div class="detail-head__counters">
-            <span class="detail-head__ctr detail-head__ctr--open">
-              <i class="bx bx-log-in-circle"></i>{{ detailGroup.windows.reduce((n, w) => n + (w.openingCount ?? 0), 0) }}
-            </span>
-            <span class="detail-head__ctr detail-head__ctr--current">
-              <i class="bx bx-radio-circle-marked"></i>{{ detailGroup.windows.reduce((n, w) => n + (w.currentCount ?? 0), 0) }}
-            </span>
-          </div>
         </div>
 
         <!-- Window rows (same markup as original flat view) -->
@@ -234,17 +226,6 @@ function onCtxAction(action) {
               </span>
               <span v-if="inheritLabel(w)" class="item__inherit-label" :title="inheritLabel(w)">
                 {{ inheritLabel(w) }}
-              </span>
-            </div>
-            <div class="item__counts">
-              <span class="item__count item__count--open" title="Apertura">
-                <i class="bx bx-log-in-circle"></i> {{ w.openingCount ?? 0 }}
-              </span>
-              <span class="item__count item__count--current" title="Actual">
-                <i class="bx bx-radio-circle-marked"></i> {{ w.currentCount ?? 0 }}
-              </span>
-              <span v-if="w.closingCount != null" class="item__count item__count--close" title="Cierre">
-                <i class="bx bx-log-out-circle"></i> {{ w.closingCount }}
               </span>
             </div>
 
@@ -460,16 +441,6 @@ function onCtxAction(action) {
 .detail-head__meta { font-size: 0.68rem; color: var(--text-secondary); }
 .detail-head__spacer { flex: 1; }
 
-.detail-head__counters { display: flex; gap: 0.3rem; flex-shrink: 0; }
-.detail-head__ctr {
-  display: inline-flex; align-items: center; gap: 0.2rem;
-  font-size: 0.66rem; font-weight: 700; padding: 0.12rem 0.4rem;
-  border-radius: 5px; line-height: 1.4; white-space: nowrap;
-}
-.detail-head__ctr i { font-size: 0.82rem; }
-.detail-head__ctr--open { background: rgba(42, 199, 143, 0.14); color: var(--primary-600); }
-.detail-head__ctr--current { background: rgba(99, 102, 241, 0.14); color: #6366f1; }
-
 /* ============================================================
    Window item rows (kept from original — detail sub-view)
    ============================================================ */
@@ -579,44 +550,6 @@ function onCtxAction(action) {
   background: rgba(239, 68, 68, 0.08);
 }
 
-.item__counts {
-  position: absolute;
-  top: 0.3rem;
-  right: 0.4rem;
-  display: flex;
-  align-items: center;
-  gap: 0.2rem;
-}
-
-.item__count {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.15rem;
-  font-size: 0.58rem;
-  font-weight: 700;
-  padding: 0.08rem 0.28rem;
-  border-radius: 3px;
-  line-height: 1.3;
-  white-space: nowrap;
-}
-
-.item__count i { font-size: 0.72rem; }
-
-.item__count--open {
-  background: rgba(42, 199, 143, 0.12);
-  color: var(--primary-600, #1fa672);
-}
-
-.item__count--current {
-  background: rgba(99, 102, 241, 0.12);
-  color: #6366f1;
-}
-
-.item__count--close {
-  background: rgba(245, 158, 11, 0.12);
-  color: #b45309;
-}
-
 .item__actions {
   display: flex;
   gap: 0.25rem;
@@ -650,14 +583,5 @@ function onCtxAction(action) {
     border-radius: var(--radius-md);
   }
 
-  .item__counts { gap: 0.15rem; }
-
-  .item__count {
-    padding: 0.08rem 0.2rem;
-    font-size: 0;
-  }
-  .item__count i {
-    font-size: 0.8rem;
-  }
 }
 </style>

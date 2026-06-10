@@ -1,13 +1,26 @@
 <script setup>
+import '@/styles/components/layout/main-layout.css'
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import AppTopbar from '@/presentation/components/layout/AppTopbar.vue'
 import AppSidebar from '@/presentation/components/layout/AppSidebar.vue'
 import ChangePasswordModal from '@/presentation/components/users/ChangePasswordModal.vue'
 import { BP_MOBILE } from '@/presentation/utils/breakpoints'
 import { wsStatus } from '@/infrastructure/realtime/wsClient'
+import { usePreferencesStore } from '@/presentation/stores/usePreferencesStore'
+import { MENU_ROUTE_MAP } from '@/router'
 
 const route = useRoute()
+const router = useRouter()
+const prefs = usePreferencesStore()
+
+// Redirect when the current route's menu preference is toggled off
+watch(() => prefs.menus, (menus) => {
+  const menuKey = MENU_ROUTE_MAP[route.name]
+  if (menuKey && !menus[menuKey]) {
+    router.replace(menus.home ? { name: 'dashboard' } : { name: 'calendar' })
+  }
+}, { deep: true })
 
 // Debounced WS indicator — only show after 4s of not being connected
 const showWsWarning = ref(false)

@@ -15,8 +15,10 @@ import { fetchAssignmentTotalUseCase } from '@/application/use-cases/assignments
 import { Case } from '@/domain/entities/Case'
 import { useUserStore } from '@/presentation/stores/useUserStore'
 
+localStorage.removeItem('tyflow_cases_v1')
+
 const casesSync = new SyncEngine({
-  cacheKey: 'tyflow_cases_v1',
+  cacheKey: 'tyflow_cases_v2',
   hydrate: (raw) => new Case(raw),
   fetchRemote: null, // set dynamically per-filter
   getId: (item) => item.id,

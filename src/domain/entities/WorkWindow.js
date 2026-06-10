@@ -1,9 +1,9 @@
 export class WorkWindow {
   constructor({
     id, specialist_id, application_id, starts_at, ends_at,
-    opening_count = 0, current_count = 0, inherits_on_reopen = false,
+    inherits_on_reopen = false,
     is_active = true, created_at = null, deactivated_at = null,
-    closing_count = null, inherited_from_window_id = null,
+    inherited_from_window_id = null,
     affinity_weight = null, deleted_at = null,
   }) {
     this.id = id
@@ -11,13 +11,10 @@ export class WorkWindow {
     this.applicationId = application_id
     this.startsAt = starts_at
     this.endsAt = ends_at
-    this.openingCount = opening_count
-    this.currentCount = current_count
     this.inheritsOnReopen = inherits_on_reopen
     this.isActive = is_active
     this.createdAt = created_at
     this.deactivatedAt = deactivated_at
-    this.closingCount = closing_count
     this.inheritedFromWindowId = inherited_from_window_id
     this.affinityWeight = affinity_weight
     this.deletedAt = deleted_at
@@ -122,13 +119,10 @@ export class WorkWindow {
       application_id: this.applicationId,
       starts_at: this.startsAt,
       ends_at: this.endsAt,
-      opening_count: this.openingCount,
-      current_count: this.currentCount,
       inherits_on_reopen: this.inheritsOnReopen,
       is_active: this.isActive,
       created_at: this.createdAt,
       deactivated_at: this.deactivatedAt,
-      closing_count: this.closingCount,
       inherited_from_window_id: this.inheritedFromWindowId,
       affinity_weight: this.affinityWeight,
       deleted_at: this.deletedAt,

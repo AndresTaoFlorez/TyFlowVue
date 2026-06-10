@@ -129,15 +129,10 @@ const abrirEditar = async (user) => {
     modoEdicion.value = user.isActive
     editandoUserId.value = user.id
     editandoUser.value = user
-    await Promise.all([
-      userStore.loadSelects(),
-      user.specialistId ? userStore.loadSpecialistProfile(user.specialistId) : Promise.resolve(),
-    ])
+    await userStore.loadSelects()
     emailOriginal.value = user.email || ''
 
-    // Use fresh specialist profile for app-levels if available, else fall back to cached user data
-    const profileAssignments = userStore.specialistProfile?.application_assignments ?? null
-    const appLevels = (profileAssignments ?? user.applicationAssignments).map(a => ({
+    const appLevels = user.applicationAssignments.map(a => ({
       application_id: a.application_id,
       support_level_id: a.support_level_id,
     }))

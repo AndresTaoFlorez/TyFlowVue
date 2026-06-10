@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { useAuthStore } from '@/presentation/stores/useAuthStore'
+import { usePreferencesStore } from '@/presentation/stores/usePreferencesStore'
 import MainLayout from '@/presentation/layouts/MainLayout.vue'
 import DashboardView from '@/presentation/views/DashboardView.vue'
 import UsersView from '@/presentation/views/UsersView.vue'
@@ -119,11 +120,37 @@ const router = createRouter({
       name: 'not-found',
       redirect: (to) => {
         const authStore = useAuthStore()
-        return authStore.isAuthenticated ? { name: 'dashboard' } : { name: 'login' }
+        if (!authStore.isAuthenticated) return { name: 'login' }
+        return _getDefaultRoute()
       },
     },
   ],
 })
+
+// Maps route names to their menu preference key (routes not listed are always available)
+const MENU_ROUTE_MAP = {
+  'dashboard':            'home',
+  'cases-list':           'cases',
+  'cases-list-detail':    'cases',
+  'cases-specialists':    'cases',
+  'cases-loads':          'cases',
+  'cases-loads-specialist':'cases',
+  'cases-loads-case':     'cases',
+  'applications':         'applications',
+}
+
+function _getDefaultRoute() {
+  const prefs = usePreferencesStore()
+  if (prefs.menus.home) return { name: 'dashboard' }
+  return { name: 'calendar' }
+}
+
+function _isRouteDisabledByMenu(routeName) {
+  const menuKey = MENU_ROUTE_MAP[routeName]
+  if (!menuKey) return false
+  const prefs = usePreferencesStore()
+  return !prefs.menus[menuKey]
+}
 
 router.beforeEach((to) => {
   const authStore = useAuthStore()
@@ -134,8 +161,15 @@ router.beforeEach((to) => {
   } else if (to.meta.requiresAdmin && !authStore.isAdmin) {
     return { name: 'profile' }
   } else if (!requiresAuth && authStore.isAuthenticated && to.name === 'login') {
-    return { name: 'dashboard' }
+    return _getDefaultRoute()
+  }
+
+  // Redirect away from routes whose menu is disabled
+  if (requiresAuth && _isRouteDisabledByMenu(to.name)) {
+    return _getDefaultRoute()
   }
 })
+
+export { MENU_ROUTE_MAP }
 
 export default router

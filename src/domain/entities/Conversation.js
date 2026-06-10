@@ -36,8 +36,10 @@ export class Conversation {
     return this.subject.length > 80 ? this.subject.slice(0, 80) + '...' : this.subject
   }
 
-  withLocalUpdate() {
-    return new Conversation({
+  toJSON() { return this._toRaw() }
+
+  _toRaw() {
+    return {
       id: this.id,
       folder_id: this.folderId,
       subject: this.subject,
@@ -49,7 +51,13 @@ export class Conversation {
       tags: this.tags,
       received_at: this.receivedAt,
       duplicate_of: this.duplicateOf,
-      _localUpdatedAt: new Date().toISOString(),
-    })
+      _localUpdatedAt: this._localUpdatedAt,
+    }
+  }
+
+  withLocalUpdate() {
+    const copy = new Conversation(this._toRaw())
+    copy._localUpdatedAt = new Date().toISOString()
+    return copy
   }
 }

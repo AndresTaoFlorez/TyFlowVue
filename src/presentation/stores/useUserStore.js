@@ -16,7 +16,7 @@ import { Application } from '@/domain/entities/Application'
 import { User } from '@/domain/entities/User'
 import { SyncEngine } from '@/infrastructure/sync/SyncEngine'
 
-const CACHE_VERSION = 'v2'
+const CACHE_VERSION = 'v3'
 const CACHE_KEYS = {
   users:            `tyflow_users_${CACHE_VERSION}`,
   roles:            `tyflow_roles_${CACHE_VERSION}`,
@@ -27,7 +27,10 @@ const CACHE_KEYS = {
 
 // Limpiar claves de versiones anteriores
 ;['tyflow_roles', 'tyflow_support_levels', 'tyflow_specialists',
-  'tyflow_specialists_v2'].forEach(k => localStorage.removeItem(k))
+  'tyflow_specialists_v2',
+  'tyflow_users_v2', 'tyflow_roles_v2', 'tyflow_support_levels_v2',
+  'tyflow_support_categories_v2', 'tyflow_applications_v2',
+].forEach(k => localStorage.removeItem(k))
 
 // ── SyncEngines por dataset (módulo-level: singleton, persiste entre mounts) ──
 const usersSync = new SyncEngine({

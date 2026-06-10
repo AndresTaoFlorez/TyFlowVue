@@ -9,7 +9,7 @@ export function useCalendarRealtime() {
   // After reconnection, reload windows for the current range
   watch(wsStatus, (status, prev) => {
     if (status === 'connected' && (prev === 'reconnecting' || prev === 'connecting')) {
-      store.loadWindows()
+      store.forceReload()
     }
   })
 

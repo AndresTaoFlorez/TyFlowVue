@@ -1,4 +1,5 @@
 <script setup>
+import '@/styles/components/layout/topbar.css'
 import { computed } from 'vue'
 import { useRoute } from 'vue-router'
 import { useAuthStore } from '@/presentation/stores/useAuthStore'

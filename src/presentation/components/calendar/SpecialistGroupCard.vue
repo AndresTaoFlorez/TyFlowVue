@@ -24,9 +24,6 @@ const specName = (w) => {
 // ---- Computed aggregates ----
 const appIds = () => [...new Set(props.windows.map(w => w.applicationId))]
 const activeN = () => props.windows.filter(w => w.isActive).length
-const opening = () => props.windows.reduce((n, w) => n + (w.openingCount ?? 0), 0)
-const current = () => props.windows.reduce((n, w) => n + (w.currentCount ?? 0), 0)
-
 const status = () => {
   const a = activeN()
   if (a === props.windows.length) return 'active'
@@ -142,14 +139,6 @@ const onShowAll = () => {
             </span>
           </div>
         </div>
-        <div class="spcard__counters">
-          <span class="spcard__ctr spcard__ctr--open" title="Apertura (suma)">
-            <i class="bx bx-log-in-circle"></i>{{ opening() }}
-          </span>
-          <span class="spcard__ctr spcard__ctr--current" title="Actual (suma)">
-            <i class="bx bx-radio-circle-marked"></i>{{ current() }}
-          </span>
-        </div>
       </div>
 
       <!-- App chips -->
@@ -246,17 +235,6 @@ const onShowAll = () => {
   width: 3px; height: 3px; border-radius: 50%;
   background: var(--text-secondary); flex-shrink: 0; opacity: 0.5;
 }
-
-/* Counters */
-.spcard__counters { display: flex; gap: 0.3rem; flex-shrink: 0; }
-.spcard__ctr {
-  display: inline-flex; align-items: center; gap: 0.2rem;
-  font-size: 0.66rem; font-weight: 700; padding: 0.12rem 0.4rem;
-  border-radius: 5px; line-height: 1.4; white-space: nowrap;
-}
-.spcard__ctr i { font-size: 0.82rem; }
-.spcard__ctr--open { background: rgba(42, 199, 143, 0.14); color: var(--primary-600); }
-.spcard__ctr--current { background: rgba(99, 102, 241, 0.14); color: #6366f1; }
 
 /* Status pill */
 .spcard__status-pill {

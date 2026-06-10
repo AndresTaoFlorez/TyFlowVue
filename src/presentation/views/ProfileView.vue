@@ -70,7 +70,7 @@ const abrirEditar = async () => {
   try {
     await userStore.loadSelects()
 
-    const applicationLevels = (p.applicationAssignments ?? []).map(a => ({
+    const applicationLevels = (p.applicationAssignments || []).map(a => ({
       application_id: a.application_id,
       support_level_id: a.support_level_id,
     }))

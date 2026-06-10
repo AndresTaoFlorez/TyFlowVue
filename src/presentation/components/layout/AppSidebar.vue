@@ -1,4 +1,5 @@
 <script setup>
+import '@/styles/components/layout/sidebar.css'
 import { useAuthStore } from '@/presentation/stores/useAuthStore'
 import { usePreferencesStore } from '@/presentation/stores/usePreferencesStore'
 import { useRouter } from 'vue-router'
@@ -62,7 +63,7 @@ const handleLogout = () => {
           <span class="sidebar__label">Casos</span>
         </RouterLink>
       </li>
-      <li v-if="prefs.menus.settings" class="sidebar__item">
+      <li class="sidebar__item">
         <RouterLink :to="{ name: 'settings' }" class="sidebar__link" active-class="sidebar__link--active" @click="$emit('navigate')">
           <i class='bx bx-cog sidebar__icon'></i>
           <span class="sidebar__label">Configuración</span>

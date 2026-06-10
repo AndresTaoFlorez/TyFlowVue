@@ -1,79 +1,91 @@
 <script setup>
 import { ref } from 'vue'
+import { useRouter } from 'vue-router'
 import NodeGraphCanvas from '@/presentation/components/shared/NodeGraphCanvas.vue'
 
-const activeStep = ref(null)
+const router = useRouter()
+const activeFeature = ref(null)
 
-const steps = [
+const titleLetters = 'Bienvenido'.split('')
+
+const features = [
   {
-    number: 1,
-    label: 'Lectura de correos',
-    icon: 'bx-envelope',
-    description:
-      'El sistema se conectara a un RPA mediante API REST para consumir automaticamente los correos electronicos entrantes. El RPA leera el buzon institucional, filtrara los mensajes relevantes y entregara las solicitudes listas para su procesamiento.',
-  },
-  {
-    number: 2,
     label: 'Asignacion a especialistas',
     icon: 'bx-user-check',
     description:
-      'Usando el algoritmo WDD (Weighted Dynamic Distribution), el caso se asignara automaticamente al especialista mas adecuado segun su area, nivel de soporte, carga actual y disponibilidad en su ventana de trabajo.',
+      'Usando el algoritmo WDD (Weighted Dynamic Distribution), cada caso se asigna automaticamente al especialista mas adecuado segun su area, nivel de soporte, carga actual y disponibilidad en su ventana de trabajo.',
+    route: { name: 'cases-specialists' },
   },
   {
-    number: 3,
     label: 'Gestion de casos',
     icon: 'bx-briefcase',
     description:
-      'Los especialistas podran visualizar, gestionar y dar seguimiento a los casos asignados. El sistema registrara el estado de cada caso, los tiempos de respuesta y permitira la reasignacion cuando sea necesario.',
+      'Visualiza, gestiona y da seguimiento a los casos asignados. El sistema registra el estado de cada caso, los tiempos de respuesta y permite la reasignacion cuando sea necesario.',
+    route: { name: 'cases-list', params: { status: 'open' } },
   },
 ]
 
-function toggleStep(index) {
-  activeStep.value = activeStep.value === index ? null : index
+function toggleFeature(index) {
+  activeFeature.value = activeFeature.value === index ? null : index
+}
+
+function goToFeature(feature) {
+  router.push(feature.route)
 }
 </script>
 
 <template>
   <section class="content">
-    <div class="coming-soon">
+    <div class="hero">
       <NodeGraphCanvas />
-      <div class="coming-soon__body">
-        <div class="coming-soon__icon-wrap">
-          <i class='bx bx-envelope coming-soon__icon'></i>
-          <i class='bx bx-user-check coming-soon__icon coming-soon__icon--secondary'></i>
-          <i class='bx bx-briefcase coming-soon__icon'></i>
+      <div class="hero__body">
+        <div class="hero__icon-wrap">
+          <i class='bx bx-user-check hero__icon'></i>
+          <i class='bx bx-briefcase hero__icon hero__icon--secondary'></i>
         </div>
-        <h2 class="coming-soon__title">
-          <span class="coming-soon__letter" style="--i:0">P</span><span class="coming-soon__letter" style="--i:1">r</span><span class="coming-soon__letter" style="--i:2">o</span><span class="coming-soon__letter" style="--i:3">x</span><span class="coming-soon__letter" style="--i:4">i</span><span class="coming-soon__letter" style="--i:5">m</span><span class="coming-soon__letter" style="--i:6">a</span><span class="coming-soon__letter" style="--i:7">m</span><span class="coming-soon__letter" style="--i:8">e</span><span class="coming-soon__letter" style="--i:9">n</span><span class="coming-soon__letter" style="--i:10">t</span><span class="coming-soon__letter" style="--i:11">e</span>
+        <h2 class="hero__title">
+          <span
+            v-for="(letter, i) in titleLetters"
+            :key="i"
+            class="hero__letter"
+            :style="{ '--i': i }"
+          >{{ letter }}</span>
         </h2>
-        <p class="coming-soon__subtitle">Asignacion automatica de casos</p>
-        <div class="coming-soon__info">
+        <p class="hero__subtitle">Gestion inteligente de casos</p>
+        <div class="hero__info">
           <Transition name="swap" mode="out-in">
-            <p v-if="activeStep === null" key="default" class="coming-soon__description">
-              Se implementara una integracion con un RPA via API REST que consumira
-              los correos electronicos entrantes, asignara los casos automaticamente
-              a los especialistas y permitira su gestion y seguimiento completo.
+            <p v-if="activeFeature === null" key="default" class="hero__description">
+              TyFlow asigna automaticamente cada caso al especialista mas adecuado y
+              te permite gestionar y dar seguimiento a todo el flujo de trabajo, con
+              control de estados, tiempos de respuesta y reasignaciones.
             </p>
-            <div v-else class="coming-soon__detail" :key="activeStep">
-              <i :class="['bx', steps[activeStep].icon, 'coming-soon__detail-icon']"></i>
-              <p class="coming-soon__detail-text">{{ steps[activeStep].description }}</p>
+            <div v-else class="hero__detail" :key="activeFeature">
+              <i :class="['bx', features[activeFeature].icon, 'hero__detail-icon']"></i>
+              <p class="hero__detail-text">{{ features[activeFeature].description }}</p>
             </div>
           </Transition>
         </div>
-        <div class="coming-soon__steps">
-          <template v-for="(step, i) in steps" :key="step.number">
-            <div v-if="i > 0" class="coming-soon__step-arrow">
-              <i class='bx bx-right-arrow-alt'></i>
+        <div class="hero__features">
+          <button
+            v-for="(feature, i) in features"
+            :key="feature.label"
+            class="hero__feature"
+            :class="{ 'hero__feature--active': activeFeature === i }"
+            @mouseenter="activeFeature = i"
+            @mouseleave="activeFeature = null"
+            @click="goToFeature(feature)"
+          >
+            <div class="hero__feature-icon">
+              <i :class="['bx', feature.icon]"></i>
             </div>
-            <button
-              class="coming-soon__step"
-              :class="{ 'coming-soon__step--active': activeStep === i }"
-              @click="toggleStep(i)"
-            >
-              <div class="coming-soon__step-number">{{ step.number }}</div>
-              <span>{{ step.label }}</span>
-            </button>
-          </template>
+            <div class="hero__feature-text">
+              <span class="hero__feature-label">{{ feature.label }}</span>
+              <span class="hero__feature-status">
+                <i class='bx bxs-circle'></i> Disponible
+              </span>
+            </div>
+            <i class='bx bx-right-arrow-alt hero__feature-go'></i>
+          </button>
         </div>
       </div>
     </div>
@@ -87,7 +99,7 @@ function toggleStep(index) {
   height: 100%;
 }
 
-.coming-soon {
+.hero {
   position: relative;
   flex: 1;
   min-height: 420px;
@@ -99,49 +111,52 @@ function toggleStep(index) {
   justify-content: center;
 }
 
-.coming-soon__body {
+.hero__body {
   position: relative;
   z-index: 1;
   text-align: center;
-  color: var(--neutral-800, #1e293b);
+  color: var(--text-primary);
   padding: 3rem 2rem;
-  max-width: 600px;
+  max-width: 640px;
   animation: fadeUp 0.8s ease-out both;
-  backdrop-filter: blur(3px);
-  -webkit-backdrop-filter: blur(3px);
+  background: color-mix(in srgb, var(--bg-main) 45%, transparent);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
   border-radius: var(--radius-lg);
 }
 
-.coming-soon__icon-wrap {
+.hero__icon-wrap {
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 0.75rem;
   margin-bottom: 1.5rem;
   font-size: 2.5rem;
+  color: var(--primary-500);
   opacity: 0;
   animation: fadeUp 0.6s ease-out both 0.3s;
 }
 
-.coming-soon__icon {
-  opacity: 0.9;
+.hero__icon {
+  opacity: 0.95;
   animation: iconFloat 3s ease-in-out infinite;
 }
 
-.coming-soon__icon--secondary {
+.hero__icon--secondary {
   font-size: 1.5rem;
-  opacity: 0.6;
+  opacity: 0.65;
   animation-delay: 0.5s;
 }
 
-.coming-soon__title {
+.hero__title {
   font-size: 2.2rem;
   font-weight: 700;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.08em;
   margin-bottom: 0.5rem;
+  color: var(--text-primary);
 }
 
-.coming-soon__letter {
+.hero__letter {
   display: inline-block;
   opacity: 0;
   animation:
@@ -150,92 +165,122 @@ function toggleStep(index) {
   will-change: auto;
 }
 
-.coming-soon__subtitle {
+.hero__subtitle {
   font-size: 1.1rem;
   font-weight: 600;
+  color: var(--primary-600);
   opacity: 0;
   animation: fadeUp 0.6s ease-out both 1.4s;
   margin-bottom: 1rem;
 }
 
-.coming-soon__info {
+.hero__info {
   min-height: 5.5rem;
   margin-bottom: 2rem;
   opacity: 0;
   animation: fadeUp 0.6s ease-out both 1.7s;
 }
 
-.coming-soon__description {
+.hero__description {
   font-size: 0.9rem;
   line-height: 1.6;
-  color: var(--neutral-600, #475569);
+  color: var(--text-secondary);
   margin: 0;
 }
 
-.coming-soon__steps {
+.hero__features {
   display: flex;
-  align-items: center;
+  align-items: stretch;
   justify-content: center;
-  gap: 0.75rem;
+  gap: 0.85rem;
   opacity: 0;
   animation: fadeUp 0.6s ease-out both 2s;
 }
 
-.coming-soon__step {
+.hero__feature {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  background: rgba(42, 199, 143, 0.1);
+  gap: 0.75rem;
+  flex: 1;
+  max-width: 290px;
+  text-align: left;
+  background: color-mix(in srgb, var(--primary-500) 10%, transparent);
   backdrop-filter: blur(3px);
-  padding: 0.5rem 1rem;
+  padding: 0.85rem 1rem;
   border-radius: var(--radius-md);
-  font-size: 0.82rem;
-  font-weight: 600;
-  border: 1.5px solid transparent;
+  border: 1.5px solid color-mix(in srgb, var(--primary-500) 18%, transparent);
   cursor: pointer;
   transition: all 0.25s ease;
-  color: inherit;
+  color: var(--text-primary);
 }
 
-.coming-soon__step:hover {
-  background: rgba(42, 199, 143, 0.18);
+.hero__feature:hover,
+.hero__feature--active {
+  background: color-mix(in srgb, var(--primary-500) 20%, transparent);
+  border-color: color-mix(in srgb, var(--primary-500) 50%, transparent);
   transform: translateY(-2px);
+  box-shadow: 0 6px 18px color-mix(in srgb, var(--primary-500) 18%, transparent);
 }
 
-.coming-soon__step--active {
-  background: rgba(42, 199, 143, 0.22);
-  border-color: rgba(42, 199, 143, 0.5);
-  box-shadow: 0 0 12px rgba(42, 199, 143, 0.15);
-}
-
-.coming-soon__step-number {
-  width: 1.5rem;
-  height: 1.5rem;
-  background: rgba(42, 199, 143, 0.25);
-  border-radius: 50%;
+.hero__feature-icon {
+  width: 2.25rem;
+  height: 2.25rem;
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 0.75rem;
-  font-weight: 700;
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--primary-500) 22%, transparent);
+  color: var(--primary-600);
+  font-size: 1.25rem;
+}
+
+.hero__feature-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.hero__feature-label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.hero__feature-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--primary-600);
+}
+
+.hero__feature-status i {
+  font-size: 0.5rem;
+}
+
+.hero__feature-go {
+  font-size: 1.3rem;
+  color: var(--primary-600);
   flex-shrink: 0;
-  transition: background 0.25s ease;
+  opacity: 0.5;
+  transition: transform 0.25s ease, opacity 0.25s ease;
 }
 
-.coming-soon__step--active .coming-soon__step-number {
-  background: rgba(42, 199, 143, 0.45);
-}
-
-.coming-soon__step-arrow {
-  font-size: 1.2rem;
-  opacity: 0.6;
+.hero__feature:hover .hero__feature-go,
+.hero__feature--active .hero__feature-go {
+  opacity: 1;
+  transform: translateX(3px);
 }
 
 /* Detail panel */
-.coming-soon__detail {
+.hero__detail {
   padding: 1rem 1.25rem;
-  background: rgba(42, 199, 143, 0.07);
-  border: 1px solid rgba(42, 199, 143, 0.2);
+  background: color-mix(in srgb, var(--primary-500) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--primary-500) 20%, transparent);
   border-radius: var(--radius-md);
   text-align: left;
   display: flex;
@@ -243,17 +288,17 @@ function toggleStep(index) {
   gap: 0.85rem;
 }
 
-.coming-soon__detail-icon {
+.hero__detail-icon {
   font-size: 1.6rem;
-  color: rgba(42, 199, 143, 0.8);
+  color: var(--primary-600);
   flex-shrink: 0;
   margin-top: 0.1rem;
 }
 
-.coming-soon__detail-text {
+.hero__detail-text {
   font-size: 0.85rem;
   line-height: 1.65;
-  color: var(--neutral-700, #334155);
+  color: var(--text-secondary);
   margin: 0;
 }
 
@@ -289,7 +334,7 @@ function toggleStep(index) {
 
 @keyframes letterGlow {
   0%, 100% { text-shadow: 0 0 0 transparent; }
-  50% { text-shadow: 0 0 18px rgba(42, 199, 143, 0.4); }
+  50% { text-shadow: 0 0 18px color-mix(in srgb, var(--primary-500) 40%, transparent); }
 }
 
 @keyframes iconFloat {
@@ -298,24 +343,23 @@ function toggleStep(index) {
 }
 
 @media (max-width: 768px) {
-  .coming-soon__body {
+  .hero__body {
     padding: 2rem 1.25rem;
   }
 
-  .coming-soon__title {
+  .hero__title {
     font-size: 1.6rem;
   }
 
-  .coming-soon__steps {
+  .hero__features {
     flex-direction: column;
-    gap: 0.5rem;
   }
 
-  .coming-soon__step-arrow {
-    transform: rotate(90deg);
+  .hero__feature {
+    max-width: none;
   }
 
-  .coming-soon__icon-wrap {
+  .hero__icon-wrap {
     font-size: 2rem;
   }
 }

@@ -8,7 +8,6 @@ const authStore = useAuthStore()
 const MENU_ITEMS = [
   { key: 'home',         label: 'Inicio',          adminOnly: false },
   { key: 'cases',        label: 'Casos',            adminOnly: false },
-  { key: 'settings',     label: 'Configuración',    adminOnly: false },
   { key: 'applications', label: 'Aplicaciones',     adminOnly: true  },
 ]
 </script>

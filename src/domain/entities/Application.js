@@ -12,8 +12,21 @@ export class Application {
     return this.theme?.color || null
   }
 
+  toJSON() { return this._toRaw() }
+
+  _toRaw() {
+    return {
+      id: this.id,
+      name: this.name,
+      is_active: this.isActive,
+      theme: this.theme,
+      created_at: this.createdAt,
+      _localUpdatedAt: this._localUpdatedAt,
+    }
+  }
+
   withLocalUpdate() {
-    const copy = new Application(this)
+    const copy = new Application(this._toRaw())
     copy._localUpdatedAt = new Date().toISOString()
     return copy
   }

@@ -29,7 +29,7 @@ export const useConversationStore = defineStore('conversations', () => {
 
   function _createSyncEngine(folderId) {
     return new SyncEngine({
-      cacheKey: `tyflow_conversations_${folderId}`,
+      cacheKey: `tyflow_conversations_v2_${folderId}`,
       hydrate: (raw) => new Conversation(raw),
       fetchRemote: () => fetchConversationsUseCase({
         folderId,

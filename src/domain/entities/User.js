@@ -12,6 +12,9 @@ export class User {
     last_sign_in_at = null,
     full_name = null,
     role_names = [],
+    // New nested structure from API
+    specialist_profile = null,
+    // Legacy flat fields (for cached data / withLocalUpdate round-trip)
     specialist_id = null,
     specialist_is_active = null,
     support_level_names = [],
@@ -29,10 +32,38 @@ export class User {
     this.email = email
     this.lastSignInAt = last_sign_in_at
     this.roleNames = Array.isArray(role_names) ? role_names : []
-    this.specialistId = specialist_id
-    this.specialistIsActive = specialist_is_active
-    this.supportLevelNames = Array.isArray(support_level_names) ? support_level_names : []
-    this.applicationAssignments = Array.isArray(application_assignments) ? application_assignments : []
+
+    // Prefer specialist_profile (new API), fall back to flat fields (cached data)
+    const sp = specialist_profile
+    this.specialistId = sp?.specialist_id ?? specialist_id ?? null
+    this.specialistIsActive = sp?.specialist_is_active ?? specialist_is_active ?? null
+
+    const rawAssignments = sp?.application_assignments
+      ?? (Array.isArray(application_assignments) ? application_assignments : [])
+
+    // Normalize: flatten nested support_level so downstream code can still read
+    // a.support_level_id / a.support_level_name without changes
+    this.applicationAssignments = rawAssignments.map(a => {
+      if (a.support_level && !a.support_level_id) {
+        return {
+          ...a,
+          support_level_id: a.support_level.support_levels_id ?? null,
+          support_level_name: a.support_level.support_level_name ?? null,
+        }
+      }
+      return a
+    })
+
+    // Derive supportLevelNames from assignments (replaces the old flat array)
+    if (sp) {
+      const names = [...new Set(
+        this.applicationAssignments.map(a => a.support_level_name).filter(Boolean)
+      )]
+      this.supportLevelNames = names
+    } else {
+      this.supportLevelNames = Array.isArray(support_level_names) ? support_level_names : []
+    }
+
     this.preferences = preferences
     this._fullName = full_name
     this._localUpdatedAt = null
@@ -48,8 +79,10 @@ export class User {
     return this.isActive ? 'ACTIVO' : 'INACTIVO'
   }
 
-  withLocalUpdate() {
-    const copy = new User({
+  toJSON() { return this._toRaw() }
+
+  _toRaw() {
+    return {
       id: this.id,
       first_name: this.firstName,
       second_name: this.secondName,
@@ -67,7 +100,12 @@ export class User {
       support_level_names: this.supportLevelNames,
       application_assignments: this.applicationAssignments,
       preferences: this.preferences,
-    })
+      _localUpdatedAt: this._localUpdatedAt,
+    }
+  }
+
+  withLocalUpdate() {
+    const copy = new User(this._toRaw())
     copy._localUpdatedAt = new Date().toISOString()
     return copy
   }

@@ -1277,9 +1277,6 @@ const windowsByDay = computed(() => {
           specialistId: w.specialistId,
           applicationId: w.applicationId,
           inheritsOnReopen: w.inheritsOnReopen,
-          openingCount: w.openingCount,
-          currentCount: w.currentCount,
-          closingCount: w.closingCount,
           inheritedFromWindowId: w.inheritedFromWindowId,
         })
       }

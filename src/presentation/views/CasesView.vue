@@ -138,12 +138,19 @@ onMounted(async () => {
   await Promise.all([userStore.loadSelects(), userStore.loadUsers()])
   // Only load cases when on the lista tab
   if (activeTab.value === 'lista') {
-    const status = STATUS_TO_FILTER[route.params.status ?? 'open'] ?? 'open'
-    const initFilters = { status }
+    const routeStatus = route.params.status ?? 'open'
+    // Set filters directly + loadCases() (no args) so it always refetches —
+    // passing newFilters short-circuits when the key is unchanged, leaving total stale.
+    store.filters.status = STATUS_TO_FILTER[routeStatus] ?? 'open'
     if (!authStore.isAdmin && authStore.profile?.specialistId) {
-      initFilters.specialistId = authStore.profile.specialistId
+      store.filters.specialistId = authStore.profile.specialistId
     }
-    store.loadCases(initFilters)
+    await store.loadCases()
+
+    // Al entrar a "abiertos" sin casos, redirigir a "todos"
+    if (routeStatus === 'open' && store.pagination.total === 0) {
+      router.replace({ name: 'cases-list', params: { status: 'todos' } })
+    }
   }
 })
 </script>

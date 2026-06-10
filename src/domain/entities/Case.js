@@ -104,6 +104,8 @@ export class Case {
     return this.status === 'assigned' || this.status === 'in_progress'
   }
 
+  toJSON() { return this._toRaw() }
+
   _toRaw() {
     return {
       id: this.id,

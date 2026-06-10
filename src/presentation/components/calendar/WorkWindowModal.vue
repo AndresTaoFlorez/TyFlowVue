@@ -257,22 +257,6 @@ const statusClass = computed(() => {
         <!-- Divider -->
         <div class="wm__divider"></div>
 
-        <!-- Counters -->
-        <div class="wm__counters">
-          <div class="wm__ctr">
-            <span class="wm__ctr-val">{{ window.openingCount }}</span>
-            <span class="wm__ctr-lbl">Apertura</span>
-          </div>
-          <div class="wm__ctr wm__ctr--main">
-            <span class="wm__ctr-val">{{ window.currentCount }}</span>
-            <span class="wm__ctr-lbl">Actual</span>
-          </div>
-          <div v-if="window.closingCount != null" class="wm__ctr">
-            <span class="wm__ctr-val">{{ window.closingCount }}</span>
-            <span class="wm__ctr-lbl">Cierre</span>
-          </div>
-        </div>
-
         <!-- Peso de afinidad (view mode) -->
         <div v-if="!editing && window.affinityWeight != null" class="wm__row">
           <i class='bx bx-slider-alt'></i>
@@ -584,44 +568,6 @@ const statusClass = computed(() => {
   height: 1px;
   background: var(--border-light);
   margin: 4px 0;
-}
-
-/* ===== Counters ===== */
-.wm__counters {
-  display: flex;
-  gap: 0;
-  padding: 4px 0;
-}
-
-.wm__ctr {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 2px;
-  padding: 8px 0;
-  border-right: 1px solid var(--border-light);
-}
-
-.wm__ctr:last-child { border-right: none; }
-
-.wm__ctr-val {
-  font-size: 18px;
-  font-weight: 700;
-  color: var(--text-secondary);
-}
-
-.wm__ctr--main .wm__ctr-val {
-  color: var(--primary-500);
-  font-size: 22px;
-}
-
-.wm__ctr-lbl {
-  font-size: 10px;
-  font-weight: 600;
-  color: var(--text-secondary);
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
 }
 
 /* ===== Badge ===== */
