@@ -742,6 +742,20 @@ const onKeydown = (e) => {
     if (selectedWindows.value.size > 0) { handleBatchDelete(); return }
     if (selectedWindow.value) { handleDelete(selectedWindow.value); return }
   }
+  // Atajos de herramienta (V/E/S) — solo admin, sin modificadores y fuera de campos de texto
+  if (authStore.isAdmin && !e.ctrlKey && !e.metaKey && !e.altKey && !isTypingTarget(e.target)) {
+    const k = e.key.toLowerCase()
+    if (k === 'v') { setTool('default'); return }
+    if (k === 'e') { setTool('eraser'); return }
+    if (k === 's') { setTool('select'); return }
+  }
+}
+
+// No capturar atajos de letra mientras se escribe en un campo
+function isTypingTarget(el) {
+  if (!el) return false
+  const tag = el.tagName
+  return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || el.isContentEditable
 }
 
 // ---- Modales deep-linkables (URL ↔ estado, con botón Atrás) ----
@@ -786,12 +800,20 @@ function syncModalsFromRoute() {
 watch(() => [route.query.window, route.query.group], syncModalsFromRoute, { immediate: true })
 
 // Reintentar resolución cuando las ventanas cargan tarde (deep-link en frío)
-watch(() => calStore.windows, () => {
+watch(() => calStore.windows, (wins) => {
   if (route.query.window && !selectedWindow.value) {
     selectedWindow.value = calStore.windows.find(w => w.id === route.query.window) || null
   }
   if (route.query.group && !selectedGroup.value) {
     selectedGroup.value = findGroupForWindow(calStore.windows, route.query.group)
+  }
+  // Reconciliar selección: descartar IDs de ventanas que ya no existen
+  // (borradas por borrador/menú/undo/recarga). Mantiene sel-bar__count y las
+  // acciones en lote coherentes con lo que realmente hay en pantalla.
+  if (selectedWindows.value.size > 0) {
+    const live = new Set(wins.map(w => w.id))
+    const pruned = new Set([...selectedWindows.value].filter(id => live.has(id)))
+    if (pruned.size !== selectedWindows.value.size) selectedWindows.value = pruned
   }
 })
 
@@ -851,15 +873,15 @@ onUnmounted(() => {
         <!-- Tool toggle (admin only, hidden on mobile via CSS) -->
         <div v-if="authStore.isAdmin" class="toolbar__tools">
           <button class="toolbar__tool-btn" :class="{ 'toolbar__tool-btn--active': activeTool === 'default' }"
-            @click="setTool('default')" title="Modo normal">
+            @click="setTool('default')" title="Modo normal (V)">
             <i class='bx bx-pointer'></i>
           </button>
           <button class="toolbar__tool-btn" :class="{ 'toolbar__tool-btn--active': activeTool === 'eraser' }"
-            @click="setTool('eraser')" title="Borrador">
+            @click="setTool('eraser')" title="Borrador (E)">
             <i class='bx bx-eraser'></i>
           </button>
           <button class="toolbar__tool-btn" :class="{ 'toolbar__tool-btn--active': activeTool === 'select' }"
-            @click="setTool('select')" title="Seleccionar">
+            @click="setTool('select')" title="Seleccionar (S)">
             <i class='bx bx-select-multiple'></i>
           </button>
         </div>
