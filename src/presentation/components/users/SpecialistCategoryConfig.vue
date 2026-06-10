@@ -1,136 +1,110 @@
 <script setup>
 import { ref, watch, computed, onMounted, onUnmounted } from 'vue'
 import { AppLevelCategoryRepository } from '@/infrastructure/repositories/AppLevelCategoryRepository'
-import { SpecialistCategoryExclusionsRepository } from '@/infrastructure/repositories/SpecialistCategoryExclusionsRepository'
 import { useUserStore } from '@/presentation/stores/useUserStore'
 
 const props = defineProps({
   // [{application_id, support_level_id}] — only complete pairs
   applicationLevels: { type: Array, required: true },
-  // null in create mode; string specialist_id in edit mode
-  specialistId: { type: String, default: null },
-  // When true: chip/bulk ops only update local state; call commitPending() to persist
-  deferred: { type: Boolean, default: false },
+  // Embedded categories from the user's specialist_profile, keyed by `${app}_${level}`:
+  //   { [pairKey]: [{ id, name, description, is_assigned }] }
+  // Pairs found here are seeded directly (no fetch). Pairs the admin adds anew
+  // are fetched from the catalog with every category enabled by default.
+  initialCategories: { type: Object, default: () => ({}) },
+  // Read-only (e.g. view mode)
+  disabled: { type: Boolean, default: false },
 })
+
+// Notifies the parent form whether any category flag differs from its initial
+// state, so the "Actualizar" button can enable on category-only changes.
+const emit = defineEmits(['dirty-change'])
 
 const userStore = useUserStore()
 
-// All categories per (app, level) pair
-const categoriesPerPair = ref({})
+// Single source of truth: pairKey → [{ id, name, description, is_assigned }]
+const catsByPair = ref({})
 const loadingPair = ref({})
-
-// Exclusions: key = `${app_id}_${cat_id}` → exclusion record { id, ... }
-const exclusions = ref({}) // { [appId_catId]: exclusion }
-const _savedExclusions = ref({}) // snapshot at load — used by commitPending
-const loadingExclusions = ref(false)
-const togglingCat = ref(new Set())
+// Snapshot of the seeded is_assigned per pair: pairKey → { catId: is_assigned }
+const _initialFlags = {}
 
 function pairKey(appId, levelId) {
   return `${appId}_${levelId}`
 }
-function exclusionKey(appId, catId) {
-  return `${appId}_${catId}`
+
+function snapshotInitial(k) {
+  _initialFlags[k] = Object.fromEntries((catsByPair.value[k] ?? []).map(c => [c.id, c.is_assigned]))
 }
 
-function isExcluded(appId, catId) {
-  return exclusionKey(appId, catId) in exclusions.value
-}
+const isInteractive = computed(() => !props.disabled)
 
-// Fetch all categories for each pair
+// Seed / fetch categories for each (app, level) pair
 watch(() => props.applicationLevels, async (pairs) => {
   const validKeys = new Set(pairs.map(p => pairKey(p.application_id, p.support_level_id)))
 
-  for (const k of Object.keys(categoriesPerPair.value)) {
-    if (!validKeys.has(k)) delete categoriesPerPair.value[k]
+  for (const k of Object.keys(catsByPair.value)) {
+    if (!validKeys.has(k)) { delete catsByPair.value[k]; delete _initialFlags[k] }
   }
 
   for (const { application_id, support_level_id } of pairs) {
     const k = pairKey(application_id, support_level_id)
-    if (categoriesPerPair.value[k] !== undefined) continue
+    if (catsByPair.value[k] !== undefined) continue
+
+    const seed = props.initialCategories[k]
+    if (seed) {
+      // Already in the user's profile — use the embedded flags, no network call.
+      catsByPair.value[k] = seed.map(c => ({
+        id: c.id,
+        name: c.name,
+        description: c.description ?? null,
+        is_assigned: c.is_assigned !== false,
+      }))
+      snapshotInitial(k)
+      continue
+    }
+
+    // Newly added pair: fetch the available categories (all enabled by default).
     loadingPair.value[k] = true
     try {
       const pivots = await AppLevelCategoryRepository.fetchAll(application_id, support_level_id)
       const catIds = pivots.map(p => p.support_category_id)
-      categoriesPerPair.value[k] = (userStore.supportCategories ?? []).filter(c => catIds.includes(c.id))
+      catsByPair.value[k] = (userStore.supportCategories ?? [])
+        .filter(c => catIds.includes(c.id))
+        .map(c => ({ id: c.id, name: c.name, description: c.description ?? null, is_assigned: true }))
     } catch {
-      categoriesPerPair.value[k] = []
+      catsByPair.value[k] = []
     } finally {
       loadingPair.value[k] = false
+      snapshotInitial(k)
     }
   }
 }, { immediate: true, deep: true })
 
-// Fetch exclusions whenever specialistId or pairs change
-async function refreshExclusions() {
-  if (!props.specialistId || props.applicationLevels.length === 0) {
-    exclusions.value = {}
-    return
-  }
-  loadingExclusions.value = true
-  try {
-    const uniqueApps = [...new Set(props.applicationLevels.map(p => p.application_id))]
-    const results = await Promise.all(
-      uniqueApps.map(appId =>
-        SpecialistCategoryExclusionsRepository.fetchAll(props.specialistId, appId)
-      )
-    )
-    const map = {}
-    for (const list of results) {
-      for (const exc of list) {
-        map[exclusionKey(exc.application_id, exc.support_category_id)] = exc
-      }
+// Dirty when any category flag differs from its seeded baseline. A pair with no
+// snapshot (just added) baselines to all-enabled, so excluding any is dirty.
+const isDirty = computed(() => {
+  for (const { application_id, support_level_id } of props.applicationLevels) {
+    const k = pairKey(application_id, support_level_id)
+    const cats = catsByPair.value[k]
+    if (!cats) continue
+    const init = _initialFlags[k]
+    for (const c of cats) {
+      const base = init ? (init[c.id] ?? true) : true
+      if (c.is_assigned !== base) return true
     }
-    exclusions.value = map
-    _savedExclusions.value = { ...map }
-  } catch {
-    exclusions.value = {}
-    _savedExclusions.value = {}
-  } finally {
-    loadingExclusions.value = false
   }
-}
-
-watch(() => [props.specialistId, props.applicationLevels], refreshExclusions, {
-  immediate: true,
-  deep: true,
+  return false
 })
 
-async function toggleExclusion(appId, catId) {
-  if (!props.specialistId) return
-  const key = exclusionKey(appId, catId)
+watch(isDirty, (v) => emit('dirty-change', v), { immediate: true })
 
-  if (props.deferred) {
-    // Local-only flip — no API call, no spinner
-    if (isExcluded(appId, catId)) {
-      const updated = { ...exclusions.value }
-      delete updated[key]
-      exclusions.value = updated
-    } else {
-      exclusions.value = { ...exclusions.value, [key]: { application_id: appId, support_category_id: catId, _deferred: true } }
-    }
-    return
-  }
+function findCat(pk, catId) {
+  return (catsByPair.value[pk] ?? []).find(c => c.id === catId)
+}
 
-  if (togglingCat.value.has(key)) return
-  togglingCat.value = new Set([...togglingCat.value, key])
-  try {
-    if (isExcluded(appId, catId)) {
-      const exc = exclusions.value[key]
-      await SpecialistCategoryExclusionsRepository.remove(exc.id)
-      const updated = { ...exclusions.value }
-      delete updated[key]
-      exclusions.value = updated
-    } else {
-      const exc = await SpecialistCategoryExclusionsRepository.add(props.specialistId, appId, catId)
-      exclusions.value = { ...exclusions.value, [key]: exc }
-    }
-  } catch {
-    // silent — leave state as-is
-  } finally {
-    const next = new Set(togglingCat.value)
-    next.delete(key)
-    togglingCat.value = next
-  }
+function toggleCategory(pk, catId) {
+  if (!isInteractive.value) return
+  const cat = findCat(pk, catId)
+  if (cat) cat.is_assigned = !cat.is_assigned
 }
 
 function appName(appId) {
@@ -141,68 +115,32 @@ function levelName(levelId) {
   return userStore.supportLevels.find(l => l.id === levelId)?.name ?? levelId.slice(0, 8)
 }
 
-const isInteractive = computed(() => !!props.specialistId)
-
 // ── Bulk ops + undo ──────────────────────────────────────
-const bulkLoading = ref({}) // pairKey → boolean
-const _lastBulkOp = ref(null) // { pairKey, appId, cats, prevExcluded: Set, timer }
+const _lastBulkOp = ref(null) // { pk, prev: Map<catId, is_assigned>, timer }
 
-function _saveBulkUndo(appId, levelId, cats) {
+function _saveBulkUndo(pk) {
   if (_lastBulkOp.value?.timer) clearTimeout(_lastBulkOp.value.timer)
+  const prev = new Map((catsByPair.value[pk] ?? []).map(c => [c.id, c.is_assigned]))
   const timer = setTimeout(() => { _lastBulkOp.value = null }, 8000)
-  _lastBulkOp.value = {
-    pk: pairKey(appId, levelId),
-    appId,
-    cats,
-    prevExcluded: new Set(cats.filter(c => isExcluded(appId, c.id)).map(c => c.id)),
-    timer,
-  }
+  _lastBulkOp.value = { pk, prev, timer }
 }
 
-async function enableAll(appId, levelId, cats) {
-  if (!props.specialistId) return
-  _saveBulkUndo(appId, levelId, cats)
-  const pk = pairKey(appId, levelId)
-  if (!props.deferred) bulkLoading.value = { ...bulkLoading.value, [pk]: true }
-  try {
-    await Promise.all(
-      cats.filter(c => isExcluded(appId, c.id)).map(c => toggleExclusion(appId, c.id))
-    )
-  } finally {
-    if (!props.deferred) { const b = { ...bulkLoading.value }; delete b[pk]; bulkLoading.value = b }
-  }
+function _setAll(pk, value) {
+  if (!isInteractive.value) return
+  _saveBulkUndo(pk)
+  for (const c of catsByPair.value[pk] ?? []) c.is_assigned = value
 }
 
-async function excludeAll(appId, levelId, cats) {
-  if (!props.specialistId) return
-  _saveBulkUndo(appId, levelId, cats)
-  const pk = pairKey(appId, levelId)
-  if (!props.deferred) bulkLoading.value = { ...bulkLoading.value, [pk]: true }
-  try {
-    await Promise.all(
-      cats.filter(c => !isExcluded(appId, c.id)).map(c => toggleExclusion(appId, c.id))
-    )
-  } finally {
-    if (!props.deferred) { const b = { ...bulkLoading.value }; delete b[pk]; bulkLoading.value = b }
-  }
-}
+function enableAll(pk) { _setAll(pk, true) }
+function excludeAll(pk) { _setAll(pk, false) }
 
-async function undoLastBulk() {
+function undoLastBulk() {
   const op = _lastBulkOp.value
   if (!op) return
   clearTimeout(op.timer)
   _lastBulkOp.value = null
-  bulkLoading.value = { ...bulkLoading.value, [op.pk]: true }
-  try {
-    await Promise.all(
-      op.cats.map(c => {
-        const wasExcluded = op.prevExcluded.has(c.id)
-        const isNowExcluded = isExcluded(op.appId, c.id)
-        if (wasExcluded !== isNowExcluded) return toggleExclusion(op.appId, c.id)
-      }).filter(Boolean)
-    )
-  } finally {
-    const b = { ...bulkLoading.value }; delete b[op.pk]; bulkLoading.value = b
+  for (const c of catsByPair.value[op.pk] ?? []) {
+    if (op.prev.has(c.id)) c.is_assigned = op.prev.get(c.id)
   }
 }
 
@@ -213,36 +151,24 @@ function _onKeydown(e) {
   }
 }
 
-onMounted(()  => window.addEventListener('keydown', _onKeydown))
+onMounted(() => window.addEventListener('keydown', _onKeydown))
 onUnmounted(() => {
   window.removeEventListener('keydown', _onKeydown)
   if (_lastBulkOp.value?.timer) clearTimeout(_lastBulkOp.value.timer)
 })
 
-// Apply deferred changes to the API. Call this from the parent form on save.
-// Resilient: individual failures (e.g. 422 if assignment was removed) are ignored.
-async function commitPending() {
-  if (!props.specialistId) return
-  const ops = []
-  for (const [key, exc] of Object.entries(exclusions.value)) {
-    if (!(key in _savedExclusions.value)) {
-      ops.push(
-        SpecialistCategoryExclusionsRepository.add(props.specialistId, exc.application_id, exc.support_category_id).catch(() => {})
-      )
-    }
+// Exposed to the parent form: current per-pair category flags, keyed by pairKey.
+// The parent folds these into the specialist_profile sent to PATCH/POST /users.
+function getCategoryAssignments() {
+  const out = {}
+  for (const { application_id, support_level_id } of props.applicationLevels) {
+    const k = pairKey(application_id, support_level_id)
+    out[k] = (catsByPair.value[k] ?? []).map(c => ({ id: c.id, is_assigned: c.is_assigned }))
   }
-  for (const [key, exc] of Object.entries(_savedExclusions.value)) {
-    if (!(key in exclusions.value)) {
-      ops.push(
-        SpecialistCategoryExclusionsRepository.remove(exc.id).catch(() => {})
-      )
-    }
-  }
-  await Promise.all(ops)
-  _savedExclusions.value = { ...exclusions.value }
+  return out
 }
 
-defineExpose({ commitPending })
+defineExpose({ getCategoryAssignments })
 </script>
 
 <template>
@@ -261,57 +187,49 @@ defineExpose({ commitPending })
           <span class="scc__app-name">{{ appName(pair.application_id) }}</span>
           <span class="scc__sep">·</span>
           <span class="scc__level-name">{{ levelName(pair.support_level_id) }}</span>
-          <span v-if="loadingPair[pairKey(pair.application_id, pair.support_level_id)] || bulkLoading[pairKey(pair.application_id, pair.support_level_id)]" class="scc__spinner">
+          <span v-if="loadingPair[pairKey(pair.application_id, pair.support_level_id)]" class="scc__spinner">
             <i class="bx bx-loader-alt bx-spin"></i>
           </span>
-          <template v-else-if="isInteractive && (categoriesPerPair[pairKey(pair.application_id, pair.support_level_id)] ?? []).length > 1">
+          <template v-else-if="isInteractive && (catsByPair[pairKey(pair.application_id, pair.support_level_id)] ?? []).length > 1">
             <div class="scc__bulk">
               <button
                 type="button"
                 class="scc__bulk-btn"
-                :disabled="(categoriesPerPair[pairKey(pair.application_id, pair.support_level_id)] ?? []).every(c => !isExcluded(pair.application_id, c.id))"
-                @click.stop="enableAll(pair.application_id, pair.support_level_id, categoriesPerPair[pairKey(pair.application_id, pair.support_level_id)] ?? [])"
+                :disabled="(catsByPair[pairKey(pair.application_id, pair.support_level_id)] ?? []).every(c => c.is_assigned)"
+                @click.stop="enableAll(pairKey(pair.application_id, pair.support_level_id))"
               >Todos</button>
               <span class="scc__bulk-sep">/</span>
               <button
                 type="button"
                 class="scc__bulk-btn"
-                :disabled="(categoriesPerPair[pairKey(pair.application_id, pair.support_level_id)] ?? []).every(c => isExcluded(pair.application_id, c.id))"
-                @click.stop="excludeAll(pair.application_id, pair.support_level_id, categoriesPerPair[pairKey(pair.application_id, pair.support_level_id)] ?? [])"
+                :disabled="(catsByPair[pairKey(pair.application_id, pair.support_level_id)] ?? []).every(c => !c.is_assigned)"
+                @click.stop="excludeAll(pairKey(pair.application_id, pair.support_level_id))"
               >Ninguno</button>
             </div>
           </template>
           <span v-else class="scc__count">
-            {{ (categoriesPerPair[pairKey(pair.application_id, pair.support_level_id)] ?? []).length }} categorías
+            {{ (catsByPair[pairKey(pair.application_id, pair.support_level_id)] ?? []).length }} categorías
           </span>
         </div>
 
         <div v-if="!loadingPair[pairKey(pair.application_id, pair.support_level_id)]" class="scc__chips">
-          <template v-if="(categoriesPerPair[pairKey(pair.application_id, pair.support_level_id)] ?? []).length > 0">
+          <template v-if="(catsByPair[pairKey(pair.application_id, pair.support_level_id)] ?? []).length > 0">
             <button
-              v-for="cat in categoriesPerPair[pairKey(pair.application_id, pair.support_level_id)]"
+              v-for="cat in catsByPair[pairKey(pair.application_id, pair.support_level_id)]"
               :key="cat.id"
               type="button"
               class="scc__chip"
               :class="{
-                'scc__chip--excluded': isExcluded(pair.application_id, cat.id),
-                'scc__chip--toggling': togglingCat.has(exclusionKey(pair.application_id, cat.id)),
+                'scc__chip--excluded': !cat.is_assigned,
                 'scc__chip--readonly': !isInteractive,
               }"
-              :disabled="!isInteractive || togglingCat.has(exclusionKey(pair.application_id, cat.id)) || bulkLoading[pairKey(pair.application_id, pair.support_level_id)]"
+              :disabled="!isInteractive"
               :title="isInteractive
-                ? (isExcluded(pair.application_id, cat.id) ? 'Habilitar categoría' : 'Inhabilitar categoría')
+                ? (cat.is_assigned ? 'Inhabilitar categoría' : 'Habilitar categoría')
                 : cat.name"
-              @click="toggleExclusion(pair.application_id, cat.id)"
+              @click="toggleCategory(pairKey(pair.application_id, pair.support_level_id), cat.id)"
             >
-              <i
-                v-if="togglingCat.has(exclusionKey(pair.application_id, cat.id))"
-                class="bx bx-loader-alt bx-spin"
-              ></i>
-              <i
-                v-else-if="isExcluded(pair.application_id, cat.id)"
-                class="bx bx-x-circle"
-              ></i>
+              <i v-if="!cat.is_assigned" class="bx bx-x-circle"></i>
               <i v-else class="bx bx-check-circle"></i>
               {{ cat.name }}
             </button>
@@ -445,13 +363,7 @@ defineExpose({ commitPending })
   opacity: 1;
 }
 
-/* Toggling */
-.scc__chip--toggling {
-  opacity: 0.5;
-  cursor: wait;
-}
-
-/* Read-only (create mode) */
+/* Read-only (view mode) */
 .scc__chip--readonly {
   cursor: default;
   pointer-events: none;

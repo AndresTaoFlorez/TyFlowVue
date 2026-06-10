@@ -41,17 +41,21 @@ export class User {
     const rawAssignments = sp?.application_assignments
       ?? (Array.isArray(application_assignments) ? application_assignments : [])
 
-    // Normalize: flatten nested support_level so downstream code can still read
-    // a.support_level_id / a.support_level_name without changes
+    // Normalize each assignment so downstream code can read flat fields
+    // (support_level_id / support_level_name) regardless of nesting, and so the
+    // embedded support_categories (with their is_assigned flag) travel with the
+    // user — no separate fetch of categories/exclusions is needed.
     this.applicationAssignments = rawAssignments.map(a => {
-      if (a.support_level && !a.support_level_id) {
-        return {
-          ...a,
-          support_level_id: a.support_level.support_levels_id ?? null,
-          support_level_name: a.support_level.support_level_name ?? null,
-        }
+      const lvl = a.support_level || {}
+      return {
+        ...a,
+        application_id: a.application_id,
+        application_name: a.application_name ?? null,
+        application_theme: a.application_theme ?? null,
+        support_level_id: a.support_level_id ?? lvl.support_levels_id ?? null,
+        support_level_name: a.support_level_name ?? lvl.support_level_name ?? null,
+        support_categories: Array.isArray(a.support_categories) ? a.support_categories : [],
       }
-      return a
     })
 
     // Derive supportLevelNames from assignments (replaces the old flat array)

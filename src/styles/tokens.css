@@ -2,6 +2,9 @@
    Design Tokens
    ========================================= */
 :root {
+  /* Native control rendering (bare inputs, date pickers, selects, scrollbars) */
+  color-scheme: light;
+
   /* Brand */
   --primary-500: #2AC78F;
   --primary-600: #249F75;
@@ -169,6 +172,9 @@
    Dark Theme
    ========================================= */
 [data-theme="dark"] {
+  /* Adapt native controls (bare inputs, date pickers, selects) to dark */
+  color-scheme: dark;
+
   /* Backgrounds */
   --bg-main: #111827;
   --bg-card: #1F2937;

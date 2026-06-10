@@ -19,23 +19,28 @@ export const UserRepository = {
   },
 
   async update(userId, userData) {
-    const url = userId ? `/users/${userId}` : '/users/me'
-    const { data } = await client.patch(url, userData)
+    // Collection-based contract: updating another user is PATCH /users with the
+    // target id in the body; updating yourself is PATCH /users/me (id ignored).
+    const { data } = userId
+      ? await client.patch('/users', { ...userData, id: userId })
+      : await client.patch('/users/me', userData)
     return new User(data)
   },
 
   async toggleStatus(userId, isActive) {
-    const { data } = await client.patch(`/users/${userId}`, { is_active: !isActive })
+    const { data } = await client.patch('/users', { id: userId, is_active: !isActive })
     return new User(data)
   },
 
   async delete(userId) {
-    const { data } = await client.delete(`/users/${userId}`)
+    const { data } = await client.delete('/users', { params: { id: userId } })
     return data
   },
 
   async patchPreferences(partial) {
-    const { data } = await client.patch('/users/me/preferences', partial)
+    // Preferences are merged through PATCH /users/me — there is no dedicated
+    // preferences endpoint.
+    const { data } = await client.patch('/users/me', { preferences: partial })
     return data
   },
 

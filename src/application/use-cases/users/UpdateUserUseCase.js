@@ -1,6 +1,7 @@
 import { UserRepository } from '@/infrastructure/repositories/UserRepository'
+import { buildSpecialistProfile } from './buildSpecialistProfile'
 
-export async function updateUserUseCase(userId, { firstName, secondName, firstSurname, secondSurname, documentNumber, email, roleIds, applicationLevels, supportLevelIds, applicationIds }, { emailChanged = false } = {}) {
+export async function updateUserUseCase(userId, { firstName, secondName, firstSurname, secondSurname, documentNumber, email, roleNames, applicationLevels, categoryAssignments }, { emailChanged = false } = {}) {
   const payload = {
     first_name: firstName || null,
     second_name: secondName || null,
@@ -10,19 +11,10 @@ export async function updateUserUseCase(userId, { firstName, secondName, firstSu
   }
 
   if (emailChanged) payload.email = email
-  if (Array.isArray(roleIds)) payload.role_ids = roleIds
+  if (Array.isArray(roleNames)) payload.role_names = roleNames
 
-  // Prefer explicit applicationLevels pairs; fall back to cross-product of old separate arrays
-  if (Array.isArray(applicationLevels)) {
-    payload.application_levels = applicationLevels.map(al => ({
-      application_id: al.applicationId ?? al.application_id,
-      support_level_id: al.supportLevelId ?? al.support_level_id,
-    }))
-  } else if (Array.isArray(applicationIds) && Array.isArray(supportLevelIds)) {
-    payload.application_levels = applicationIds.flatMap(appId =>
-      supportLevelIds.map(lvlId => ({ application_id: appId, support_level_id: lvlId }))
-    )
-  }
+  const specialistProfile = buildSpecialistProfile(applicationLevels, categoryAssignments)
+  if (specialistProfile) payload.specialist_profile = specialistProfile
 
   return UserRepository.update(userId, payload)
 }

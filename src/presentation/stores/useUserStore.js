@@ -9,9 +9,6 @@ import { fetchRolesUseCase } from '@/application/use-cases/roles/FetchRolesUseCa
 import { fetchSupportLevelsUseCase } from '@/application/use-cases/support-levels/FetchSupportLevelsUseCase'
 import { fetchSupportCategoriesUseCase } from '@/application/use-cases/support-categories/FetchSupportCategoriesUseCase'
 import { fetchApplicationsUseCase } from '@/application/use-cases/applications/FetchApplicationsUseCase'
-import { listSpecialistAppLevelsUseCase } from '@/application/use-cases/specialists/ListSpecialistAppLevelsUseCase'
-import { syncSpecialistAppLevelsUseCase } from '@/application/use-cases/specialists/SyncSpecialistAppLevelsUseCase'
-import { SpecialistRepository } from '@/infrastructure/repositories/SpecialistRepository'
 import { Application } from '@/domain/entities/Application'
 import { User } from '@/domain/entities/User'
 import { SyncEngine } from '@/infrastructure/sync/SyncEngine'
@@ -68,15 +65,6 @@ export const useUserStore = defineStore('users', () => {
   const loadingSelects = ref(false)
   const error = ref(null)
 
-  // ── Specialist app-level state ──
-  const specialistAppLevels = ref([])
-  const loadingSpecialistPivots = ref(false)
-
-  // ── Specialist full profile (for edit modal) ──
-  const specialistProfile = ref(null)
-  const loadingSpecialistProfile = ref(false)
-
-
   async function loadUsers({ force = false } = {}) {
     if (users.value.length === 0) loading.value = true
     try {
@@ -129,8 +117,8 @@ export const useUserStore = defineStore('users', () => {
 
   async function createUser(userData, options = {}) {
     const newUser = await createUserUseCase(userData)
-    // Insertar optimista + forzar sync para que el cache refleje el nuevo usuario
-    usersSync.insertLocal(users, new User(newUser))
+    // newUser ya es una instancia User — insertar directo (no re-envolver).
+    usersSync.insertLocal(users, newUser)
     if (!options.skipReload) usersSync.forceSync(users)
     return newUser
   }
@@ -141,7 +129,8 @@ export const useUserStore = defineStore('users', () => {
     // computed fields (application_assignments, support_level_names). Storing it
     // with CRDT protection would block the next sync from overwriting with full data.
     if (updated) {
-      const fresh = new User(updated)
+      // updated ya es una instancia User devuelta por el repo — usar directo.
+      const fresh = updated
       const idx = users.value.findIndex(u => u.id === userId)
       if (idx !== -1) {
         users.value = [
@@ -158,52 +147,17 @@ export const useUserStore = defineStore('users', () => {
 
   async function toggleStatus(userId) {
     const user = users.value.find((u) => u.id === userId)
+    // El use-case ya devuelve una instancia User; NO re-envolver (new User(userInstance)
+    // lee claves snake_case inexistentes y deja todos los campos en undefined).
     const updated = await toggleUserStatusUseCase(userId, user?.isActive ?? true)
     // Mutación optimista vía SyncEngine — marca _localUpdatedAt para CRDT
-    usersSync.updateLocal(users, userId, new User({ ...updated }))
+    usersSync.updateLocal(users, userId, updated)
     return updated
   }
 
   async function deleteUser(userId) {
     await deleteUserUseCase(userId)
     usersSync.removeLocal(users, userId)
-  }
-
-  // ── Specialist ↔ App-Level (unified) ──
-
-  async function loadSpecialistProfile(specialistId) {
-    if (!specialistId) { specialistProfile.value = null; return }
-    loadingSpecialistProfile.value = true
-    try {
-      specialistProfile.value = await SpecialistRepository.fetchById(specialistId)
-    } catch {
-      specialistProfile.value = null
-    } finally {
-      loadingSpecialistProfile.value = false
-    }
-  }
-
-  async function loadSpecialistAppLevels(specialistId) {
-    if (!specialistId) { specialistAppLevels.value = []; return }
-    loadingSpecialistPivots.value = true
-    try {
-      specialistAppLevels.value = await listSpecialistAppLevelsUseCase(specialistId)
-    } catch (e) {
-      error.value = e.message || 'Error cargando app-levels del especialista'
-      specialistAppLevels.value = []
-    } finally {
-      loadingSpecialistPivots.value = false
-    }
-  }
-
-  async function syncSpecialistAppLevels(specialistId, entries) {
-    error.value = null
-    try {
-      specialistAppLevels.value = await syncSpecialistAppLevelsUseCase(specialistId, entries)
-    } catch (e) {
-      error.value = e.message || 'Error sincronizando app-levels'
-      throw e
-    }
   }
 
   function updateApplicationInPlace(id, updated) {
@@ -237,13 +191,6 @@ export const useUserStore = defineStore('users', () => {
     loading,
     loadingSelects,
     error,
-    // Specialist app-levels
-    specialistAppLevels,
-    loadingSpecialistPivots,
-    // Specialist full profile
-    specialistProfile,
-    loadingSpecialistProfile,
-    loadSpecialistProfile,
     // Actions
     loadUsers,
     loadSelects,
@@ -251,8 +198,6 @@ export const useUserStore = defineStore('users', () => {
     updateUser,
     toggleStatus,
     deleteUser,
-    loadSpecialistAppLevels,
-    syncSpecialistAppLevels,
     updateApplicationInPlace,
     invalidateApplications,
     clearAll,

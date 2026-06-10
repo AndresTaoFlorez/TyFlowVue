@@ -1,6 +1,7 @@
 import { UserRepository } from '@/infrastructure/repositories/UserRepository'
+import { buildSpecialistProfile } from './buildSpecialistProfile'
 
-export async function createUserUseCase({ firstName, firstSurname, documentNumber, secondName, secondSurname, email, password, roleIds, applicationLevels, supportLevelIds, applicationIds }) {
+export async function createUserUseCase({ firstName, firstSurname, documentNumber, secondName, secondSurname, email, password, roleNames, applicationLevels, categoryAssignments }) {
   const payload = {
     first_name: firstName,
     first_surname: firstSurname,
@@ -9,20 +10,11 @@ export async function createUserUseCase({ firstName, firstSurname, documentNumbe
     second_surname: secondSurname || null,
     email,
     password,
-    role_ids: roleIds,
+    role_names: Array.isArray(roleNames) ? roleNames : [],
   }
 
-  // Prefer explicit applicationLevels pairs; fall back to cross-product of old separate arrays
-  if (Array.isArray(applicationLevels) && applicationLevels.length) {
-    payload.application_levels = applicationLevels.map(al => ({
-      application_id: al.applicationId ?? al.application_id,
-      support_level_id: al.supportLevelId ?? al.support_level_id,
-    }))
-  } else if (Array.isArray(applicationIds) && applicationIds.length && Array.isArray(supportLevelIds) && supportLevelIds.length) {
-    payload.application_levels = applicationIds.flatMap(appId =>
-      supportLevelIds.map(lvlId => ({ application_id: appId, support_level_id: lvlId }))
-    )
-  }
+  const specialistProfile = buildSpecialistProfile(applicationLevels, categoryAssignments)
+  if (specialistProfile) payload.specialist_profile = specialistProfile
 
   return UserRepository.create(payload)
 }

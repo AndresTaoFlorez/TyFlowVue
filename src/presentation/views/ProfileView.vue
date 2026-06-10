@@ -19,6 +19,7 @@ const { isAdmin } = storeToRefs(authStore)
 const editando = ref(false)
 const cargando = ref(false)
 const sccRef = ref(null)
+const categoriasDirty = ref(false)
 const errores = ref({})
 const emailOriginal = ref('')
 const confirmandoEmail = ref(false)
@@ -26,7 +27,21 @@ const toastVisible = ref(false)
 const toastMessage = ref('')
 const cargandoSelects = ref(false)
 const formularioOriginal = ref({})
+const initialCategories = ref({})
 const { isPending, markPending, clearPending, hasChanges } = usePendingFields()
+
+const resolveRoleNames = (roleIds) =>
+  roleIds
+    .map(id => userStore.roles.find(r => r.id === id)?.name)
+    .filter(Boolean)
+
+function buildInitialCategories(assignments) {
+  const map = {}
+  for (const a of assignments || []) {
+    map[`${a.application_id}_${a.support_level_id}`] = a.support_categories || []
+  }
+  return map
+}
 
 const formulario = ref({
   firstName: '', secondName: '',
@@ -49,6 +64,11 @@ const specialistRoleId = computed(() => {
 
 const esSpecialista = computed(() =>
   specialistRoleId.value !== null && formulario.value.roleIds.includes(specialistRoleId.value)
+)
+
+// Registro de especialista DESACTIVADO (rol retirado, datos preservados).
+const specialistDesactivado = computed(() =>
+  !!profile.value?.specialistId && profile.value?.specialistIsActive === false
 )
 
 const profileSupportLevels = computed(() => profile.value?.supportLevelNames || [])
@@ -74,6 +94,8 @@ const abrirEditar = async () => {
       application_id: a.application_id,
       support_level_id: a.support_level_id,
     }))
+    initialCategories.value = buildInitialCategories(p.applicationAssignments)
+    categoriasDirty.value = false
 
     emailOriginal.value = p.email || ''
     formulario.value = {
@@ -86,8 +108,9 @@ const abrirEditar = async () => {
       roleIds: resolverIds(p.roleNames, userStore.roles),
       applicationLevels,
     }
-    // Ensure specialist role is reflected if the user already has a specialist record
-    if (p.specialistId && specialistRoleId.value && !formulario.value.roleIds.includes(specialistRoleId.value)) {
+    // Reflect the specialist role only when the record is ACTIVE. A deactivated
+    // record (role removed, data preserved) must not auto-re-add the role.
+    if (p.specialistId && p.specialistIsActive && specialistRoleId.value && !formulario.value.roleIds.includes(specialistRoleId.value)) {
       formulario.value.roleIds.push(specialistRoleId.value)
     }
     formularioOriginal.value = JSON.parse(JSON.stringify(formulario.value))
@@ -101,6 +124,7 @@ const cerrarEditar = () => {
   editando.value = false
   confirmandoEmail.value = false
   errores.value = {}
+  categoriasDirty.value = false
 }
 
 const emailCambio = () =>
@@ -132,7 +156,7 @@ const validarFormulario = () => {
 
 const guardar = async () => {
   if (!validarFormulario()) return
-  if (!hasChanges(formularioOriginal.value, formulario.value)) {
+  if (!hasChanges(formularioOriginal.value, formulario.value) && !categoriasDirty.value) {
     cerrarEditar()
     return
   }
@@ -146,11 +170,18 @@ const guardar = async () => {
 
   cargando.value = true
   try {
-    await userStore.updateUser(null, formulario.value, {
+    const payload = {
+      ...formulario.value,
+      roleNames: resolveRoleNames(formulario.value.roleIds),
+      // Only send the specialist section when the role is present; removing it
+      // → omit → backend deactivates & preserves the specialist data.
+      applicationLevels: esSpecialista.value ? formulario.value.applicationLevels : [],
+      categoryAssignments: esSpecialista.value ? (sccRef.value?.getCategoryAssignments?.() ?? {}) : {},
+    }
+    await userStore.updateUser(null, payload, {
       emailChanged: cambioEmail,
       skipReload: true,
     })
-    await sccRef.value?.commitPending()
 
     cerrarEditar()
 
@@ -305,6 +336,18 @@ onUnmounted(() => {
         </div>
 
         <form @submit.prevent="guardar" class="modal-form" autocomplete="off">
+          <div v-if="specialistDesactivado" class="warning-banner">
+            <i class='bx bx-error'></i>
+            <span>
+              <template v-if="esSpecialista">
+                Tu perfil de especialista está <strong>desactivado</strong> y se <strong>reactivará al guardar</strong>, conservando tus aplicaciones y categorías.
+              </template>
+              <template v-else>
+                Tu perfil de especialista está <strong>desactivado</strong>. Tus aplicaciones y categorías están preservadas; vuelve a asignar el rol <strong>Especialista</strong> para reactivarlo.
+              </template>
+            </span>
+          </div>
+
           <div class="form-grid">
             <div class="form-group">
               <label>Primer Nombre *</label>
@@ -369,9 +412,10 @@ onUnmounted(() => {
               </label>
               <SpecialistCategoryConfig
                 ref="sccRef"
-                deferred
                 :application-levels="formulario.applicationLevels.filter(al => al.application_id && al.support_level_id)"
-                :specialist-id="profile?.specialistId ?? null"
+                :initial-categories="initialCategories"
+                :disabled="cargando"
+                @dirty-change="categoriasDirty = $event"
               />
             </div>
           </div>
@@ -740,6 +784,28 @@ onUnmounted(() => {
   font-size: 1.2rem;
   flex-shrink: 0;
 }
+
+.warning-banner {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem;
+  background-color: var(--warning-bg);
+  color: var(--warning-text);
+  border-radius: var(--radius-md);
+  font-size: 0.82rem;
+  font-weight: 500;
+  border-left: 3px solid var(--warning-border);
+  line-height: 1.4;
+}
+
+.warning-banner i {
+  font-size: 1.2rem;
+  flex-shrink: 0;
+  color: var(--warning-icon);
+}
+
+.warning-banner strong { font-weight: 700; }
 
 .confirm-banner {
   display: flex;

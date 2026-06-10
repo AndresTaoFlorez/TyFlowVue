@@ -524,6 +524,37 @@ const handleBatchToggle = async () => {
   }
 }
 
+// ---- Herencia en lote (toggle inteligente sobre la selección) ----
+const selectedWindowObjs = computed(() =>
+  calStore.windows.filter(w => selectedWindows.value.has(w.id))
+)
+
+// Una ventana hereda si proviene de otra o se re-hereda al reabrir.
+const selectedAllInherit = computed(() => {
+  const wins = selectedWindowObjs.value
+  return wins.length > 0 && wins.every(w => !!(w.inheritedFromWindowId || w.inheritsOnReopen))
+})
+
+const handleBatchInheritToggle = async () => {
+  if (selectedWindows.value.size === 0) return
+  const ids = selectedWindowObjs.value.map(w => w.id)
+  // Si TODAS las seleccionadas ya heredan → desactivar; si no → activar.
+  const desactivar = selectedAllInherit.value
+  try {
+    const { successCount, failedCount } = desactivar
+      ? await calStore.batchDisinherit(ids)
+      : await calStore.batchInherit(ids)
+    const accion = desactivar ? 'desactivada' : 'activada'
+    showToast(
+      `Herencia ${accion} en ${successCount} ventana(s)` +
+      (failedCount ? `, ${failedCount} sin cambios.` : '.')
+    )
+    selectedWindows.value = new Set()
+  } catch (e) {
+    showToast(e.userMessage || 'Error al cambiar la herencia.', 'error')
+  }
+}
+
 const handleBatchCopy = () => {
   if (selectedWindows.value.size === 0) return
   const wins = calStore.windows.filter(w => selectedWindows.value.has(w.id))
@@ -928,6 +959,10 @@ onUnmounted(() => {
         </button>
         <button class="sel-bar__btn" @click="handleBatchToggle" title="Habilitar/Inhabilitar">
           <i class='bx bx-toggle-left'></i>
+        </button>
+        <button class="sel-bar__btn" @click="handleBatchInheritToggle"
+          :title="selectedAllInherit ? 'Desactivar herencia' : 'Activar herencia'">
+          <i class='bx' :class="selectedAllInherit ? 'bx-unlink' : 'bx-link'"></i>
         </button>
         <button class="sel-bar__btn sel-bar__btn--group" @click="handleBatchGroup" title="Agrupar ventanas">
           <i class='bx bx-group'></i>

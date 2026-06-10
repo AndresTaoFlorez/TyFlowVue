@@ -65,6 +65,9 @@ const modoVista = ref(false)
 const editandoUserId = ref(null)
 const cargando = ref(false)
 const sccRef = ref(null)
+// True cuando SpecialistCategoryConfig reporta cambios de categorías (para que
+// el botón Actualizar se habilite aunque no cambien los demás campos).
+const categoriasDirty = ref(false)
 const toggling = ref(new Set())
 const cargandoEditar = ref(null)
 const emailOriginal = ref('')
@@ -86,6 +89,22 @@ const formulario = ref({
 })
 
 const editandoUser = ref(null)
+// Embedded categories from the user's specialist_profile, keyed by `${app}_${level}`.
+// Seeds SpecialistCategoryConfig so it doesn't refetch categories/exclusions.
+const initialCategories = ref({})
+
+const resolveRoleNames = (roleIds) =>
+  roleIds
+    .map(id => userStore.roles.find(r => r.id === id)?.name)
+    .filter(Boolean)
+
+function buildInitialCategories(assignments) {
+  const map = {}
+  for (const a of assignments || []) {
+    map[`${a.application_id}_${a.support_level_id}`] = a.support_categories || []
+  }
+  return map
+}
 
 const specialistRoleId = computed(() => {
   const role = userStore.roles.find(r => r.name.toLowerCase() === 'specialist')
@@ -96,10 +115,18 @@ const esSpecialista = computed(() =>
   specialistRoleId.value !== null && formulario.value.roleIds.includes(specialistRoleId.value)
 )
 
+// El usuario tiene un registro de especialista DESACTIVADO (rol retirado, datos
+// preservados). Se muestra siempre como advertencia mientras se edita.
+const specialistDesactivado = computed(() =>
+  !!editandoUser.value?.specialistId && editandoUser.value?.specialistIsActive === false
+)
+
 const abrirCrear = async () => {
   modoEdicion.value = false
   editandoUserId.value = null
   editandoUser.value = null
+  initialCategories.value = {}
+  categoriasDirty.value = false
   formulario.value = {
     firstName: '', secondName: '',
     firstSurname: '', secondSurname: '',
@@ -129,6 +156,8 @@ const abrirEditar = async (user) => {
     modoEdicion.value = user.isActive
     editandoUserId.value = user.id
     editandoUser.value = user
+    initialCategories.value = buildInitialCategories(user.applicationAssignments)
+    categoriasDirty.value = false
     await userStore.loadSelects()
     emailOriginal.value = user.email || ''
 
@@ -147,8 +176,10 @@ const abrirEditar = async (user) => {
       roleIds: resolverIds(user.roleNames, userStore.roles),
       applicationLevels: appLevels,
     }
-    // Si el usuario ya es specialist en la BD, asegurar que el rol esté marcado
-    if (user.specialistId && specialistRoleId.value && !formulario.value.roleIds.includes(specialistRoleId.value)) {
+    // Si el usuario es specialist ACTIVO en la BD, asegurar que el rol esté
+    // marcado. Un registro desactivado (rol retirado, datos preservados) NO debe
+    // re-agregar el rol automáticamente: hay que dejar que el admin lo decida.
+    if (user.specialistId && user.specialistIsActive && specialistRoleId.value && !formulario.value.roleIds.includes(specialistRoleId.value)) {
       formulario.value.roleIds.push(specialistRoleId.value)
     }
     formularioOriginal.value = JSON.parse(JSON.stringify(formulario.value))
@@ -164,9 +195,10 @@ const cerrarModal = () => {
   modoVista.value = false
   editandoUserId.value = null
   editandoUser.value = null
+  initialCategories.value = {}
+  categoriasDirty.value = false
   confirmandoEmail.value = false
   errores.value = {}
-  userStore.specialistProfile = null
 }
 
 const validarFormulario = () => {
@@ -209,7 +241,7 @@ const esEdicionPropia = computed(() =>
 const guardarUsuario = async () => {
   if (modoVista.value) return
   if (!validarFormulario()) return
-  if (modoEdicion.value && !hasChanges(formularioOriginal.value, formulario.value)) {
+  if (modoEdicion.value && !hasChanges(formularioOriginal.value, formulario.value) && !categoriasDirty.value) {
     cerrarModal()
     return
   }
@@ -225,17 +257,26 @@ const guardarUsuario = async () => {
   try {
     const esEdicion = modoEdicion.value
 
-    let resultado = null
+    // Fold identity + roles + specialist category flags into one payload so the
+    // whole user is written through a single /users call.
+    const payload = {
+      ...formulario.value,
+      roleNames: resolveRoleNames(formulario.value.roleIds),
+      // Only send the specialist section when the user actually has the role.
+      // Removing the role → omit it → backend deactivates & preserves the data.
+      applicationLevels: esSpecialista.value ? formulario.value.applicationLevels : [],
+      categoryAssignments: esSpecialista.value ? (sccRef.value?.getCategoryAssignments?.() ?? {}) : {},
+    }
+
     if (esEdicion) {
-      resultado = await userStore.updateUser(editandoUserId.value, formulario.value, {
+      await userStore.updateUser(editandoUserId.value, payload, {
         emailChanged: emailCambio.value,
         skipReload: true,
       })
     } else {
-      resultado = await userStore.createUser(formulario.value, { skipReload: true })
+      await userStore.createUser(payload, { skipReload: true })
     }
 
-    await sccRef.value?.commitPending()
     if (!cambioEmailPropio) await userStore.loadUsers({ force: true })
     cerrarModal()
 
@@ -383,6 +424,18 @@ onUnmounted(() => {
         </div>
 
         <form @submit.prevent="guardarUsuario" class="modal-form" autocomplete="off">
+          <div v-if="specialistDesactivado" class="warning-banner">
+            <i class='bx bx-error'></i>
+            <span>
+              <template v-if="esSpecialista">
+                El perfil de especialista está <strong>desactivado</strong> y se <strong>reactivará al guardar</strong>, conservando sus aplicaciones y categorías.
+              </template>
+              <template v-else>
+                Este usuario tiene un perfil de especialista <strong>desactivado</strong>. Sus aplicaciones y categorías están preservadas; vuelve a asignar el rol <strong>Especialista</strong> para reactivarlo.
+              </template>
+            </span>
+          </div>
+
           <div class="form-grid">
             <div class="form-group">
               <label>Primer Nombre {{ modoVista ? '' : '*' }}</label>
@@ -452,9 +505,10 @@ onUnmounted(() => {
               </label>
               <SpecialistCategoryConfig
                 ref="sccRef"
-                deferred
                 :application-levels="formulario.applicationLevels.filter(al => al.application_id && al.support_level_id)"
-                :specialist-id="editandoUser?.specialistId ?? null"
+                :initial-categories="initialCategories"
+                :disabled="modoVista || cargando"
+                @dirty-change="categoriasDirty = $event"
               />
             </div>
           </div>
@@ -495,7 +549,7 @@ onUnmounted(() => {
                 type="submit"
                 class="btn-primary"
                 :class="{ 'btn-primary--loading': cargando }"
-                :disabled="cargando || (modoEdicion && !hasChanges(formularioOriginal, formulario))"
+                :disabled="cargando || (modoEdicion && !hasChanges(formularioOriginal, formulario) && !categoriasDirty)"
               >
                 <i v-if="cargando" class='bx bx-loader-alt bx-spin'></i>
                 {{ cargando ? 'Guardando...' : (modoEdicion ? 'Actualizar' : 'Guardar Usuario') }}
@@ -773,6 +827,28 @@ onUnmounted(() => {
   font-size: 1.2rem;
   flex-shrink: 0;
 }
+
+.warning-banner {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem;
+  background-color: var(--warning-bg);
+  color: var(--warning-text);
+  border-radius: var(--radius-md);
+  font-size: 0.82rem;
+  font-weight: 500;
+  border-left: 3px solid var(--warning-border);
+  line-height: 1.4;
+}
+
+.warning-banner i {
+  font-size: 1.2rem;
+  flex-shrink: 0;
+  color: var(--warning-icon);
+}
+
+.warning-banner strong { font-weight: 700; }
 
 .confirm-banner {
   display: flex;
