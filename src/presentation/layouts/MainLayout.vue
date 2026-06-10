@@ -58,6 +58,11 @@ const layoutStyle = computed(() => {
   return style
 })
 
+// El colapsado solo aplica en escritorio. En móvil la sidebar es un drawer
+// (position: fixed, ancho expandido); si heredara .layout--collapsed se vería
+// ancha pero con contenido colapsado (iconos centrados, sin labels).
+const collapsedDesktop = computed(() => sidebarCollapsed.value && viewportWidth.value > BP_MOBILE)
+
 let resizeStartX = 0
 let resizeStartWidth = 0
 
@@ -134,7 +139,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="layout" :class="{ 'layout--collapsed': sidebarCollapsed, 'layout--mobile-open': sidebarMobileOpen }" :style="layoutStyle">
+  <div class="layout" :class="{ 'layout--collapsed': collapsedDesktop, 'layout--mobile-open': sidebarMobileOpen }" :style="layoutStyle">
     <AppTopbar
       :collapsed="sidebarCollapsed"
       @toggle-sidebar="toggleSidebar"
@@ -142,7 +147,7 @@ onUnmounted(() => {
 
     <div class="layout__overlay" @click="closeMobileSidebar"></div>
 
-    <AppSidebar :collapsed="sidebarCollapsed" @navigate="closeMobileSidebar" @toggle-sidebar="toggleSidebar" />
+    <AppSidebar :collapsed="collapsedDesktop" @navigate="closeMobileSidebar" @toggle-sidebar="toggleSidebar" />
 
     <div
       v-if="!sidebarCollapsed && viewportWidth > 768"

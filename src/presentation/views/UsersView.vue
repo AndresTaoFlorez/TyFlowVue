@@ -21,6 +21,41 @@ const busqueda = ref('')
 const ordenamiento = ref('rol-nombre')
 const mostrarDropdownOrden = ref(false)
 
+// ── Filtros por facetas ──────────────────────────────────────
+const mostrarFiltros = ref(false)
+const filtroEstado = ref('all') // 'all' | 'active' | 'inactive'
+const filtroRoles = ref([])    // role ids
+const filtroApps = ref([])     // application ids
+const filtroNiveles = ref([])  // support level ids
+
+const filtroRoleNames = computed(() =>
+  filtroRoles.value
+    .map(id => userStore.roles.find(r => r.id === id)?.name?.toLowerCase())
+    .filter(Boolean)
+)
+
+const filtrosActivos = computed(() =>
+  filtroRoles.value.length + filtroApps.value.length + filtroNiveles.value.length +
+  (filtroEstado.value !== 'all' ? 1 : 0)
+)
+
+function limpiarFiltros() {
+  filtroEstado.value = 'all'
+  filtroRoles.value = []
+  filtroApps.value = []
+  filtroNiveles.value = []
+}
+
+// ── Selección múltiple ───────────────────────────────────────
+const modoSeleccion = ref(false)
+const seleccionados = ref(new Set())
+const batchProcesando = ref(false)
+
+function toggleModoSeleccion() {
+  modoSeleccion.value = !modoSeleccion.value
+  if (!modoSeleccion.value) seleccionados.value = new Set()
+}
+
 const ROLE_PRIORITY = { admin: 0, supervisor: 1, agente: 2 }
 
 function getRolePriority(user) {
@@ -37,13 +72,34 @@ const currentUserId = computed(() => authStore.profile?.id)
 const usuariosFiltrados = computed(() => {
   const sinActual = userStore.users.filter(u => u.id !== currentUserId.value)
   const termino = busqueda.value.toLowerCase().trim()
-  const filtrados = !termino
+  let filtrados = !termino
     ? [...sinActual]
     : sinActual.filter(u =>
         u.fullName.toLowerCase().includes(termino) ||
         (u.email || '').toLowerCase().includes(termino) ||
         (u.documentNumber || '').toLowerCase().includes(termino)
       )
+
+  // Estado activo/inactivo
+  if (filtroEstado.value === 'active') filtrados = filtrados.filter(u => u.isActive)
+  else if (filtroEstado.value === 'inactive') filtrados = filtrados.filter(u => !u.isActive)
+
+  // Facetas: OR dentro de cada faceta, AND entre facetas.
+  if (filtroRoleNames.value.length) {
+    filtrados = filtrados.filter(u =>
+      (u.roleNames || []).some(r => filtroRoleNames.value.includes(r.toLowerCase()))
+    )
+  }
+  if (filtroApps.value.length) {
+    filtrados = filtrados.filter(u =>
+      (u.applicationAssignments || []).some(a => filtroApps.value.includes(a.application_id))
+    )
+  }
+  if (filtroNiveles.value.length) {
+    filtrados = filtrados.filter(u =>
+      (u.applicationAssignments || []).some(a => filtroNiveles.value.includes(a.support_level_id))
+    )
+  }
 
   const orden = ordenamiento.value
   if (orden === 'alfabetico') {
@@ -330,12 +386,69 @@ const toggleEstado = async (userId) => {
   }
 }
 
+// ── Selección múltiple + acciones en lote ────────────────────
+const idsVisibles = computed(() => usuariosFiltrados.value.map(u => u.id))
+const todosSeleccionados = computed(() =>
+  idsVisibles.value.length > 0 && idsVisibles.value.every(id => seleccionados.value.has(id))
+)
+const numSeleccionados = computed(() => seleccionados.value.size)
+// Si TODOS los seleccionados están activos → la acción es inactivar; si no → activar.
+const seleccionTodosActivos = computed(() =>
+  numSeleccionados.value > 0 &&
+  [...seleccionados.value].every(id => userStore.users.find(x => x.id === id)?.isActive)
+)
+
+function toggleSeleccion(id) {
+  const next = new Set(seleccionados.value)
+  next.has(id) ? next.delete(id) : next.add(id)
+  seleccionados.value = next
+}
+
+function toggleSeleccionarTodos() {
+  const next = new Set(seleccionados.value)
+  if (todosSeleccionados.value) idsVisibles.value.forEach(id => next.delete(id))
+  else idsVisibles.value.forEach(id => next.add(id))
+  seleccionados.value = next
+}
+
+function limpiarSeleccion() {
+  seleccionados.value = new Set()
+}
+
+const handleBatchEstado = async (activar) => {
+  // Solo togglear las que no estén ya en el estado objetivo.
+  const aCambiar = [...seleccionados.value].filter(id => {
+    const u = userStore.users.find(x => x.id === id)
+    return u && u.isActive !== activar
+  })
+  if (aCambiar.length === 0) {
+    toastMessage.value = `Las seleccionadas ya están ${activar ? 'activas' : 'inactivas'}.`
+    toastVisible.value = true
+    return
+  }
+  batchProcesando.value = true
+  try {
+    const results = await Promise.allSettled(aCambiar.map(id => userStore.toggleStatus(id)))
+    const ok = results.filter(r => r.status === 'fulfilled').length
+    const fail = results.length - ok
+    toastMessage.value = `${ok} usuario(s) ${activar ? 'activado(s)' : 'inactivado(s)'}` + (fail ? `, ${fail} con error.` : '.')
+    toastVisible.value = true
+    limpiarSeleccion()
+  } finally {
+    batchProcesando.value = false
+  }
+}
+
 const onEsc = (e) => { if (e.key === 'Escape' && mostrarModal.value) cerrarModal() }
 
 const sortDropdownRef = ref(null)
+const filtrosRef = ref(null)
 const cerrarDropdownFuera = (e) => {
   if (sortDropdownRef.value && !sortDropdownRef.value.contains(e.target)) {
     mostrarDropdownOrden.value = false
+  }
+  if (filtrosRef.value && !filtrosRef.value.contains(e.target)) {
+    mostrarFiltros.value = false
   }
 }
 
@@ -367,6 +480,57 @@ onUnmounted(() => {
         <i class='bx bx-search filter-bar__icon'></i>
         <input v-model="busqueda" type="text" class="filter-bar__input" placeholder="Buscar por nombre, correo o número de identificación...">
       </div>
+      <!-- Filtros (popup flotante) -->
+      <div class="filters-wrapper" ref="filtrosRef">
+        <button
+          class="btn-view-toggle btn-view-toggle--badge"
+          :class="{ 'btn-view-toggle--active': mostrarFiltros || filtrosActivos }"
+          @click.stop="mostrarFiltros = !mostrarFiltros"
+          title="Filtros"
+        >
+          <i class='bx bx-filter-alt'></i>
+          <span v-if="filtrosActivos" class="filter-badge">{{ filtrosActivos }}</span>
+        </button>
+        <Transition name="uv-filters">
+          <div v-if="mostrarFiltros" class="filters-popup">
+            <div class="filters-popup__status">
+              <span class="filters-popup__label"><i class='bx bx-user-check'></i> Estado</span>
+              <div class="seg">
+                <button class="seg__btn" :class="{ 'seg__btn--active': filtroEstado === 'all' }" @click="filtroEstado = 'all'">Todos</button>
+                <button class="seg__btn" :class="{ 'seg__btn--active': filtroEstado === 'active' }" @click="filtroEstado = 'active'">Activos</button>
+                <button class="seg__btn" :class="{ 'seg__btn--active': filtroEstado === 'inactive' }" @click="filtroEstado = 'inactive'">Inactivos</button>
+              </div>
+            </div>
+            <ChipSelect
+              :options="userStore.roles" v-model="filtroRoles"
+              label="Roles" icon="bx-shield" color="amber"
+              :loading="userStore.loadingSelects" empty-text="Sin roles"
+            />
+            <ChipSelect
+              :options="userStore.applications" v-model="filtroApps"
+              label="Aplicaciones" icon="bx-cube" color="indigo"
+              :loading="userStore.loadingSelects" empty-text="Sin aplicaciones"
+            />
+            <ChipSelect
+              :options="userStore.supportLevels" v-model="filtroNiveles"
+              label="Niveles de soporte" icon="bx-layer" color="blue"
+              :loading="userStore.loadingSelects" empty-text="Sin niveles"
+            />
+            <button v-if="filtrosActivos" class="btn-clear-filters" @click="limpiarFiltros">
+              <i class='bx bx-x'></i> Limpiar filtros
+            </button>
+          </div>
+        </Transition>
+      </div>
+      <!-- Modo selección -->
+      <button
+        class="btn-view-toggle"
+        :class="{ 'btn-view-toggle--active': modoSeleccion }"
+        @click="toggleModoSeleccion"
+        :title="modoSeleccion ? 'Salir de selección' : 'Seleccionar varios'"
+      >
+        <i class='bx bx-select-multiple'></i>
+      </button>
       <!-- Ordenar -->
       <div class="sort-wrapper" ref="sortDropdownRef">
         <button class="btn-view-toggle" @click.stop="mostrarDropdownOrden = !mostrarDropdownOrden" title="Ordenar">
@@ -399,8 +563,13 @@ onUnmounted(() => {
       :users="usuariosFiltrados"
       :toggling="toggling"
       :loading-edit-id="cargandoEditar"
+      :selectable="modoSeleccion"
+      :selected="seleccionados"
+      :all-selected="todosSeleccionados"
       @toggle="toggleEstado"
       @edit="abrirEditar"
+      @select="toggleSeleccion"
+      @toggle-all="toggleSeleccionarTodos"
     />
 
     <!-- Cards -->
@@ -409,13 +578,38 @@ onUnmounted(() => {
       :users="usuariosFiltrados"
       :toggling="toggling"
       :loading-edit-id="cargandoEditar"
+      :selectable="modoSeleccion"
+      :selected="seleccionados"
+      @select="toggleSeleccion"
       @toggle="toggleEstado"
       @edit="abrirEditar"
     />
 
+    <!-- Selection action bar -->
+    <Teleport to="body">
+      <Transition name="uv-selbar">
+        <div v-if="modoSeleccion && numSeleccionados > 0" class="sel-bar">
+          <span class="sel-bar__count">{{ numSeleccionados }} seleccionado{{ numSeleccionados > 1 ? 's' : '' }}</span>
+          <button
+            class="sel-bar__btn"
+            :class="seleccionTodosActivos ? 'sel-bar__btn--danger' : 'sel-bar__btn--ok'"
+            @click="handleBatchEstado(!seleccionTodosActivos)"
+            :disabled="batchProcesando"
+            :title="seleccionTodosActivos ? 'Inactivar' : 'Activar'"
+          >
+            <i class='bx' :class="seleccionTodosActivos ? 'bx-x-circle' : 'bx-check-circle'"></i>
+            {{ seleccionTodosActivos ? 'Inactivar' : 'Activar' }}
+          </button>
+          <button class="sel-bar__btn" @click="limpiarSeleccion" title="Limpiar selección">
+            <i class='bx bx-x'></i>
+          </button>
+        </div>
+      </Transition>
+    </Teleport>
+
     <!-- Modal Crear Usuario -->
     <Transition name="uv-modal">
-    <div v-if="mostrarModal" class="modal-overlay">
+    <div v-if="mostrarModal" class="modal-overlay" @click.self="cerrarModal">
       <div class="modal-content">
         <div class="modal-header">
           <h2>{{ modoVista ? 'Detalle de Usuario' : (modoEdicion ? 'Editar Usuario' : 'Registrar Nuevo Usuario') }}</h2>
@@ -643,12 +837,16 @@ onUnmounted(() => {
   border: 1px solid var(--border-light);
   color: var(--text-secondary);
   font-size: 1.25rem;
-  padding: 0.5rem 0.6rem;
+  padding: 0.5rem;
   border-radius: var(--radius-md);
   cursor: pointer;
   transition: color 0.2s, border-color 0.2s;
   display: flex;
   align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 42px;
+  flex-shrink: 0;
 }
 
 .btn-view-toggle:hover {
@@ -656,8 +854,162 @@ onUnmounted(() => {
   border-color: var(--primary-500);
 }
 
+.btn-view-toggle--active {
+  color: white;
+  background: var(--primary-500);
+  border-color: var(--primary-500);
+}
+.btn-view-toggle--active:hover { color: white; }
+
+.btn-view-toggle--badge { position: relative; }
+
+.filter-badge {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: var(--radius-full);
+  background: var(--primary-600, #1fa672);
+  color: white;
+  font-size: 0.65rem;
+  font-weight: 700;
+  line-height: 16px;
+  text-align: center;
+}
+
+/* Filtros (popup flotante) */
+.filters-wrapper { position: relative; display: flex; align-items: center; }
+
+.filters-popup {
+  position: absolute;
+  top: calc(100% + 0.5rem);
+  right: 0;
+  z-index: 60;
+  width: 340px;
+  max-width: calc(100vw - 2rem);
+  max-height: 70vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 1rem 1.25rem;
+  background: var(--bg-main);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+}
+
+.filters-popup__status {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.filters-popup__label {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+.filters-popup__label i { font-size: 1rem; }
+
+.seg {
+  display: inline-flex;
+  width: fit-content;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+.seg__btn {
+  padding: 0.35rem 0.8rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  background: var(--bg-main);
+  border: none;
+  border-right: 1px solid var(--border-light);
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+.seg__btn:last-child { border-right: none; }
+.seg__btn:hover:not(.seg__btn--active) { color: var(--primary-500); }
+.seg__btn--active { background: var(--primary-500); color: white; }
+
+.btn-clear-filters {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.35rem 0.7rem;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+.btn-clear-filters:hover { color: var(--error-500, #ef4444); border-color: var(--error-500, #ef4444); }
+
+.uv-filters-enter-active, .uv-filters-leave-active { transition: opacity 0.18s ease, transform 0.18s ease; }
+.uv-filters-enter-from, .uv-filters-leave-to { opacity: 0; transform: translateY(-6px); }
+
+/* Selection action bar */
+.sel-bar {
+  position: fixed;
+  bottom: 1.25rem;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.65rem;
+  background: var(--bg-main);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-full);
+  box-shadow: var(--shadow-lg);
+}
+
+.sel-bar__count {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  padding: 0 0.5rem;
+  white-space: nowrap;
+}
+
+.sel-bar__btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.4rem 0.7rem;
+  border: none;
+  border-radius: var(--radius-full);
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.sel-bar__btn:hover:not(:disabled) { color: var(--text-primary); }
+.sel-bar__btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.sel-bar__btn--ok:hover:not(:disabled) { color: var(--success-text, #16a34a); }
+.sel-bar__btn--danger:hover:not(:disabled) { color: var(--error-text, #dc2626); }
+.sel-bar__btn i { font-size: 1rem; }
+
+.uv-selbar-enter-active, .uv-selbar-leave-active { transition: opacity 0.2s ease, transform 0.2s ease; }
+.uv-selbar-enter-from, .uv-selbar-leave-to { opacity: 0; transform: translate(-50%, 12px); }
+
 .sort-wrapper {
   position: relative;
+  display: flex;
+  align-items: center;
 }
 
 .sort-dropdown {
@@ -703,7 +1055,8 @@ onUnmounted(() => {
 
 .filter-bar {
   display: flex;
-  gap: 1rem;
+  align-items: center;
+  gap: 0.75rem;
   background: var(--bg-main);
   padding: 1rem;
   border-radius: var(--radius-md);
@@ -715,9 +1068,10 @@ onUnmounted(() => {
   align-items: center;
   gap: 0.5rem;
   border: 1px solid var(--border-light);
-  padding: 0.6rem 1rem;
-  border-radius: var(--radius-sm);
+  padding: 0.5rem 1rem;
+  border-radius: var(--radius-md);
   flex: 1;
+  min-height: 42px;
   background-color: var(--bg-main);
 }
 

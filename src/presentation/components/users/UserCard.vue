@@ -3,14 +3,19 @@ defineProps({
   user: { type: Object, required: true },
   toggling: { type: Boolean, default: false },
   loadingEdit: { type: Boolean, default: false },
+  selected: { type: Boolean, default: false },
+  selectable: { type: Boolean, default: false },
 })
 
-defineEmits(['toggle', 'edit'])
+defineEmits(['toggle', 'edit', 'select'])
 </script>
 
 <template>
-  <div class="user-card" :class="{ 'user-card--inactive': !user.isActive }">
+  <div class="user-card" :class="{ 'user-card--inactive': !user.isActive, 'user-card--selected': selected }">
     <div class="user-card__header">
+      <label v-if="selectable" class="user-card__check" @click.stop>
+        <input type="checkbox" :checked="selected" @change="$emit('select', user.id)">
+      </label>
       <div class="user-card__avatar">
         <i class='bx bx-user'></i>
       </div>
@@ -81,10 +86,28 @@ defineEmits(['toggle', 'edit'])
   opacity: 0.65;
 }
 
+.user-card--selected {
+  box-shadow: 0 0 0 2px var(--primary-500);
+}
+
 .user-card__header {
   display: flex;
   align-items: center;
   gap: 0.75rem;
+}
+
+.user-card__check {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
+.user-card__check input {
+  width: 1rem;
+  height: 1rem;
+  cursor: pointer;
+  accent-color: var(--primary-500);
 }
 
 .user-card__avatar {

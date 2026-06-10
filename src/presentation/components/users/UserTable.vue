@@ -3,9 +3,12 @@ defineProps({
   users: { type: Array, required: true },
   toggling: { type: Set, required: true },
   loadingEditId: { type: String, default: null },
+  selected: { type: Set, default: () => new Set() },
+  allSelected: { type: Boolean, default: false },
+  selectable: { type: Boolean, default: false },
 })
 
-defineEmits(['toggle', 'edit'])
+defineEmits(['toggle', 'edit', 'select', 'toggle-all'])
 </script>
 
 <template>
@@ -13,6 +16,9 @@ defineEmits(['toggle', 'edit'])
     <table class="datatable">
       <thead>
         <tr class="datatable__header">
+          <th v-if="selectable" class="datatable__check-col">
+            <input type="checkbox" :checked="allSelected" @change="$emit('toggle-all')" title="Seleccionar todos">
+          </th>
           <th>Estado</th>
           <th>Nombre Completo</th>
           <th>Documento</th>
@@ -23,7 +29,10 @@ defineEmits(['toggle', 'edit'])
         </tr>
       </thead>
       <tbody>
-        <tr v-for="user in users" :key="user.id" class="datatable__row">
+        <tr v-for="user in users" :key="user.id" class="datatable__row" :class="{ 'datatable__row--selected': selectable && selected.has(user.id) }">
+          <td v-if="selectable" class="datatable__check-col">
+            <input type="checkbox" :checked="selected.has(user.id)" @change="$emit('select', user.id)">
+          </td>
           <td>
             <span v-if="user.isActive" class="status-badge status-badge--active">Activo</span>
             <span v-else class="status-badge status-badge--inactive">Inactivo</span>
@@ -91,6 +100,23 @@ defineEmits(['toggle', 'edit'])
 
 .datatable__row:hover {
   background-color: var(--bg-card);
+}
+
+.datatable__row--selected {
+  background-color: color-mix(in srgb, var(--primary-500) 10%, var(--bg-main));
+}
+
+.datatable__check-col {
+  width: 1px;
+  white-space: nowrap;
+  text-align: center;
+}
+
+.datatable__check-col input {
+  width: 1rem;
+  height: 1rem;
+  cursor: pointer;
+  accent-color: var(--primary-500);
 }
 
 .datatable__cell--bold {

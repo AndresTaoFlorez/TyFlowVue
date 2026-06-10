@@ -5,9 +5,11 @@ defineProps({
   users: { type: Array, required: true },
   toggling: { type: Set, required: true },
   loadingEditId: { type: String, default: null },
+  selected: { type: Set, default: () => new Set() },
+  selectable: { type: Boolean, default: false },
 })
 
-defineEmits(['toggle', 'edit'])
+defineEmits(['toggle', 'edit', 'select'])
 </script>
 
 <template>
@@ -18,8 +20,11 @@ defineEmits(['toggle', 'edit'])
       :user="user"
       :toggling="toggling.has(user.id)"
       :loading-edit="loadingEditId === user.id"
+      :selected="selected.has(user.id)"
+      :selectable="selectable"
       @toggle="$emit('toggle', $event)"
       @edit="$emit('edit', $event)"
+      @select="$emit('select', $event)"
     />
   </div>
 </template>
