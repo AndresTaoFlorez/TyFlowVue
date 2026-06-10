@@ -9,7 +9,7 @@ button { cursor: pointer; border: none; background: transparent; font: inherit; 
 input, select, textarea { font: inherit; }
 
 body {
-  font-family: system-ui, -apple-system, sans-serif;
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
   background-color: var(--bg-main);
   color: var(--text-primary);
   -webkit-font-smoothing: antialiased;

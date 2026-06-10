@@ -15,14 +15,14 @@ const APPS = [
   { id: 'app-crm',   name: 'CRM',         short: 'CRM', color: '#E0675F' },
 ];
 
-// ---- Especialistas ----
+// ---- Especialistas (color propio para avatares y filtros) ----
 const SPECIALISTS = [
-  { id: 'sp-cc', fullName: 'Carla Castro' },
-  { id: 'sp-pe', fullName: 'Pablo Emiliano' },
-  { id: 'sp-sr', fullName: 'Santiago Rendón' },
-  { id: 'sp-dm', fullName: 'Diana Marín' },
-  { id: 'sp-mv', fullName: 'Mateo Vargas' },
-  { id: 'sp-lo', fullName: 'Lucía Ortega' },
+  { id: 'sp-cc', fullName: 'Carla Castro',     color: '#E0675F' },
+  { id: 'sp-pe', fullName: 'Pablo Emiliano',   color: '#4F8DF7' },
+  { id: 'sp-sr', fullName: 'Santiago Rendón',  color: '#9B6DF3' },
+  { id: 'sp-dm', fullName: 'Diana Marín',      color: '#1FA888' },
+  { id: 'sp-mv', fullName: 'Mateo Vargas',     color: '#E0A23B' },
+  { id: 'sp-lo', fullName: 'Lucía Ortega',     color: '#21B3C6' },
 ];
 
 // Semana Lun 8 jun → Dom 14 jun 2026 (ISO, índice 0 = lunes)

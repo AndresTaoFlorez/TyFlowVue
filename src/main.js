@@ -1,4 +1,10 @@
 import 'boxicons/css/boxicons.min.css'
+// Inter self-hosted (woff2, subset latin) — solo los pesos usados
+import '@fontsource/inter/latin-400.css'
+import '@fontsource/inter/latin-500.css'
+import '@fontsource/inter/latin-600.css'
+import '@fontsource/inter/latin-700.css'
+import '@fontsource/inter/latin-800.css'
 import '@/styles/font-overrides.css'
 import '@/styles/tokens.css'
 import '@/styles/reset.css'

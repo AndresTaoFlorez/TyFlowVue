@@ -1,15 +1,10 @@
 <script setup>
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
+import { useAdaptiveFont } from '@/presentation/composables/useAdaptiveFont'
+import { appTintSurface } from '@/presentation/utils/color'
+import { usePreferencesStore } from '@/presentation/stores/usePreferencesStore'
 
-function getLuminance(hex) {
-  const h = (hex || '').replace('#', '')
-  if (h.length < 6) return 0.5
-  const r = parseInt(h.substring(0, 2), 16) / 255
-  const g = parseInt(h.substring(2, 4), 16) / 255
-  const b = parseInt(h.substring(4, 6), 16) / 255
-  const toLinear = c => c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4
-  return 0.2126 * toLinear(r) + 0.7152 * toLinear(g) + 0.0722 * toLinear(b)
-}
+const prefs = usePreferencesStore()
 
 const props = defineProps({
   window: { type: Object, required: true },
@@ -31,12 +26,12 @@ const props = defineProps({
 
 const resolvedColor = () => props.appColor || '#2AC78F'
 
-const textColor = computed(() => {
-  const c = resolvedColor()
-  const lum = getLuminance(c)
-  if (lum < 0.15) return 'color-mix(in oklch, var(--app-color) 60%, var(--wb-text-anchor))'
-  if (lum < 0.45) return 'color-mix(in oklch, var(--app-color) 70%, var(--wb-text-anchor))'
-  return 'color-mix(in oklch, var(--app-color) 70%, black)'
+// Fondo + texto del bloque como fuente única (theme-aware). En dark mode usa
+// más proporción de color sobre --wb-surface (casi-negro) para no enturbiarlo.
+// Depende de `prefs.theme` para recalcular al cambiar de tema. Ver utils/color.js.
+const surface = computed(() => {
+  void prefs.theme
+  return appTintSurface(resolvedColor())
 })
 
 const emit = defineEmits(['click', 'resize-start'])
@@ -61,8 +56,9 @@ const shortTime = computed(() => {
 
 const top = () => Math.max(0, (props.window.startHour - props.baseHour) * props.hourHeight + 2)
 const height = () => Math.max(props.hourHeight / 2, (props.window.endHour - props.window.startHour) * props.hourHeight - 4)
-const left = () => props.totalCols === 1 ? '3%' : `${(props.col / props.totalCols) * 92 + 2}%`
-const width = () => props.totalCols === 1 ? '92%' : `${92 / props.totalCols}%`
+// Llenar el ancho de la columna/día (con un hilo de separación entre sub-cols).
+const left = () => props.totalCols === 1 ? '0.5%' : `${(props.col / props.totalCols) * 99 + 0.5}%`
+const width = () => props.totalCols === 1 ? '99%' : `${99 / props.totalCols - 0.5}%`
 
 const statusClass = () => {
   if (!props.window.isActive) return 'wb--inactive'
@@ -89,16 +85,24 @@ const onHandleDown = (direction, e) => {
   e.stopPropagation()
   emit('resize-start', { direction, event: e })
 }
+
+// Tipografía adaptativa según el tamaño real del bloque + viewport
+const wbEl = ref(null)
+const { fontSize } = useAdaptiveFont(wbEl, {
+  min: 11, max: 18, base: 12, refWidth: 150, refHeight: 64,
+})
 </script>
 
 <template>
-  <div class="wb" :class="[statusClass(), { 'wb--selected': selected, 'wb--cut': cut, 'wb--compact': compact }]" :style="{
+  <div ref="wbEl" class="wb" :class="[statusClass(), { 'wb--selected': selected, 'wb--cut': cut, 'wb--compact': compact }]" :style="{
     top: top() + 'px',
     height: height() + 'px',
     left: left(),
     width: width(),
     '--app-color': resolvedColor(),
-    '--app-text-color': textColor,
+    '--app-bg': surface.bg,
+    '--app-text-color': surface.text,
+    '--wb-fs': fontSize + 'px',
   }" @click="$emit('click', window, $event)">
     <!-- Resize handle top -->
     <div v-if="showTopHandle" class="wb__handle wb__handle--top" @mousedown="onHandleDown('top', $event)"
@@ -140,11 +144,10 @@ const onHandleDown = (direction, e) => {
 <style scoped>
 .wb {
   position: absolute;
-  border-radius: 4px;
-  padding: 0.3rem 0.45rem;
+  border-radius: 0;
+  padding: 0.3rem 0.5rem;
   cursor: pointer;
   overflow: hidden;
-  border-left: 3px solid;
   z-index: 2;
   display: flex;
   flex-direction: column;
@@ -164,10 +167,9 @@ const onHandleDown = (direction, e) => {
   transform: scale(0.99);
 }
 
-/* ── Open — uses app color tinted against a solid surface ── */
+/* ── Open — app-color surface computed by utils/color.js (theme-aware) ── */
 .wb--open {
-  background: color-mix(in srgb, var(--app-color) 32%, var(--bg-card));
-  border-left-color: var(--app-color);
+  background: var(--app-bg);
 }
 
 .wb--open .wb__name {
@@ -193,15 +195,15 @@ const onHandleDown = (direction, e) => {
 }
 
 .wb__avatar {
-  width: 17px;
-  height: 17px;
-  min-width: 17px;
+  width: calc(var(--wb-fs, 0.8rem) * 1.35);
+  height: calc(var(--wb-fs, 0.8rem) * 1.35);
+  min-width: calc(var(--wb-fs, 0.8rem) * 1.35);
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 0.54rem;
-  font-weight: 700;
+  font-size: calc(var(--wb-fs, 0.54rem) * 0.6);
+  font-weight: 600;
   color: white;
   background: var(--app-color);
   flex-shrink: 0;
@@ -210,8 +212,9 @@ const onHandleDown = (direction, e) => {
 
 /* ── Name ── */
 .wb__name {
-  font-size: clamp(0.5rem, 22cqh, 0.85rem);
-  font-weight: 700;
+  font-size: var(--wb-fs, clamp(0.5rem, 22cqh, 0.85rem));
+  font-weight: 600;
+  letter-spacing: -0.01em;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -224,26 +227,26 @@ const onHandleDown = (direction, e) => {
 }
 
 .wb__inherit-icon {
-  font-size: clamp(0.5rem, 22cqh, 0.85rem);
+  font-size: var(--wb-fs, clamp(0.5rem, 22cqh, 0.85rem));
   opacity: 0.85;
   flex-shrink: 0;
 }
 
 /* ── Time ── */
 .wb__time {
-  font-size: clamp(0.45rem, 16cqh, 0.7rem);
+  font-size: calc(var(--wb-fs, 0.7rem) * 0.82);
   font-weight: 500;
   white-space: nowrap;
 }
 
 /* ── App ── */
 .wb__app {
-  font-size: clamp(0.4rem, 14cqh, 0.62rem);
-  font-weight: 600;
+  font-size: calc(var(--wb-fs, 0.62rem) * 0.74);
+  font-weight: 500;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  background: color-mix(in srgb, var(--app-color) 25%, var(--bg-card));
+  background: color-mix(in srgb, var(--app-color) 26%, var(--wb-surface));
   padding: 0.05rem 0.4rem 0.25rem;
   border-radius: 3px;
   width: fit-content;
@@ -252,9 +255,10 @@ const onHandleDown = (direction, e) => {
 
 /* ── Inherit label ── */
 .wb__inherit-label {
-  font-size: clamp(0.4rem, 14cqh, 0.6rem);
-  font-weight: 600;
-  color: rgba(255, 255, 255, 0.45);
+  font-size: calc(var(--wb-fs, 0.6rem) * 0.72);
+  font-weight: 500;
+  color: var(--app-text-color);
+  opacity: 0.55;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -334,18 +338,16 @@ const onHandleDown = (direction, e) => {
 /* ── Cut ── */
 .wb--cut {
   opacity: 0.4;
-  border-left-style: dashed;
   filter: grayscale(0.5);
 }
 
 /* ── Inactive — muted, hatched ── */
 .wb--inactive {
   background: repeating-linear-gradient(-45deg,
-      color-mix(in srgb, var(--app-color) 12%, var(--bg-card)),
-      color-mix(in srgb, var(--app-color) 12%, var(--bg-card)) 3px,
-      color-mix(in srgb, var(--app-color) 6%, var(--bg-card)) 3px,
-      color-mix(in srgb, var(--app-color) 6%, var(--bg-card)) 6px);
-  border-left-color: color-mix(in srgb, var(--app-color) 40%, #5a6075);
+      color-mix(in srgb, var(--app-color) 12%, var(--wb-surface)),
+      color-mix(in srgb, var(--app-color) 12%, var(--wb-surface)) 3px,
+      color-mix(in srgb, var(--app-color) 6%, var(--wb-surface)) 3px,
+      color-mix(in srgb, var(--app-color) 6%, var(--wb-surface)) 6px);
   opacity: 0.6;
 }
 
@@ -365,8 +367,7 @@ const onHandleDown = (direction, e) => {
 
 .wb--compact {
   padding: 2px 1px;
-  border-left-width: 0;
-  border-radius: 2px;
+  border-radius: 0;
   gap: 0;
   align-items: center;
   justify-content: center;
@@ -391,7 +392,7 @@ const onHandleDown = (direction, e) => {
 }
 
 .wb--compact.wb--open {
-  background: color-mix(in srgb, var(--app-color) 50%, var(--bg-card));
+  background: color-mix(in srgb, var(--app-color) 50%, var(--wb-surface));
 }
 
 .wb--compact:hover {
@@ -400,8 +401,7 @@ const onHandleDown = (direction, e) => {
 }
 
 .wb--compact.wb--inactive {
-  background: color-mix(in srgb, var(--app-color) 15%, var(--bg-card));
-  border-left-width: 0;
+  background: color-mix(in srgb, var(--app-color) 15%, var(--wb-surface));
   opacity: 0.5;
 }
 </style>

@@ -8,8 +8,36 @@ pepita2026*
 test user
 
 ```
+# Testing users
+
+## Juan Perez
 andresjose577@gmail.com
 pruebas2026*
+
+## Anyi Salamanca
+andrestao577+1@gmail.com
+Eva_03*
+
+## Brayan
+andrestao577+2@gmail.com
+Eva_04*
+
+## Yury
+andrestao577+3@gmail.com
+Eva_05*
+
+## William
+andrestao577+4@gmail.com
+Eva_06*
+
+## Claidy
+andrestao577+5@gmail.com
+Eva_07*
+
+## Natalia
+andrestao577+6@gmail.com
+Eva_08*
+
 ```
 
 

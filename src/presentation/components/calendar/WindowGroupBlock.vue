@@ -1,14 +1,10 @@
 <script setup>
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
+import { useElementSize, fitFontSize } from '@/presentation/composables/useAdaptiveFont'
+import { appTintSurface } from '@/presentation/utils/color'
+import { usePreferencesStore } from '@/presentation/stores/usePreferencesStore'
 
-function getLuminance(hex) {
-  const h = hex.replace('#', '')
-  const r = parseInt(h.substring(0, 2), 16) / 255
-  const g = parseInt(h.substring(2, 4), 16) / 255
-  const b = parseInt(h.substring(4, 6), 16) / 255
-  const toLinear = c => c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4
-  return 0.2126 * toLinear(r) + 0.7152 * toLinear(g) + 0.0722 * toLinear(b)
-}
+const prefs = usePreferencesStore()
 
 const props = defineProps({
   group: { type: Object, required: true },
@@ -27,10 +23,15 @@ const props = defineProps({
 
 const emit = defineEmits(['click', 'resize-start'])
 
+// Tamaño real del grupo para derivar tipografía adaptativa por sub-barra
+const wgbEl = ref(null)
+const { width: groupWidthPx } = useElementSize(wgbEl)
+
 const groupTop = () => Math.max(0, (props.group.startHour - props.baseHour) * props.hourHeight + 2)
 const groupHeight = () => Math.max(props.hourHeight / 2, (props.group.endHour - props.group.startHour) * props.hourHeight - 4)
-const left = () => props.totalCols === 1 ? '3%' : `${(props.col / props.totalCols) * 92 + 2}%`
-const width = () => props.totalCols === 1 ? '92%' : `${92 / props.totalCols}%`
+// Llenar el ancho de la columna/día (con un hilo de separación entre sub-cols).
+const left = () => props.totalCols === 1 ? '0.5%' : `${(props.col / props.totalCols) * 99 + 0.5}%`
+const width = () => props.totalCols === 1 ? '99%' : `${99 / props.totalCols - 0.5}%`
 
 const count = () => props.group.windows.length
 
@@ -46,6 +47,7 @@ const allInactive = computed(() => props.group.windows.every(w => !w.isActive))
 
 // Sub-bar data for each window in the group
 const subBars = () => {
+  void prefs.theme // dep: recompute readable text on theme change
   const gStart = props.group.startHour
   const gDuration = props.group.endHour - gStart
   if (gDuration <= 0) return []
@@ -66,11 +68,16 @@ const subBars = () => {
     const barTop = ((w.startHour - gStart) / gDuration) * gH
     const barHeight = Math.max(8, ((w.endHour - w.startHour) / gDuration) * gH)
 
-    // Text color based on luminance — uses --wb-text-anchor token (black in light, white in dark)
-    const isDark = getLuminance(color) < 0.45
-    const textColor = isDark
-      ? 'color-mix(in oklch, var(--bar-color) 60%, var(--wb-text-anchor))'
-      : 'color-mix(in oklch, var(--bar-color) 70%, black)'
+    // Tipografía adaptativa: ancho real de la sub-barra (grupo / nº columnas)
+    const barWidth = (groupWidthPx.value || 0) / total
+    const fontSize = fitFontSize(barWidth, barHeight, {
+      min: 10, max: 16, base: 11, refWidth: 95, refHeight: 56,
+    })
+
+    // Fondo + texto de la sub-barra como fuente única (theme-aware). Ver utils/color.js.
+    const surf = appTintSurface(color, w.isActive
+      ? { lightPct: 38, darkPct: 50 }
+      : { lightPct: 14, darkPct: 22 })
 
     return {
       id: w.id,
@@ -79,7 +86,9 @@ const subBars = () => {
       appName,
       timeRange: w.timeRange || '',
       color,
-      textColor,
+      bg: surf.bg,
+      textColor: surf.text,
+      fontSize,
       isOpen: w.isActive,
       isSelected: props.selectedIds.has(w.id),
       isCut: props.cutIds.has(w.id),
@@ -109,7 +118,7 @@ const onHandleDown = (direction, e) => {
 </script>
 
 <template>
-  <div class="wgb" :class="{
+  <div ref="wgbEl" class="wgb" :class="{
     'wgb--compact': compact,
     'wgb--selected': hasSelected,
     'wgb--all-selected': allSelected,
@@ -139,7 +148,9 @@ const onHandleDown = (direction, e) => {
         top: bar.barTop + 'px',
         height: bar.barHeight + 'px',
         '--bar-color': bar.color,
+        '--bar-bg': bar.bg,
         '--bar-text-color': bar.textColor,
+        '--bar-fs': compact ? null : bar.fontSize + 'px',
       }">
         <template v-if="!compact">
           <div class="wgb__bar-head">
@@ -166,7 +177,7 @@ const onHandleDown = (direction, e) => {
 <style scoped>
 .wgb {
   position: absolute;
-  border-radius: 7px;
+  border-radius: 0;
   cursor: pointer;
   overflow: hidden;
   background: rgba(30, 35, 50, 0.06);
@@ -218,33 +229,27 @@ const onHandleDown = (direction, e) => {
 
 .wgb__bar {
   position: absolute;
-  border-radius: 3px;
-  background: color-mix(in srgb, var(--bar-color) 28%, var(--bg-card, transparent));
-  border-left: 3px solid var(--bar-color);
+  border-radius: 0;
+  background: var(--bar-bg);
   display: flex;
   flex-direction: column;
   align-items: flex-start;
   justify-content: flex-start;
   box-sizing: border-box;
-  padding: 4px 2px;
+  padding: 4px 3px;
   transition: filter 0.12s;
   container-type: size;
   overflow: hidden;
   gap: 1px;
 }
 
-.wgb__bar--open {
-  background: color-mix(in srgb, var(--bar-color) 38%, var(--bg-card, transparent));
-}
-
 /* Inactive bar — muted, hatched pattern */
 .wgb__bar--inactive {
   background: repeating-linear-gradient(-45deg,
-      color-mix(in srgb, var(--bar-color) 12%, transparent),
-      color-mix(in srgb, var(--bar-color) 12%, transparent) 3px,
-      color-mix(in srgb, var(--bar-color) 6%, transparent) 3px,
-      color-mix(in srgb, var(--bar-color) 6%, transparent) 6px);
-  border-left-color: color-mix(in srgb, var(--bar-color) 40%, #5a6075);
+      color-mix(in srgb, var(--bar-color) 12%, var(--wb-surface)),
+      color-mix(in srgb, var(--bar-color) 12%, var(--wb-surface)) 3px,
+      color-mix(in srgb, var(--bar-color) 6%, var(--wb-surface)) 3px,
+      color-mix(in srgb, var(--bar-color) 6%, var(--wb-surface)) 6px);
   opacity: 0.55;
 }
 
@@ -263,7 +268,6 @@ const onHandleDown = (direction, e) => {
 /* Per-bar cut */
 .wgb__bar--cut {
   opacity: 0.35;
-  border-left-style: dashed;
   filter: grayscale(0.6);
 }
 
@@ -282,15 +286,15 @@ const onHandleDown = (direction, e) => {
 }
 
 .wgb__bar-avatar {
-  width: 14px;
-  height: 14px;
-  min-width: 14px;
+  width: calc(var(--bar-fs, 0.6rem) * 1.4);
+  height: calc(var(--bar-fs, 0.6rem) * 1.4);
+  min-width: calc(var(--bar-fs, 0.6rem) * 1.4);
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 0.42rem;
-  font-weight: 700;
+  font-size: calc(var(--bar-fs, 0.42rem) * 0.66);
+  font-weight: 600;
   color: white;
   background: var(--bar-color);
   flex-shrink: 0;
@@ -299,8 +303,9 @@ const onHandleDown = (direction, e) => {
 
 /* Full name — shown when bar is wide enough */
 .wgb__bar-name {
-  font-size: clamp(0.42rem, 22cqh, 0.72rem);
-  font-weight: 700;
+  font-size: var(--bar-fs, clamp(0.42rem, 22cqh, 0.72rem));
+  font-weight: 600;
+  letter-spacing: -0.01em;
   color: var(--bar-text-color);
   line-height: 1.1;
   white-space: nowrap;
@@ -312,8 +317,8 @@ const onHandleDown = (direction, e) => {
 
 /* Initials — shown when bar is too narrow for full name */
 .wgb__bar-initials {
-  font-size: clamp(0.4rem, 45cqh, 0.7rem);
-  font-weight: 800;
+  font-size: var(--bar-fs, clamp(0.4rem, 45cqh, 0.7rem));
+  font-weight: 700;
   color: var(--bar-text-color);
   line-height: 1;
   text-transform: uppercase;
@@ -324,7 +329,7 @@ const onHandleDown = (direction, e) => {
 
 /* Time range */
 .wgb__bar-time {
-  font-size: clamp(0.36rem, 16cqh, 0.58rem);
+  font-size: calc(var(--bar-fs, 0.58rem) * 0.82);
   font-weight: 500;
   color: var(--bar-text-color);
   opacity: 0.85;
@@ -338,8 +343,8 @@ const onHandleDown = (direction, e) => {
 
 /* App name pill */
 .wgb__bar-app {
-  font-size: clamp(0.34rem, 14cqh, 0.52rem);
-  font-weight: 600;
+  font-size: calc(var(--bar-fs, 0.52rem) * 0.74);
+  font-weight: 500;
   color: var(--bar-text-color);
   opacity: 0.8;
   background: color-mix(in srgb, var(--bar-color) 15%, transparent);
@@ -372,7 +377,7 @@ const onHandleDown = (direction, e) => {
   top: 3px;
   right: 4px;
   font-size: 0.6rem;
-  font-weight: 800;
+  font-weight: 700;
   color: white;
   background: rgba(30, 35, 55, 0.85);
   width: 1.1rem;
@@ -424,7 +429,7 @@ const onHandleDown = (direction, e) => {
 
 /* Compact mode */
 .wgb--compact {
-  border-radius: 2px;
+  border-radius: 0;
 }
 
 .wgb--compact .wgb__badge {
@@ -436,7 +441,6 @@ const onHandleDown = (direction, e) => {
 }
 
 .wgb--compact .wgb__bar {
-  border-left-width: 2px;
   padding-top: 0;
   align-items: center;
 }

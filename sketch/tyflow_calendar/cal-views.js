@@ -119,8 +119,9 @@ const WeekView = {
   emits: ['select', 'create-range', 'scroll-ready'],
   data() { return { DAY_LABELS }; },
   computed: {
-    gridTemplate() { return 'var(--gutter-w) repeat(7, 1fr)'; },
-    byDay() { return WEEK_DATES.map((_, d) => this.windows.filter(w => w.day === d)); },
+    nDays() { return this.weekDates.length; },
+    gridTemplate() { return 'var(--gutter-w) repeat(' + this.nDays + ', 1fr)'; },
+    byDay() { return this.weekDates.map((_, d) => this.windows.filter(w => w.day === d)); },
     split() { return this.byDay.map(splitDay); },
     allDayCols() { return this.split.map(s => s.allDay); },
   },
@@ -141,13 +142,11 @@ const WeekView = {
         </div>
       </div>
 
-      <all-day-lane :columns="allDayCols" :grid-template="gridTemplate" @select="$emit('select', $event)" />
-
       <div class="cal-scroll" ref="scroll">
         <div class="cal-body" :style="{ gridTemplateColumns: gridTemplate }">
           <hour-gutter :hour-h="hourH" />
           <day-column v-for="(iso, i) in weekDates" :key="iso"
-            :day-index="i" :windows="split[i].timed" :hour-h="hourH"
+            :day-index="i" :windows="byDay[i]" :hour-h="hourH"
             :is-today="i === todayIndex" :now-hour="nowHour" :interactive="interactive"
             @select="$emit('select', $event)" @create-range="$emit('create-range', $event)" />
         </div>
@@ -185,12 +184,12 @@ const DayView = {
         </div>
       </div>
 
-      <all-day-lane :columns="[split.allDay]" :grid-template="gridTemplate" :max-rows="3" @select="$emit('select', $event)" />
+      <all-day-lane :columns="[split.allDay]" :grid-template="gridTemplate" :max-rows="3" @select="$emit('select', $event)" v-if="false" />
 
       <div class="cal-scroll" ref="scroll">
         <div class="cal-body" :style="{ gridTemplateColumns: gridTemplate }">
           <hour-gutter :hour-h="hourH" />
-          <day-column :day-index="dayIndex" :windows="split.timed" :hour-h="hourH"
+          <day-column :day-index="dayIndex" :windows="dayWins" :hour-h="hourH"
             :is-today="isToday" :now-hour="nowHour" :interactive="interactive" :wide="true"
             @select="$emit('select', $event)" @create-range="$emit('create-range', $event)" />
         </div>
@@ -206,7 +205,7 @@ const MonthView = {
   name: 'MonthView',
   components: { MonthChip },
   props: { windows: Array, year: Number, month: Number, todayIso: String },
-  emits: ['select-day'],
+  emits: ['select-day', 'select'],
   data() { return { DAY_LABELS }; },
   computed: {
     cells() { return buildMonthGrid(this.year, this.month); },
@@ -240,8 +239,8 @@ const MonthView = {
           <div v-for="(week, ri) in rows" :key="ri" class="mcal__row">
             <button v-for="cell in week" :key="cell.iso" :class="cellCls(cell)" @click="$emit('select-day', cell)">
               <span class="mcal__day">{{ cell.day }}</span>
-              <month-chip v-for="w in wins(cell.iso).slice(0, 3)" :key="w.id" :w="w" />
-              <span v-if="wins(cell.iso).length > 3" class="mcal__more">+{{ wins(cell.iso).length - 3 }} más</span>
+              <month-chip v-for="w in wins(cell.iso).slice(0, 4)" :key="w.id" :w="w" @select="$emit('select', $event)" />
+              <span v-if="wins(cell.iso).length > 4" class="mcal__more">+{{ wins(cell.iso).length - 4 }} más</span>
             </button>
           </div>
         </div>
@@ -250,5 +249,66 @@ const MonthView = {
   `,
 };
 
-Object.assign(window.TY, { DayColumn, AllDayLane, WeekView, DayView, MonthView });
+// ============================================================
+// VISTA AGENDA (Scheduled) — lista cronológica por día
+// ============================================================
+const { appById, specById, initialsOf, fmtRange, MONTHS } = window.TY;
+
+const AgendaView = {
+  name: 'AgendaView',
+  props: { windows: Array, weekDates: Array, todayIndex: Number },
+  emits: ['select'],
+  computed: {
+    groups() {
+      return this.weekDates.map((iso, i) => {
+        const wins = this.windows
+          .filter(w => w.day === i)
+          .sort((a, b) => a.start - b.start || a.end - b.end);
+        return { iso, dayIndex: i, wins };
+      }).filter(g => g.wins.length);
+    },
+    isEmpty() { return this.groups.length === 0; },
+  },
+  methods: {
+    initialsOf, fmtRange,
+    app(w) { return appById(w.appId); },
+    spec(w) { return specById(w.specialistId); },
+    dayNum(iso) { return parseInt(iso.split('-')[2], 10); },
+    monthShort(iso) { return MONTHS[parseInt(iso.split('-')[1], 10) - 1].slice(0, 3); },
+    dayName(i) { return DAY_FULL[i]; },
+  },
+  template: `
+    <div class="cal">
+      <div class="agenda" v-if="!isEmpty">
+        <div v-for="g in groups" :key="g.iso" class="agenda__group">
+          <div :class="['agenda__date', g.dayIndex === todayIndex && 'agenda__date--today']">
+            <span class="agenda__date-num">{{ dayNum(g.iso) }}</span>
+            <div class="agenda__date-meta">
+              <span class="agenda__date-dow">{{ dayName(g.dayIndex) }}</span>
+              <span class="agenda__date-mon">{{ monthShort(g.iso) }}</span>
+            </div>
+          </div>
+          <div class="agenda__rows">
+            <button v-for="w in g.wins" :key="w.id"
+              :class="['agenda__row', !w.active && 'agenda__row--inactive']"
+              :style="{ '--app': app(w).color }" @click="$emit('select', w)">
+              <span class="agenda__time">{{ fmtRange(w.start, w.end) }}</span>
+              <span class="agenda__bar"></span>
+              <span class="agenda__avatar">{{ initialsOf(spec(w).fullName) }}</span>
+              <span class="agenda__name">{{ spec(w).fullName }}</span>
+              <span class="agenda__app">{{ app(w).name }}</span>
+              <span v-if="!w.active" class="agenda__off"><i class="bx bx-block"></i> Inactiva</span>
+            </button>
+          </div>
+        </div>
+      </div>
+      <div v-else class="agenda-empty">
+        <i class="bx bx-calendar-x"></i>
+        <p>No hay ventanas de trabajo en este rango.</p>
+      </div>
+    </div>
+  `,
+};
+
+Object.assign(window.TY, { DayColumn, AllDayLane, WeekView, DayView, MonthView, AgendaView });
 })();

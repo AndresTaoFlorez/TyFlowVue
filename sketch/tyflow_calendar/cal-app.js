@@ -6,7 +6,7 @@ const T = window.TY;
 const {
   APPS, SPECIALISTS, WINDOWS, DAY_FULL, MONTHS,
   appById, specById, fmtHour, fmtRange,
-  WeekView, DayView, MonthView,
+  WeekView, DayView, MonthView, AgendaView, CalSidebar,
 } = T;
 
 const HOURH = { compact: 32, comfortable: 48, spacious: 68 };
@@ -142,17 +142,33 @@ const CreateModal = {
 // ============================================================
 const App = {
   name: 'App',
-  components: { WeekView, DayView, MonthView, DetailModal, CreateModal },
+  components: { WeekView, DayView, MonthView, AgendaView, CalSidebar, DetailModal, CreateModal },
   data() {
+    const savedView = (function(){ try { return localStorage.getItem('tyflow.cal.view'); } catch(e){ return null; } })();
+    const validViews = ['day', '5days', 'week', 'month', 'agenda'];
     return {
-      theme: 'dark', density: 'comfortable', view: 'week', tool: 'default',
-      fSpec: 'all', fApp: 'all',
+      theme: 'dark', density: 'comfortable',
+      view: validViews.includes(savedView) ? savedView : 'week',
+      tool: 'default',
+      enabledSpecs: SPECIALISTS.map(s => s.id),
+      enabledApps: APPS.map(a => a.id),
+      showActive: true, showInactive: true,
       weekOffset: 0, dayCursor: 0, monthCursor: { y: 2026, m: 5 },
+      miniCursor: { y: 2026, m: 5 }, selectedIso: isoOf(BASE_MONDAY),
       windows: WINDOWS.slice(),
       detail: null, create: null, toast: null,
       scrollEl: null, _toastT: null,
       SPECIALISTS, APPS,
-      views: [['day', 'Día'], ['week', 'Semana'], ['month', 'Mes']],
+      navCollapsed: false, navActive: 'Calendario',
+      nav: [
+        ['Inicio', 'bx-home-alt-2'],
+        ['Usuarios', 'bx-group'],
+        ['Calendario', 'bx-calendar'],
+        ['Casos', 'bx-task'],
+        ['Configuración', 'bx-cog'],
+        ['Mi Perfil', 'bx-user'],
+      ],
+      views: [['day', 'Día'], ['5days', '5 días'], ['week', 'Semana'], ['month', 'Mes'], ['agenda', 'Agenda']],
       densities: [['compact', 'bx-collapse-vertical', 'Compacta'], ['comfortable', 'bx-menu', 'Cómoda'], ['spacious', 'bx-expand-vertical', 'Amplia']],
       tools: [['default', 'bx-pointer', 'Normal'], ['eraser', 'bx-eraser', 'Borrador'], ['select', 'bx-select-multiple', 'Seleccionar']],
     };
@@ -162,9 +178,13 @@ const App = {
     interactive() { return this.tool === 'default'; },
     filtered() {
       return this.windows.filter(w =>
-        (this.fSpec === 'all' || w.specialistId === this.fSpec) &&
-        (this.fApp === 'all' || w.appId === this.fApp));
+        this.enabledSpecs.includes(w.specialistId) &&
+        this.enabledApps.includes(w.appId) &&
+        (w.active ? this.showActive : this.showInactive));
     },
+    isWeekish() { return this.view === 'week' || this.view === '5days' || this.view === 'agenda'; },
+    nDays() { return this.view === '5days' ? 5 : 7; },
+    visibleWeekDates() { return this.weekDates.slice(0, this.nDays); },
     weekDates() { return Array.from({ length: 7 }, (_, i) => isoOf(addDays(BASE_MONDAY, this.weekOffset * 7 + i))); },
     dayWeekOffset() { return Math.floor(this.dayCursor / 7); },
     dayIndex() { return ((this.dayCursor % 7) + 7) % 7; },
@@ -183,7 +203,8 @@ const App = {
         const d = this.dayDate;
         return `${cap(DAY_FULL[this.dayIndex])} ${d.getDate()} ${MON_SHORT[d.getMonth()]} ${d.getFullYear()}`;
       }
-      const a = addDays(BASE_MONDAY, this.weekOffset * 7), b = addDays(BASE_MONDAY, this.weekOffset * 7 + 6);
+      const span = this.view === '5days' ? 4 : 6;
+      const a = addDays(BASE_MONDAY, this.weekOffset * 7), b = addDays(BASE_MONDAY, this.weekOffset * 7 + span);
       const mo = a.getMonth() === b.getMonth() ? MON_SHORT[a.getMonth()] : `${MON_SHORT[a.getMonth()]}–${MON_SHORT[b.getMonth()]}`;
       return `${a.getDate()} – ${b.getDate()} ${mo} ${b.getFullYear()}`;
     },
@@ -191,26 +212,64 @@ const App = {
   watch: {
     theme(v) { document.documentElement.dataset.theme = v; },
     density() { this.scheduleScroll(); },
-    view() { this.scheduleScroll(); },
+    view(v) { try { localStorage.setItem('tyflow.cal.view', v); } catch(e){} this.scheduleScroll(); },
     weekOffset() { this.scheduleScroll(); },
     dayCursor() { this.scheduleScroll(); },
   },
   methods: {
     showToast(msg) { this.toast = msg; clearTimeout(this._toastT); this._toastT = setTimeout(() => { this.toast = null; }, 2200); },
     setScroll(el) { this.scrollEl = el; this.scheduleScroll(); },
-    scheduleScroll() { this.$nextTick(() => { if (this.scrollEl && this.view !== 'month') this.scrollEl.scrollTop = 7 * this.hourH - 12; }); },
+    scheduleScroll() { this.$nextTick(() => { if (this.scrollEl && this.view !== 'month' && this.view !== 'agenda') this.scrollEl.scrollTop = 7 * this.hourH - 12; }); },
     toggleTheme() { this.theme = this.theme === 'dark' ? 'light' : 'dark'; },
     goPrev() {
-      if (this.view === 'week') this.weekOffset--;
+      if (this.isWeekish) this.weekOffset--;
       else if (this.view === 'day') this.dayCursor--;
       else { const { y, m } = this.monthCursor; this.monthCursor = m === 0 ? { y: y - 1, m: 11 } : { y, m: m - 1 }; }
+      this.syncSelected();
     },
     goNext() {
-      if (this.view === 'week') this.weekOffset++;
+      if (this.isWeekish) this.weekOffset++;
       else if (this.view === 'day') this.dayCursor++;
       else { const { y, m } = this.monthCursor; this.monthCursor = m === 11 ? { y: y + 1, m: 0 } : { y, m: m + 1 }; }
+      this.syncSelected();
     },
-    goToday() { this.weekOffset = 0; this.dayCursor = 0; this.monthCursor = { y: 2026, m: 5 }; },
+    goToday() {
+      this.weekOffset = 0; this.dayCursor = 0; this.monthCursor = { y: 2026, m: 5 };
+      this.miniCursor = { y: 2026, m: 5 }; this.selectedIso = isoOf(BASE_MONDAY);
+    },
+    syncSelected() {
+      if (this.view === 'day') this.selectedIso = isoOf(this.dayDate);
+      else if (this.isWeekish) this.selectedIso = isoOf(addDays(BASE_MONDAY, this.weekOffset * 7));
+      if (this.view !== 'month') {
+        const d = this.view === 'day' ? this.dayDate : addDays(BASE_MONDAY, this.weekOffset * 7);
+        this.miniCursor = { y: d.getFullYear(), m: d.getMonth() };
+      } else { this.miniCursor = { ...this.monthCursor }; }
+    },
+    miniPrev() { const { y, m } = this.miniCursor; this.miniCursor = m === 0 ? { y: y - 1, m: 11 } : { y, m: m - 1 }; },
+    miniNext() { const { y, m } = this.miniCursor; this.miniCursor = m === 11 ? { y: y + 1, m: 0 } : { y, m: m + 1 }; },
+    pickDay(cell) {
+      const diff = Math.round((cell.date - BASE_MONDAY) / 86400000);
+      this.selectedIso = cell.iso;
+      if (this.view === 'day') this.dayCursor = diff;
+      else if (this.isWeekish) this.weekOffset = Math.floor(diff / 7);
+      else this.monthCursor = { y: cell.date.getFullYear(), m: cell.date.getMonth() };
+    },
+    toggleSpec(id) {
+      this.enabledSpecs = this.enabledSpecs.includes(id)
+        ? this.enabledSpecs.filter(x => x !== id) : [...this.enabledSpecs, id];
+    },
+    toggleApp(id) {
+      this.enabledApps = this.enabledApps.includes(id)
+        ? this.enabledApps.filter(x => x !== id) : [...this.enabledApps, id];
+    },
+    allSpecs() {
+      this.enabledSpecs = this.enabledSpecs.length === SPECIALISTS.length ? [] : SPECIALISTS.map(s => s.id);
+    },
+    allApps() {
+      this.enabledApps = this.enabledApps.length === APPS.length ? [] : APPS.map(a => a.id);
+    },
+    toggleActiveFilter() { this.showActive = !this.showActive; },
+    toggleInactiveFilter() { this.showInactive = !this.showInactive; },
     openCreate() { this.create = { day: 0, start: 9, end: 11, specialistId: SPECIALISTS[0].id, appId: APPS[0].id, active: true }; },
     onWeekCreate({ day, start, end }) {
       if (this.weekOffset !== 0) return;
@@ -237,79 +296,96 @@ const App = {
     editFromDetail() { this.create = { ...this.detail, edit: true }; this.detail = null; },
     onSelectDay(cell) {
       const diff = Math.round((cell.date - BASE_MONDAY) / 86400000);
-      this.dayCursor = diff; this.view = 'day';
+      this.dayCursor = diff; this.selectedIso = cell.iso; this.view = 'day';
     },
   },
   template: `
-    <div class="app">
-      <div class="topbar">
-        <div class="topbar__title">Calendario</div>
-        <div class="topbar__actions">
-          <button class="icon-btn" title="Tema" @click="toggleTheme">
-            <i :class="['bx', theme === 'dark' ? 'bx-moon' : 'bx-sun']"></i>
+    <div class="shell">
+      <aside :class="['navrail', navCollapsed && 'navrail--collapsed']">
+        <div class="navrail__brand">
+          <span class="navrail__logo">Ty</span>
+          <span class="navrail__word">TyFlow</span>
+          <button class="navrail__collapse" @click="navCollapsed = !navCollapsed" :title="navCollapsed ? 'Expandir' : 'Colapsar'">
+            <i :class="['bx', navCollapsed ? 'bx-chevron-right' : 'bx-chevron-left']"></i>
           </button>
-          <button class="btn-create" @click="openCreate"><i class="bx bx-plus"></i> Nueva Ventana</button>
         </div>
-      </div>
+        <nav class="navrail__nav">
+          <button v-for="[label, icon] in nav" :key="label"
+            :class="['navrail__item', navActive === label && 'navrail__item--active']" :title="label">
+            <i :class="['bx', icon]"></i><span class="navrail__label">{{ label }}</span>
+          </button>
+        </nav>
+        <cal-sidebar
+          :specialists="SPECIALISTS" :apps="APPS"
+          :enabled-specs="enabledSpecs" :enabled-apps="enabledApps"
+          :show-active="showActive" :show-inactive="showInactive"
+          :mini-year="miniCursor.y" :mini-month="miniCursor.m"
+          :selected-iso="selectedIso" :today-iso="todayIso"
+          @create="openCreate"
+          @toggle-spec="toggleSpec" @toggle-app="toggleApp"
+          @all-specs="allSpecs" @all-apps="allApps"
+          @toggle-active="toggleActiveFilter" @toggle-inactive="toggleInactiveFilter"
+          @mini-prev="miniPrev" @mini-next="miniNext" @pick-day="pickDay" />
+      </aside>
 
-      <div class="toolbar">
-        <button class="tb-arrow" @click="goPrev"><i class="bx bx-chevron-left"></i></button>
-        <button class="tb-today" @click="goToday">Hoy</button>
-        <button class="tb-arrow" @click="goNext"><i class="bx bx-chevron-right"></i></button>
-        <button class="tb-date"><span>{{ weekLabel }}</span><i class="bx bx-calendar"></i></button>
+      <button v-if="navCollapsed" class="nav-fab" @click="navCollapsed = false" title="Mostrar menú">
+        <i class="bx bx-chevrons-right"></i>
+      </button>
+
+      <div class="app">
+        <div class="toolbar">
+          <button class="tb-today" @click="goToday">Hoy</button>
+          <div class="tb-nav">
+            <button class="tb-arrow" @click="goPrev"><i class="bx bx-chevron-left"></i></button>
+            <button class="tb-arrow" @click="goNext"><i class="bx bx-chevron-right"></i></button>
+          </div>
+          <span class="tb-title">{{ weekLabel }}</span>
+
+          <div class="tb-spacer"></div>
 
         <div class="seg">
           <button v-for="[v, l] in views" :key="v" :class="['seg__btn', view === v && 'seg__btn--active']" @click="view = v">{{ l }}</button>
         </div>
 
-        <span class="tb-label">Densidad</span>
-        <div class="seg">
+        <div class="seg seg--icons" v-show="view !== 'month' && view !== 'agenda'">
           <button v-for="[d, ic, l] in densities" :key="d" :class="['seg__btn', density === d && 'seg__btn--active']" :title="l" @click="density = d">
             <i :class="['bx', ic]"></i>
           </button>
         </div>
 
-        <div class="seg">
-          <button v-for="[t, ic, l] in tools" :key="t" :class="['tool-btn', tool === t && 'tool-btn--active']" :title="l" @click="tool = t">
+        <div class="seg seg--icons">
+          <button v-for="[t, ic, l] in tools" :key="t" :class="['seg__btn', tool === t && 'seg__btn--active']" :title="l" @click="tool = t">
             <i :class="['bx', ic]"></i>
           </button>
         </div>
-
-        <div class="tb-spacer"></div>
-
-        <div class="legend">
-          <span class="legend__item"><span class="legend__dot legend__dot--active"></span>Activa</span>
-          <span class="legend__item"><span class="legend__dot legend__dot--inactive"></span>Inactiva</span>
-        </div>
-        <select class="tb-select" v-model="fSpec">
-          <option value="all">Todos los especialistas</option>
-          <option v-for="s in SPECIALISTS" :key="s.id" :value="s.id">{{ s.fullName }}</option>
-        </select>
-        <select class="tb-select" v-model="fApp">
-          <option value="all">Todas las apps</option>
-          <option v-for="a in APPS" :key="a.id" :value="a.id">{{ a.name }}</option>
-        </select>
       </div>
 
-      <div class="cal-wrap">
-        <week-view v-if="view === 'week'"
-          :windows="weekData" :week-dates="weekDates" :hour-h="hourH"
-          :today-index="todayIndexWeek" :now-hour="weekNowHour" :interactive="interactive"
-          @select="detail = $event" @create-range="onWeekCreate" @scroll-ready="setScroll" />
+      <div class="cal-main">
+        <div class="cal-wrap">
+          <week-view v-if="view === 'week' || view === '5days'"
+            :windows="weekData" :week-dates="visibleWeekDates" :hour-h="hourH"
+            :today-index="todayIndexWeek" :now-hour="weekNowHour" :interactive="interactive"
+            @select="detail = $event" @create-range="onWeekCreate" @scroll-ready="setScroll" />
 
-        <day-view v-else-if="view === 'day'"
-          :windows="dayData" :week-dates="dayViewWeekDates" :day-index="dayIndex" :hour-h="hourH"
-          :is-today="isDayToday" :now-hour="dayNowHour" :interactive="interactive"
-          @select="detail = $event" @create-range="onDayCreate" @scroll-ready="setScroll" />
+          <day-view v-else-if="view === 'day'"
+            :windows="dayData" :week-dates="dayViewWeekDates" :day-index="dayIndex" :hour-h="hourH"
+            :is-today="isDayToday" :now-hour="dayNowHour" :interactive="interactive"
+            @select="detail = $event" @create-range="onDayCreate" @scroll-ready="setScroll" />
 
-        <month-view v-else
-          :windows="filtered" :year="monthCursor.y" :month="monthCursor.m" :today-iso="todayIso"
-          @select-day="onSelectDay" />
+          <agenda-view v-else-if="view === 'agenda'"
+            :windows="weekData" :week-dates="weekDates" :today-index="todayIndexWeek"
+            @select="detail = $event" />
+
+          <month-view v-else
+            :windows="filtered" :year="monthCursor.y" :month="monthCursor.m" :today-iso="todayIso"
+            @select-day="onSelectDay" @select="detail = $event" />
+        </div>
       </div>
 
       <detail-modal v-if="detail" :w="detail" @close="detail = null" @toggle="toggleActive" @delete="removeWindow" @edit="editFromDetail" />
       <create-modal v-if="create" :init="create" @close="create = null" @submit="submitCreate" />
       <div v-if="toast" class="toast"><i class="bx bx-check-circle"></i>{{ toast }}</div>
+      </div>
     </div>
   `,
   mounted() { document.documentElement.dataset.theme = this.theme; document.documentElement.dataset.density = this.density; },

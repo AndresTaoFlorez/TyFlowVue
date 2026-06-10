@@ -4,6 +4,7 @@ import { useCasesStore } from '@/presentation/stores/useCasesStore'
 import CaseStatusTimeline from '@/presentation/components/cases/CaseStatusTimeline.vue'
 import CaseAssignPanel from '@/presentation/components/cases/CaseAssignPanel.vue'
 import CaseReassignModal from '@/presentation/components/cases/CaseReassignModal.vue'
+import AppTag from '@/presentation/components/shared/AppTag.vue'
 import { useCaseDetail } from '@/presentation/composables/useCaseDetail'
 
 const store = useCasesStore()
@@ -127,7 +128,7 @@ function fmtDateTime(iso) {
         <div class="cdp__grid">
           <div v-if="applicationName" class="cdp__field">
             <span class="cdp__label">Aplicación</span>
-            <span class="cdp__value">{{ applicationName }}</span>
+            <span class="cdp__value"><AppTag :application-id="c?.applicationId" :name="applicationName" /></span>
           </div>
           <div v-if="supportLevelName" class="cdp__field">
             <span class="cdp__label">Nivel de soporte</span>

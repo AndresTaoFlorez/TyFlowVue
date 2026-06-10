@@ -9,6 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@fontsource/inter": "^5.2.8",
     "axios": "^1.16.0",
     "boxicons": "^2.1.4",
     "gsap": "^3.15.0",

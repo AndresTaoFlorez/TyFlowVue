@@ -18,6 +18,50 @@ import { fmtHM } from '@/presentation/helpers/formatTime'
 import { fmtDateISO } from '@/presentation/helpers/formatDate'
 import { BP_MOBILE } from '@/presentation/utils/breakpoints'
 
+// ---- Pure date helpers (parametrized by offset) — shared by the store
+// computeds and by useCalendarPages (3-page buffer). ----
+export function weekDatesForOffset(offset) {
+  const now = new Date()
+  const monday = new Date(now)
+  const day = monday.getDay()
+  const diff = day === 0 ? -6 : 1 - day
+  monday.setDate(monday.getDate() + diff + offset * 7)
+  monday.setHours(0, 0, 0, 0)
+  return Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(monday)
+    d.setDate(monday.getDate() + i)
+    return fmtDateISO(d)
+  })
+}
+
+export function dayDateForOffset(offset) {
+  const d = new Date()
+  d.setDate(d.getDate() + offset)
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const dd = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${dd}`
+}
+
+export function monthDatesForOffset(offset) {
+  const now = new Date()
+  const first = new Date(now.getFullYear(), now.getMonth() + offset, 1)
+  const day = first.getDay()
+  const toMonday = day === 0 ? -6 : 1 - day
+  const start = new Date(first)
+  start.setDate(first.getDate() + toMonday)
+  return Array.from({ length: 42 }, (_, i) => {
+    const d = new Date(start)
+    d.setDate(start.getDate() + i)
+    return fmtDateISO(d)
+  })
+}
+
+export function monthNumForOffset(offset) {
+  const now = new Date()
+  return new Date(now.getFullYear(), now.getMonth() + offset, 1).getMonth()
+}
+
 export const useCalendarStore = defineStore('calendar', () => {
   // ---- Navigation ----
   const calView = ref(window.innerWidth < BP_MOBILE ? 'day' : 'week')
@@ -90,46 +134,17 @@ export const useCalendarStore = defineStore('calendar', () => {
         : []
     }
     if (calView.value === 'day') {
-      const d = new Date()
-      d.setDate(d.getDate() + dayOffset.value)
-      const y = d.getFullYear()
-      const m = String(d.getMonth() + 1).padStart(2, '0')
-      const dd = String(d.getDate()).padStart(2, '0')
-      return [`${y}-${m}-${dd}`]
+      return [dayDateForOffset(dayOffset.value)]
     }
-    const now = new Date()
-    const monday = new Date(now)
-    const day = monday.getDay()
-    const diff = day === 0 ? -6 : 1 - day
-    monday.setDate(monday.getDate() + diff + weekOffset.value * 7)
-    monday.setHours(0, 0, 0, 0)
-    return Array.from({ length: 7 }, (_, i) => {
-      const d = new Date(monday)
-      d.setDate(monday.getDate() + i)
-      return fmtDateISO(d)
-    })
+    return weekDatesForOffset(weekOffset.value)
   })
 
   const monthDates = computed(() => {
     if (calView.value !== 'month') return []
-    const now = new Date()
-    const first = new Date(now.getFullYear(), now.getMonth() + monthOffset.value, 1)
-    const day = first.getDay()
-    const toMonday = day === 0 ? -6 : 1 - day
-    const start = new Date(first)
-    start.setDate(first.getDate() + toMonday)
-    return Array.from({ length: 42 }, (_, i) => {
-      const d = new Date(start)
-      d.setDate(start.getDate() + i)
-      return fmtDateISO(d)
-    })
+    return monthDatesForOffset(monthOffset.value)
   })
 
-  const currentMonth = computed(() => {
-    const now = new Date()
-    const d = new Date(now.getFullYear(), now.getMonth() + monthOffset.value, 1)
-    return d.getMonth()
-  })
+  const currentMonth = computed(() => monthNumForOffset(monthOffset.value))
 
   // ---- Label ----
   const isMobile = ref(window.innerWidth < BP_MOBILE)
@@ -595,7 +610,13 @@ export const useCalendarStore = defineStore('calendar', () => {
   async function createWindows(data) {
     const now = new Date()
     for (const item of data) {
+      const startDate = item.scheduledDate || _todayISO()
       const endDate = item.endDate || item.scheduledDate || _todayISO()
+      // El inicio no puede ser anterior a la línea de tiempo (now).
+      const startsAt = WorkWindow.toTimestampTz(startDate, item.startTime || '00:00')
+      if (startsAt && new Date(startsAt) < now) {
+        throw { userMessage: 'No se puede crear una ventana que inicie en el pasado.' }
+      }
       const endsAt = WorkWindow.toTimestampTz(endDate, item.endTime || '23:59')
       if (endsAt && new Date(endsAt) < now) {
         throw { userMessage: 'No se pueden crear ventanas en horarios pasados.' }

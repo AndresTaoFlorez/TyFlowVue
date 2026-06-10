@@ -9,81 +9,100 @@ import { computed } from 'vue'
  *   - { type: 'single', window, _col, _totalCols }
  *   - { type: 'group', windows: [...], startHour, endHour, _col, _totalCols, id }
  */
-export function useWindowGroups(windowsByDay) {
-  return computed(() => {
-    return windowsByDay.value.map(dayWindows => {
-      if (dayWindows.length <= 1) {
-        return dayWindows.map(w => ({ type: 'single', window: w, _col: 0, _totalCols: 1 }))
+/**
+ * Agrupa las ventanas de UN día (función pura, reutilizable).
+ * Devuelve un array de items { type:'single'|'group', ... } con columnas
+ * asignadas. Usado por useWindowGroups y por findGroupForWindow (reconstrucción
+ * de un grupo desde la URL para modales deep-linkables).
+ */
+export function groupDayWindows(dayWindows) {
+  if (!dayWindows || dayWindows.length <= 1) {
+    return (dayWindows || []).map(w => ({ type: 'single', window: w, _col: 0, _totalCols: 1 }))
+  }
+
+  // Group by similar time ranges
+  const groups = []
+  const used = new Set()
+
+  for (let i = 0; i < dayWindows.length; i++) {
+    if (used.has(i)) continue
+    const a = dayWindows[i]
+    const members = [a]
+    used.add(i)
+
+    for (let j = i + 1; j < dayWindows.length; j++) {
+      if (used.has(j)) continue
+      const b = dayWindows[j]
+      if (shouldGroup(a, b)) {
+        members.push(b)
+        used.add(j)
       }
+    }
 
-      // Group by similar time ranges
-      const groups = []
-      const used = new Set()
-
-      for (let i = 0; i < dayWindows.length; i++) {
-        if (used.has(i)) continue
-        const a = dayWindows[i]
-        const members = [a]
-        used.add(i)
-
-        for (let j = i + 1; j < dayWindows.length; j++) {
-          if (used.has(j)) continue
-          const b = dayWindows[j]
-          if (shouldGroup(a, b)) {
-            members.push(b)
-            used.add(j)
-          }
-        }
-
-        if (members.length === 1) {
-          groups.push({ type: 'single', window: a, _col: 0, _totalCols: 1 })
-        } else {
-          const startHour = Math.min(...members.map(m => m.startHour))
-          const endHour = Math.max(...members.map(m => m.endHour))
-          groups.push({
-            type: 'group',
-            windows: members,
-            startHour,
-            endHour,
-            id: `group-${members.map(m => m.id).join('-')}`,
-            _col: 0,
-            _totalCols: 1,
-          })
-        }
-      }
-
-      // Sort by start time
-      const sorted = groups.sort((a, b) => {
-        const aStart = a.type === 'group' ? a.startHour : a.window.startHour
-        const bStart = b.type === 'group' ? b.startHour : b.window.startHour
-        return aStart - bStart
+    if (members.length === 1) {
+      groups.push({ type: 'single', window: a, _col: 0, _totalCols: 1 })
+    } else {
+      const startHour = Math.min(...members.map(m => m.startHour))
+      const endHour = Math.max(...members.map(m => m.endHour))
+      groups.push({
+        type: 'group',
+        windows: members,
+        startHour,
+        endHour,
+        id: `group-${members.map(m => m.id).join('-')}`,
+        _col: 0,
+        _totalCols: 1,
       })
+    }
+  }
 
-      // Build overlap clusters — blocks that overlap transitively share a cluster
-      const clusters = buildClusters(sorted)
-
-      // Assign columns within each cluster independently
-      for (const cluster of clusters) {
-        const colEndTimes = []
-        for (const block of cluster) {
-          const bStart = block.type === 'group' ? block.startHour : block.window.startHour
-          const bEnd = block.type === 'group' ? block.endHour : block.window.endHour
-          let assignedCol = colEndTimes.findIndex(endTime => endTime <= bStart)
-          if (assignedCol === -1) {
-            assignedCol = colEndTimes.length
-            colEndTimes.push(bEnd)
-          } else {
-            colEndTimes[assignedCol] = bEnd
-          }
-          block._col = assignedCol
-        }
-        const totalCols = colEndTimes.length || 1
-        for (const block of cluster) block._totalCols = totalCols
-      }
-
-      return sorted
-    })
+  // Sort by start time
+  const sorted = groups.sort((a, b) => {
+    const aStart = a.type === 'group' ? a.startHour : a.window.startHour
+    const bStart = b.type === 'group' ? b.startHour : b.window.startHour
+    return aStart - bStart
   })
+
+  // Build overlap clusters — blocks that overlap transitively share a cluster
+  const clusters = buildClusters(sorted)
+
+  // Assign columns within each cluster independently
+  for (const cluster of clusters) {
+    const colEndTimes = []
+    for (const block of cluster) {
+      const bStart = block.type === 'group' ? block.startHour : block.window.startHour
+      const bEnd = block.type === 'group' ? block.endHour : block.window.endHour
+      let assignedCol = colEndTimes.findIndex(endTime => endTime <= bStart)
+      if (assignedCol === -1) {
+        assignedCol = colEndTimes.length
+        colEndTimes.push(bEnd)
+      } else {
+        colEndTimes[assignedCol] = bEnd
+      }
+      block._col = assignedCol
+    }
+    const totalCols = colEndTimes.length || 1
+    for (const block of cluster) block._totalCols = totalCols
+  }
+
+  return sorted
+}
+
+/**
+ * Reconstruye el grupo (multi-ventana) que contiene a la ventana `id`, a partir
+ * de la lista plana de todas las ventanas. Devuelve el item group, o null si la
+ * ventana no pertenece a ningún grupo (es individual). Para modales por URL.
+ */
+export function findGroupForWindow(allWindows, id) {
+  const target = (allWindows || []).find(w => w.id === id)
+  if (!target) return null
+  const sameDay = allWindows.filter(w => w.scheduledDate === target.scheduledDate)
+  const items = groupDayWindows(sameDay)
+  return items.find(it => it.type === 'group' && it.windows.some(w => w.id === id)) || null
+}
+
+export function useWindowGroups(windowsByDay) {
+  return computed(() => windowsByDay.value.map(groupDayWindows))
 }
 
 /**

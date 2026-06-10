@@ -23,6 +23,11 @@
   /* Calendar block text anchor (light → darken text, dark → lighten text) */
   --wb-text-anchor: black;
 
+  /* Calendar block surface: base over which the app color is tinted.
+     Light → the card; dark → a near-black so the app color stays vivid
+     (mixing with the slate card turns it muddy). See utils/color.js. */
+  --wb-surface: var(--bg-card);
+
   /* Borders & Shadows */
   --border-light: #E5E7EB;
   --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.05);
@@ -122,11 +127,11 @@
   --cal-slot-h: 24px;
   --cal-gutter-w: 4rem;
 
-  /* Calendar color system (light defaults) */
+  /* Calendar color system (light defaults) — rejilla de un solo fondo */
   --cal-shell: #ffffff;
-  --cal-header: #f8f9fb;
+  --cal-header: #ffffff;
   --cal-col: #ffffff;
-  --cal-col-alt: #f8f9fb;
+  --cal-col-alt: #ffffff;
   --cal-col-other: #f4f5f7;
   --cal-border: #e6e8ee;
   --cal-grid: #eceef3;
@@ -186,6 +191,9 @@
 
   --wb-text-anchor: white;
 
+  /* Near-black surface for calendar blocks (keeps app color vivid in dark). */
+  --wb-surface: #0F141C;
+
   /* Borders & Shadows */
   --border-light: #374151;
   --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.3);
@@ -244,22 +252,22 @@
   --priority-high-bg: #7C2D12;
   --priority-urgent-bg: #7F1D1D;
 
-  /* Calendar color system (dark) */
-  --cal-shell: #292d3e;
-  --cal-header: #252839;
-  --cal-col: #292d3e;
-  --cal-col-alt: #262938;
-  --cal-col-other: #242736;
-  --cal-border: #3b3f54;
-  --cal-grid: #33374a;
-  --cal-grid-half: #2c3042;
+  /* Calendar color system (dark) — cuadrilla de UN solo tono profundo */
+  --cal-shell: #09101a;
+  --cal-header: #09101a;
+  --cal-col: #09101a;
+  --cal-col-alt: #09101a;
+  --cal-col-other: #070c15;
+  --cal-border: #1b2233;
+  --cal-grid: #161d2b;
+  --cal-grid-half: #11161f;
   --cal-text: #c8cdd8;
   --cal-text-dim: #6c7293;
   --cal-text-other: #4a4e66;
-  --cal-today-tint: rgba(42,199,143,0.045);
+  --cal-today-tint: rgba(42,199,143,0.05);
   --cal-hover: rgba(255,255,255,0.035);
   --cal-overlay: rgba(255,255,255,0.08);
-  --block-mix-bg: #292d3e;
+  --block-mix-bg: #09101a;
   --block-text-light: 78%;
   --inactive-fill: rgba(120, 128, 150, 0.10);
   --inactive-stripe: rgba(120, 128, 150, 0.16);

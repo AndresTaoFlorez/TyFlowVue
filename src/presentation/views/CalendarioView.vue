@@ -1,6 +1,8 @@
 <script setup>
-import { ref, computed, nextTick, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
+import { findGroupForWindow } from '@/presentation/composables/useWindowGroups'
 import { useAuthStore } from '@/presentation/stores/useAuthStore'
 import { useUserStore } from '@/presentation/stores/useUserStore'
 import { useCalendarStore } from '@/presentation/stores/useCalendarStore'
@@ -18,6 +20,8 @@ import { useCalendarRealtime } from '@/presentation/composables/useCalendarRealt
 const authStore = useAuthStore()
 const userStore = useUserStore()
 const calStore = useCalendarStore()
+const route = useRoute()
+const router = useRouter()
 
 useCalendarRealtime()
 
@@ -361,6 +365,16 @@ const onRangeSelected = (range) => {
     const endMins = Math.floor(range.endHour) * 60 + Math.round((range.endHour % 1) * 60)
     if (endMins <= nextGridSlotMins() - 30) {
       showToast('No se pueden crear ventanas en horarios pasados.', 'error')
+      return
+    }
+  }
+  // El inicio no puede ser anterior a la línea de tiempo (now).
+  const startDate = range.days?.[0]?.date || range.date
+  if (startDate === todayISOLocal()) {
+    const startMins = Math.floor(range.startHour) * 60 + Math.round((range.startHour % 1) * 60)
+    const now = new Date()
+    if (startMins < now.getHours() * 60 + now.getMinutes()) {
+      showToast('No se puede crear una ventana que inicie en el pasado.', 'error')
       return
     }
   }
@@ -729,6 +743,57 @@ const onKeydown = (e) => {
     if (selectedWindow.value) { handleDelete(selectedWindow.value); return }
   }
 }
+
+// ---- Modales deep-linkables (URL ↔ estado, con botón Atrás) ----
+// Sincronización bidireccional guardada contra bucles. La URL refleja el modal
+// abierto: ?window=<id> (single) o ?group=<id-de-una-ventana-del-grupo>.
+let _modalSyncing = false
+
+// refs → URL (abrir = push para que Atrás cierre; cerrar = replace)
+watch([selectedWindow, selectedGroup], ([w, g]) => {
+  if (_modalSyncing) return
+  const q = { ...route.query }
+  delete q.window
+  delete q.group
+  if (w) q.window = w.id
+  else if (g) q.group = g.windows?.[0]?.id
+  if (q.window === route.query.window && q.group === route.query.group) return
+  const opening = !!(w || g)
+  _modalSyncing = true
+  const nav = opening ? router.push({ query: q }) : router.replace({ query: q })
+  Promise.resolve(nav).catch(() => {}).finally(() => { _modalSyncing = false })
+})
+
+// URL → refs (Atrás/Adelante, deep-link en frío)
+function syncModalsFromRoute() {
+  if (_modalSyncing) return
+  const wid = route.query.window
+  const gid = route.query.group
+  _modalSyncing = true
+  if (wid) {
+    selectedWindow.value = calStore.windows.find(w => w.id === wid) || null
+    selectedGroup.value = null
+  } else if (gid) {
+    selectedGroup.value = findGroupForWindow(calStore.windows, gid)
+    selectedWindow.value = null
+  } else {
+    selectedWindow.value = null
+    selectedGroup.value = null
+    returnToGroup.value = null
+  }
+  _modalSyncing = false
+}
+watch(() => [route.query.window, route.query.group], syncModalsFromRoute, { immediate: true })
+
+// Reintentar resolución cuando las ventanas cargan tarde (deep-link en frío)
+watch(() => calStore.windows, () => {
+  if (route.query.window && !selectedWindow.value) {
+    selectedWindow.value = calStore.windows.find(w => w.id === route.query.window) || null
+  }
+  if (route.query.group && !selectedGroup.value) {
+    selectedGroup.value = findGroupForWindow(calStore.windows, route.query.group)
+  }
+})
 
 onMounted(() => {
   calStore.loadWindows()

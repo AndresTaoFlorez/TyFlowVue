@@ -67,18 +67,24 @@ const AllDayMore = {
   template: `<div class="adc adc--more" @click="$emit('expand')"><span class="adc__name">+{{ count }} más</span></div>`,
 };
 
-// Chip de celda de mes
+// Barra de ventana en celda de mes (estilo "calendar bar")
 const MonthChip = {
   name: 'MonthChip',
   props: ['w'],
+  emits: ['select'],
   computed: {
     app() { return appById(this.w.appId); },
     spec() { return specById(this.w.specialistId); },
   },
+  methods: {
+    fmtHour,
+    onClick(e) { e.stopPropagation(); this.$emit('select', this.w); },
+  },
   template: `
-    <div :class="['mcal__chip', !w.active && 'mcal__chip--inactive']" :style="{ '--app': app.color }">
-      <span class="mcal__chip-dot"></span>
-      <span class="mcal__chip-text">{{ spec.fullName.split(' ')[0] }} · {{ app.short }}</span>
+    <div :class="['mcal__chip', !w.active && 'mcal__chip--inactive']" :style="{ '--app': app.color }"
+         @click="onClick" :title="spec.fullName + ' · ' + app.name">
+      <span class="mcal__chip-time">{{ fmtHour(w.start, true) }}</span>
+      <span class="mcal__chip-text">{{ spec.fullName }}</span>
     </div>
   `,
 };
