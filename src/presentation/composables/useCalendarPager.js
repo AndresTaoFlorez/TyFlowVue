@@ -25,17 +25,21 @@ import gsap from 'gsap'
  * @param {() => boolean} [opts.isBlocked]
  */
 export function useCalendarPager({ getTrack, getViewMode, onNavigate, isBlocked }) {
-  const DURATION = 0.19
-  const EASE = 'power2.out'
+  const DURATION = 0.2
+  const EASE = 'power3.out'        // salida más suave, menos brusca
   const STEP = 100 / 3              // un slot = 1/3 del ancho del track
   const CENTER = -STEP             // página central
   const WHEEL_COMMIT = 90          // px de delta acumulado para confirmar
-  const TOUCH_COMMIT = 80          // px de arrastre para confirmar
+  // Swipe táctil estilo Google Calendar: confirma con poco arrastre…
+  const TOUCH_COMMIT = 48          // px mínimos de arrastre para confirmar
+  const TOUCH_FRACTION = 0.16      // …o una fracción del ancho de página
+  const FLICK_VELOCITY = 0.4       // …o un flick rápido (px/ms) aunque sea corto
 
   let animating = false
   let wheelAcc = 0
   let wheelTimer = null
   let startX = 0, startY = 0, lock = null, dragDx = 0, touchActive = false
+  let lastX = 0, lastT = 0, velocity = 0  // para detección de flick (px/ms)
 
   const _track = () => getTrack()
   const _pxToPct = (px) => {
@@ -127,6 +131,7 @@ export function useCalendarPager({ getTrack, getViewMode, onNavigate, isBlocked 
     const t = e.touches[0]
     if (!t) return
     startX = t.clientX; startY = t.clientY; lock = null; dragDx = 0; touchActive = true
+    lastX = t.clientX; lastT = performance.now(); velocity = 0
   }
   const onTouchMove = (e) => {
     if (!touchActive) return
@@ -137,11 +142,16 @@ export function useCalendarPager({ getTrack, getViewMode, onNavigate, isBlocked 
     const dx = t.clientX - startX
     const dy = t.clientY - startY
     if (lock === null) {
-      if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return
+      if (Math.abs(dx) < 6 && Math.abs(dy) < 6) return
       lock = Math.abs(dx) >= Math.abs(dy) ? 'h' : 'v'
     }
     if (lock !== 'h') return
     if (e.cancelable) e.preventDefault()
+    // Velocidad instantánea (px/ms) para detectar flicks rápidos cortos.
+    const nowT = performance.now()
+    const ddt = nowT - lastT
+    if (ddt > 0) velocity = (t.clientX - lastX) / ddt
+    lastX = t.clientX; lastT = nowT
     dragDx = dx
     _set(CENTER + _pxToPct(dx))
   }
@@ -150,9 +160,17 @@ export function useCalendarPager({ getTrack, getViewMode, onNavigate, isBlocked 
     touchActive = false
     if (!wasActive || lock !== 'h') { lock = null; return }
     lock = null
-    if (Math.abs(dragDx) >= TOUCH_COMMIT) _commit(dragDx > 0 ? -1 : 1)
+    const t = _track()
+    const pageW = t ? t.offsetWidth / 3 : window.innerWidth
+    const distThreshold = Math.min(TOUCH_COMMIT, pageW * TOUCH_FRACTION)
+    const farEnough = Math.abs(dragDx) >= distThreshold
+    // Un flick rápido confirma aunque el arrastre sea corto, si va en la misma
+    // dirección que el desplazamiento neto (evita rebotes accidentales).
+    const flick = Math.abs(velocity) >= FLICK_VELOCITY &&
+      Math.sign(velocity) === Math.sign(dragDx) && Math.abs(dragDx) > 8
+    if (farEnough || flick) _commit(dragDx > 0 ? -1 : 1)
     else _springBack()
-    dragDx = 0
+    dragDx = 0; velocity = 0
   }
 
   onBeforeUnmount(() => {

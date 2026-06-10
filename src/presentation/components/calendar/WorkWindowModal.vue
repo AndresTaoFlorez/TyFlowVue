@@ -10,9 +10,10 @@ const props = defineProps({
   loading: { type: Boolean, default: false },
   startInEditMode: { type: Boolean, default: false },
   showBackButton: { type: Boolean, default: false },
+  hasClipboard: { type: Boolean, default: false },
 })
 
-const emit = defineEmits(['close', 'toggle', 'delete', 'update', 'back', 'disinherit', 'reinherit'])
+const emit = defineEmits(['close', 'toggle', 'delete', 'update', 'back', 'disinherit', 'reinherit', 'copy', 'cut', 'add-specialist', 'paste'])
 
 const idCopied = ref(false)
 const inheritIdCopied = ref(false)
@@ -279,6 +280,23 @@ const statusClass = computed(() => {
         <button v-else-if="!hasInheritance && canToggleInheritance" class="wm__badge wm__badge--toggle" @click="$emit('reinherit', window)" :disabled="loading">
           <i class='bx bx-link'></i> Activar herencia
         </button>
+
+        <!-- Acciones rápidas (antes en el menú contextual flotante; ahora dentro
+             del detalle para que no choquen con el long-press de mover). -->
+        <div v-if="!editing" class="wm__actions">
+          <button class="wm__action" @click="$emit('copy', window)">
+            <i class='bx bx-copy'></i><span>Copiar</span>
+          </button>
+          <button v-if="isFuture" class="wm__action" @click="$emit('cut', window)">
+            <i class='bx bx-cut'></i><span>Cortar</span>
+          </button>
+          <button v-if="isFuture" class="wm__action" @click="$emit('add-specialist', window)">
+            <i class='bx bx-user-plus'></i><span>Agregar especialista</span>
+          </button>
+          <button v-if="hasClipboard" class="wm__action" @click="$emit('paste', window)">
+            <i class='bx bx-paste'></i><span>Pegar aquí</span>
+          </button>
+        </div>
 
         <!-- Window ID -->
         <div class="wm__id-row" @click="copyId(window.id, idCopied)" title="Copiar ID">
@@ -631,6 +649,32 @@ const statusClass = computed(() => {
   cursor: not-allowed;
 }
 
+/* ===== Acciones rápidas ===== */
+.wm__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 2px 0;
+}
+
+.wm__action {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  background: var(--bg-card);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-full);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.wm__action:hover { color: var(--text-primary); background: var(--bg-main); }
+.wm__action i { font-size: 14px; }
+
 /* ===== ID row ===== */
 .wm__id-row {
   display: flex;
@@ -793,10 +837,31 @@ const statusClass = computed(() => {
   to   { transform: scale(0.93) translateY(8px); opacity: 0; }
 }
 
+/* Móvil: el detalle se presenta a pantalla completa (subruta estilo Google
+   Calendar), no como caja flotante centrada. */
 @media (max-width: 480px) {
-  .wm {
-    max-width: calc(100% - 2rem);
-    border-radius: var(--radius-md);
+  .modal-overlay {
+    padding: 0;
+    align-items: stretch;
   }
+  .wm {
+    max-width: 100%;
+    width: 100%;
+    height: 100dvh;
+    max-height: 100dvh;
+    border-radius: 0;
+  }
+  /* Entrada como hoja que sube, no pop centrado. */
+  .ww-modal-enter-active .wm { animation: wm-sheet-up 0.22s cubic-bezier(0.2, 0.8, 0.2, 1); }
+  .ww-modal-leave-active .wm { animation: wm-sheet-down 0.18s ease forwards; }
+}
+
+@keyframes wm-sheet-up {
+  from { transform: translateY(100%); }
+  to   { transform: translateY(0); }
+}
+@keyframes wm-sheet-down {
+  from { transform: translateY(0); }
+  to   { transform: translateY(100%); }
 }
 </style>

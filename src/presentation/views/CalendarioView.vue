@@ -714,6 +714,28 @@ const closeWindowModal = () => {
   }
 }
 
+// ---- Acciones de contexto dentro del detalle (móvil: reemplazan el menú
+// contextual flotante, que choca con el long-press de mover). ----
+const handleModalCopy = (w) => {
+  clipboard.value = { type: 'window', data: w, cut: false }
+  cutWindowIds.value = new Set()
+  showToast('Ventana copiada.')
+}
+const handleModalCut = (w) => {
+  clipboard.value = { type: 'window', data: w, cut: true }
+  cutWindowIds.value = new Set([w.id])
+  showToast('Ventana cortada.')
+}
+const handleModalAddSpecialist = (w) => {
+  prefillData.value = { dates: [w.scheduledDate], startTime: w.startTime, endTime: w.endTime, applicationId: w.applicationId }
+  closeWindowModal()
+  mostrarCrear.value = true
+}
+const handleModalPaste = async (w) => {
+  closeWindowModal()
+  await pasteOnSlot(w.scheduledDate, w.startTime, w.endTime)
+}
+
 // ---- Resize listener ----
 function onResize() { calStore.updateMobile(window.innerWidth < BP_MOBILE) }
 
@@ -760,19 +782,24 @@ function isTypingTarget(el) {
 
 // ---- Modales deep-linkables (URL ↔ estado, con botón Atrás) ----
 // Sincronización bidireccional guardada contra bucles. La URL refleja el modal
-// abierto: ?window=<id> (single) o ?group=<id-de-una-ventana-del-grupo>.
+// abierto: ?window=<id> (detalle), ?group=<id-de-una-ventana-del-grupo>, o
+// ?new=1 (crear). En móvil estos se presentan a pantalla completa (subruta
+// estilo Google Calendar): Atrás cierra. Los tres van en UN solo watch para que
+// transiciones en el mismo tick (p.ej. detalle→crear) no choquen con el guard.
 let _modalSyncing = false
 
 // refs → URL (abrir = push para que Atrás cierre; cerrar = replace)
-watch([selectedWindow, selectedGroup], ([w, g]) => {
+watch([selectedWindow, selectedGroup, mostrarCrear], ([w, g, creating]) => {
   if (_modalSyncing) return
   const q = { ...route.query }
   delete q.window
   delete q.group
+  delete q.new
   if (w) q.window = w.id
   else if (g) q.group = g.windows?.[0]?.id
-  if (q.window === route.query.window && q.group === route.query.group) return
-  const opening = !!(w || g)
+  else if (creating) q.new = '1'
+  if (q.window === route.query.window && q.group === route.query.group && q.new === route.query.new) return
+  const opening = !!(w || g || creating)
   _modalSyncing = true
   const nav = opening ? router.push({ query: q }) : router.replace({ query: q })
   Promise.resolve(nav).catch(() => {}).finally(() => { _modalSyncing = false })
@@ -783,21 +810,33 @@ function syncModalsFromRoute() {
   if (_modalSyncing) return
   const wid = route.query.window
   const gid = route.query.group
+  const isNew = route.query.new
   _modalSyncing = true
   if (wid) {
-    selectedWindow.value = calStore.windows.find(w => w.id === wid) || null
-    selectedGroup.value = null
+    // No reasignar si ya apunta a la misma ventana (evita churn de prop → parpadeo).
+    if (selectedWindow.value?.id !== wid) {
+      selectedWindow.value = calStore.windows.find(w => w.id === wid) || null
+    }
+    if (selectedGroup.value) selectedGroup.value = null
+    if (mostrarCrear.value) mostrarCrear.value = false
   } else if (gid) {
     selectedGroup.value = findGroupForWindow(calStore.windows, gid)
     selectedWindow.value = null
+    mostrarCrear.value = false
+  } else if (isNew) {
+    selectedWindow.value = null
+    selectedGroup.value = null
+    mostrarCrear.value = true
   } else {
     selectedWindow.value = null
     selectedGroup.value = null
     returnToGroup.value = null
+    // Cerrar crear y limpiar su estado al volver con Atrás.
+    if (mostrarCrear.value) { mostrarCrear.value = false; errorCrear.value = ''; prefillData.value = null }
   }
   _modalSyncing = false
 }
-watch(() => [route.query.window, route.query.group], syncModalsFromRoute, { immediate: true })
+watch(() => [route.query.window, route.query.group, route.query.new], syncModalsFromRoute, { immediate: true })
 
 // Reintentar resolución cuando las ventanas cargan tarde (deep-link en frío)
 watch(() => calStore.windows, (wins) => {
@@ -1012,9 +1051,12 @@ onUnmounted(() => {
         :application-name="calStore.appName(selectedWindow)" :loading="modalLoading"
         :start-in-edit-mode="openModalInEdit"
         :show-back-button="!!returnToGroup"
+        :has-clipboard="!!clipboard"
         @close="closeWindowModal" @back="closeWindowModal"
         @delete="handleDelete" @update="handleUpdate" @toggle="handleToggle"
-        @disinherit="handleDisinherit" @reinherit="handleReinherit" />
+        @disinherit="handleDisinherit" @reinherit="handleReinherit"
+        @copy="handleModalCopy" @cut="handleModalCut"
+        @add-specialist="handleModalAddSpecialist" @paste="handleModalPaste" />
     </Transition>
 
     <!-- Panel grupo -->

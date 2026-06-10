@@ -1,77 +1,50 @@
 import { computed } from 'vue'
 
 /**
- * Groups overlapping windows per day.
- * Windows are grouped when they share the same scheduledDate
- * and their startHour/endHour are identical (or overlap > 80%).
+ * Posiciona las ventanas de UN día (función pura, reutilizable).
  *
- * Returns: Array[days] of arrays, each containing either:
- *   - { type: 'single', window, _col, _totalCols }
- *   - { type: 'group', windows: [...], startHour, endHour, _col, _totalCols, id }
+ * Ya NO se agrupan ventanas: cada una es un item { type:'single', window }.
+ * Los solapes se resuelven con columnas lado a lado (estilo Google Calendar)
+ * mediante buildClusters + asignación de _col/_totalCols. Nunca se devuelve
+ * type:'group'.
+ *
+ * Devuelve un array de items { type:'single', window, _col, _totalCols }.
+ * Usado por useWindowGroups y por findGroupForWindow (que sobre singles siempre
+ * retorna null, comportamiento esperado para el deep-link ?group=).
+ *
+ * `getName(window) => string` resuelve el nombre del especialista para ORDENAR
+ * las columnas (ver abajo). Si no se pasa, cae a specialistId.
  */
-/**
- * Agrupa las ventanas de UN día (función pura, reutilizable).
- * Devuelve un array de items { type:'single'|'group', ... } con columnas
- * asignadas. Usado por useWindowGroups y por findGroupForWindow (reconstrucción
- * de un grupo desde la URL para modales deep-linkables).
- */
-export function groupDayWindows(dayWindows) {
-  if (!dayWindows || dayWindows.length <= 1) {
-    return (dayWindows || []).map(w => ({ type: 'single', window: w, _col: 0, _totalCols: 1 }))
-  }
+export function groupDayWindows(dayWindows, getName) {
+  // Una ventana por bloque, ordenadas por hora de inicio.
+  const sorted = (dayWindows || [])
+    .map(w => ({ type: 'single', window: w, _col: 0, _totalCols: 1 }))
+    .sort((a, b) => a.window.startHour - b.window.startHour)
 
-  // Group by similar time ranges
-  const groups = []
-  const used = new Set()
-
-  for (let i = 0; i < dayWindows.length; i++) {
-    if (used.has(i)) continue
-    const a = dayWindows[i]
-    const members = [a]
-    used.add(i)
-
-    for (let j = i + 1; j < dayWindows.length; j++) {
-      if (used.has(j)) continue
-      const b = dayWindows[j]
-      if (shouldGroup(a, b)) {
-        members.push(b)
-        used.add(j)
-      }
-    }
-
-    if (members.length === 1) {
-      groups.push({ type: 'single', window: a, _col: 0, _totalCols: 1 })
-    } else {
-      const startHour = Math.min(...members.map(m => m.startHour))
-      const endHour = Math.max(...members.map(m => m.endHour))
-      groups.push({
-        type: 'group',
-        windows: members,
-        startHour,
-        endHour,
-        id: `group-${members.map(m => m.id).join('-')}`,
-        _col: 0,
-        _totalCols: 1,
-      })
-    }
-  }
-
-  // Sort by start time
-  const sorted = groups.sort((a, b) => {
-    const aStart = a.type === 'group' ? a.startHour : a.window.startHour
-    const bStart = b.type === 'group' ? b.startHour : b.window.startHour
-    return aStart - bStart
-  })
+  if (sorted.length <= 1) return sorted
 
   // Build overlap clusters — blocks that overlap transitively share a cluster
+  // (la detección de clusters necesita orden por hora de inicio).
   const clusters = buildClusters(sorted)
 
-  // Assign columns within each cluster independently
+  // Orden de COLUMNAS (izquierda→derecha), consistente siempre:
+  //   1º alfabético por nombre del especialista,
+  //   2º (desempate) por duración del rango de mayor a menor.
+  const nameOf = (b) => (getName ? getName(b.window) : b.window.specialistId) || ''
+  const durOf = (b) => b.window.endHour - b.window.startHour
+  const colOrder = (a, b) => {
+    const n = nameOf(a).localeCompare(nameOf(b), 'es', { sensitivity: 'base' })
+    if (n !== 0) return n
+    return durOf(b) - durOf(a)
+  }
+
+  // Assign columns within each cluster independently, recorriendo los bloques en
+  // el orden deseado para que el índice de columna refleje (nombre, -duración).
   for (const cluster of clusters) {
     const colEndTimes = []
-    for (const block of cluster) {
-      const bStart = block.type === 'group' ? block.startHour : block.window.startHour
-      const bEnd = block.type === 'group' ? block.endHour : block.window.endHour
+    for (const block of [...cluster].sort(colOrder)) {
+      const bStart = block.window.startHour
+      const bEnd = block.window.endHour
       let assignedCol = colEndTimes.findIndex(endTime => endTime <= bStart)
       if (assignedCol === -1) {
         assignedCol = colEndTimes.length
@@ -101,8 +74,8 @@ export function findGroupForWindow(allWindows, id) {
   return items.find(it => it.type === 'group' && it.windows.some(w => w.id === id)) || null
 }
 
-export function useWindowGroups(windowsByDay) {
-  return computed(() => windowsByDay.value.map(groupDayWindows))
+export function useWindowGroups(windowsByDay, getName) {
+  return computed(() => windowsByDay.value.map(d => groupDayWindows(d, getName)))
 }
 
 /**
@@ -143,21 +116,4 @@ function blockStart(block) {
 
 function blockEnd(block) {
   return block.type === 'group' ? block.endHour : block.window.endHour
-}
-
-function shouldGroup(a, b) {
-  // Exact match
-  if (a.startHour === b.startHour && a.endHour === b.endHour) return true
-
-  // Same start or same end → always group
-  if (a.startHour === b.startHour || a.endHour === b.endHour) return true
-
-  // Overlap > 80%
-  const overlapStart = Math.max(a.startHour, b.startHour)
-  const overlapEnd = Math.min(a.endHour, b.endHour)
-  if (overlapEnd <= overlapStart) return false
-
-  const overlap = overlapEnd - overlapStart
-  const maxDuration = Math.max(a.endHour - a.startHour, b.endHour - b.startHour)
-  return (overlap / maxDuration) > 0.8
 }

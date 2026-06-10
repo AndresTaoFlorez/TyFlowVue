@@ -336,6 +336,63 @@ const selectionLabel = computed(() => {
   return `${fmtSlotTime(selSlotMin.value)} – ${fmtSlotTime(selSlotMax.value)}`
 })
 
+// ---- Marquee de selección 2D (modo "select", solo ratón) ----
+// Rectángulo real en coordenadas de cliente: selecciona SOLO las ventanas cuyo
+// recuadro realmente toca (incluida la columna), y no se traba en los bordes
+// porque el rastreo es a nivel window (no celda por celda). En móvil la
+// selección granular se hace por toque (clic alterna), no con marquee.
+const calRootEl = ref(null)
+const selectMarquee = ref(null) // { x0, y0, x1, y1 } | null
+let _marqueeMoved = false
+
+const marqueeStyle = computed(() => {
+  const m = selectMarquee.value
+  if (!m) return null
+  return {
+    left: Math.min(m.x0, m.x1) + 'px',
+    top: Math.min(m.y0, m.y1) + 'px',
+    width: Math.abs(m.x1 - m.x0) + 'px',
+    height: Math.abs(m.y1 - m.y0) + 'px',
+  }
+})
+
+const onMarqueeMove = (e) => {
+  if (!selectMarquee.value) return
+  selectMarquee.value = { ...selectMarquee.value, x1: e.clientX, y1: e.clientY }
+  if (Math.abs(e.clientX - selectMarquee.value.x0) > 3 ||
+      Math.abs(e.clientY - selectMarquee.value.y0) > 3) _marqueeMoved = true
+}
+
+const onMarqueeEnd = () => {
+  window.removeEventListener('mousemove', onMarqueeMove)
+  window.removeEventListener('mouseup', onMarqueeEnd)
+  const m = selectMarquee.value
+  selectMarquee.value = null
+  if (!m || !_marqueeMoved) { _marqueeMoved = false; return }
+  _marqueeMoved = false
+  const rx0 = Math.min(m.x0, m.x1), rx1 = Math.max(m.x0, m.x1)
+  const ry0 = Math.min(m.y0, m.y1), ry1 = Math.max(m.y0, m.y1)
+  const ids = new Set(props.selectedWindowIds)
+  const root = calRootEl.value
+  if (root) {
+    for (const el of root.querySelectorAll('[data-window-id]')) {
+      const r = el.getBoundingClientRect()
+      // Intersección de rectángulos (toque real, no solo rango de tiempo).
+      if (r.left < rx1 && r.right > rx0 && r.top < ry1 && r.bottom > ry0) {
+        ids.add(el.dataset.windowId)
+      }
+    }
+  }
+  emit('selection-change', ids)
+}
+
+const startMarquee = (x, y) => {
+  selectMarquee.value = { x0: x, y0: y, x1: x, y1: y }
+  _marqueeMoved = false
+  window.addEventListener('mousemove', onMarqueeMove)
+  window.addEventListener('mouseup', onMarqueeEnd)
+}
+
 const onCellMousedown = (dayIdx, slot, e) => {
   if (!props.selectable) return
   if (e && e.button === 2) return // ignore right-click
@@ -344,12 +401,8 @@ const onCellMousedown = (dayIdx, slot, e) => {
     return
   }
   if (props.activeTool === 'select') {
-    // Start rectangle selection drag
-    dragging.value = true
-    dragStartDay.value = dayIdx
-    dragStartSlot.value = slot
-    dragEndDay.value = dayIdx
-    dragEndSlot.value = slot
+    // Marquee 2D real (coords de cliente), rastreado a nivel window.
+    if (e) startMarquee(e.clientX, e.clientY)
     return
   }
   // Block creation drag on past cells (default tool only)
@@ -427,10 +480,8 @@ const touchActive = ref(false)
 let blockDragTimer = null   // long-press timer for mobile block/group drag
 let _pendingDrag = null     // { type, w|group, dayIdx, startX, startY }
 
-// Mobile double-tap: first tap preselects slot, second tap triggers creation
-const mobileTapSlot = ref(null) // { dayIdx, slot }
-let mobileTapTimer = null
-
+// Móvil: un solo toque en una celda vacía abre la vista de crear (estilo Google
+// Calendar). Sin doble-tap ni recuadro fantasma de "toca de nuevo".
 const onCellTap = (dayIdx, slot) => {
   if (!props.selectable || !props.isMobile) return
 
@@ -443,39 +494,22 @@ const onCellTap = (dayIdx, slot) => {
     if (slotEndMins <= nowMins) return
   }
 
-  // If same slot tapped again → emit range-selected to open creation modal
-  if (mobileTapSlot.value && mobileTapSlot.value.dayIdx === dayIdx && mobileTapSlot.value.slot === slot) {
-    clearTimeout(mobileTapTimer)
-    const startH = Math.floor(slot / 2)
-    const startM = (slot % 2) * 30
-    const endSlot = slot + 2 // default 1-hour selection
-    const endH = Math.floor(endSlot / 2)
-    const endM = (endSlot % 2) * 30
-    emit('range-selected', {
-      days: [{ dayIndex: dayIdx, date: props.weekDates[dayIdx] }],
-      dayIndex: dayIdx,
-      date: props.weekDates[dayIdx],
-      startHour: startH + startM / 60,
-      endHour: endH + endM / 60,
-    })
-    mobileTapSlot.value = null
-    return
-  }
-
-  // First tap — preselect
-  mobileTapSlot.value = { dayIdx, slot }
-  // Auto-clear preselection after 2 seconds
-  clearTimeout(mobileTapTimer)
-  mobileTapTimer = setTimeout(() => { mobileTapSlot.value = null }, 2000)
+  const startH = Math.floor(slot / 2)
+  const startM = (slot % 2) * 30
+  const endSlot = slot + 2 // default 1-hour selection
+  const endH = Math.floor(endSlot / 2)
+  const endM = (endSlot % 2) * 30
+  emit('range-selected', {
+    days: [{ dayIndex: dayIdx, date: props.weekDates[dayIdx] }],
+    dayIndex: dayIdx,
+    date: props.weekDates[dayIdx],
+    startHour: startH + startM / 60,
+    endHour: endH + endM / 60,
+  })
 }
 
-const mobilePreselectionStyle = computed(() => {
-  if (!mobileTapSlot.value) return null
-  return {
-    top: mobileTapSlot.value.slot * SLOT_H.value + 'px',
-    height: SLOT_H.value * 2 + 'px', // 1-hour block preview
-  }
-})
+// Coordenadas del toque inicial para distinguir tap de scroll/swipe.
+let cellTapStartX = 0, cellTapStartY = 0
 
 const onCellTouchstart = (dayIdx, slot, e) => {
   if (!props.selectable) return
@@ -485,15 +519,15 @@ const onCellTouchstart = (dayIdx, slot, e) => {
     return
   }
   if (props.activeTool === 'select') {
-    dragging.value = true
-    dragStartDay.value = dayIdx
-    dragStartSlot.value = slot
-    dragEndDay.value = dayIdx
-    dragEndSlot.value = slot
+    // En móvil la selección granular es por TOQUE en cada ventana (clic alterna),
+    // no con marquee (evita chocar con el swipe de navegación). Tocar una celda
+    // vacía en modo select no hace nada.
     return
   }
   if (props.isMobile) {
     // On mobile with default tool, use tap-based creation (handled in onCellTouchendTap)
+    cellTapStartX = e.touches?.[0]?.clientX ?? 0
+    cellTapStartY = e.touches?.[0]?.clientY ?? 0
     return
   }
   // Desktop touch: long-press to start drag
@@ -506,6 +540,9 @@ const onCellTouchstart = (dayIdx, slot, e) => {
 const onCellTouchendTap = (dayIdx, slot, e) => {
   if (!props.selectable || !props.isMobile) return
   if (props.activeTool === 'eraser' || props.activeTool === 'select') return
+  // Si el dedo se movió (scroll vertical / swipe), no fue un tap → no crear.
+  const t = e.changedTouches?.[0]
+  if (t && (Math.abs(t.clientX - cellTapStartX) > 10 || Math.abs(t.clientY - cellTapStartY) > 10)) return
   onCellTap(dayIdx, slot)
 }
 
@@ -1174,14 +1211,10 @@ const onSelectClick = (w, e) => {
       const [from, to] = lastIdx < currIdx ? [lastIdx, currIdx] : [currIdx, lastIdx]
       for (let i = from; i <= to; i++) ids.add(allWindows[i].id)
     }
-  } else if (e.ctrlKey || e.metaKey) {
-    // Toggle individual
+  } else {
+    // Clic/tap simple → ALTERNAR esta ventana (selección granular sin Ctrl).
     if (ids.has(id)) ids.delete(id)
     else ids.add(id)
-  } else {
-    // Single select
-    ids.clear()
-    ids.add(id)
   }
 
   lastSelectedId = id
@@ -1255,6 +1288,8 @@ onUnmounted(() => {
   if (el) el.removeEventListener('scroll', onScrollContainer)
   document.removeEventListener('mousemove', onColResizeMove)
   document.removeEventListener('mouseup', onColResizeEnd)
+  window.removeEventListener('mousemove', onMarqueeMove)
+  window.removeEventListener('mouseup', onMarqueeEnd)
 })
 
 // ---- Windows by day (supports multi-day windows) ----
@@ -1302,7 +1337,9 @@ const windowsByDay = computed(() => {
   return byDay
 })
 
-const groupedByDay = useWindowGroups(windowsByDay)
+// Orden de columnas por nombre de especialista (resuelto vía specName, que lee
+// props.specialists). El resolver se evalúa al renderizar, cuando specName ya existe.
+const groupedByDay = useWindowGroups(windowsByDay, (w) => specName(w))
 
 // Multi-day position for resize handle visibility
 const _multiDayPos = (w) => {
@@ -1355,6 +1392,10 @@ let longPressTimer = null
 let longPressFired = false
 
 const onLongPressStart = (emitFn, e) => {
+  // En móvil el long-press se reserva para ARRASTRAR la ventana; el menú
+  // contextual flotante se elimina (las acciones viven dentro del detalle).
+  // Así el gesto de mover y el menú dejan de cruzarse.
+  if (props.isMobile) return
   longPressFired = false
   const touch = e.touches?.[0]
   if (!touch) return
@@ -1570,6 +1611,7 @@ watch(periodKey, (newKey, oldKey) => {
 
 <template>
   <div
+    ref="calRootEl"
     class="cal"
     :class="{ 'cal--selectable': selectable, 'cal--eraser': activeTool === 'eraser', 'cal--select-tool': activeTool === 'select' }"
     :data-density="density"
@@ -1581,6 +1623,9 @@ watch(periodKey, (newKey, oldKey) => {
     @touchend="onTouchend"
     @touchstart.passive="showSingleDay && onCalSwipeStart($event)"
   >
+
+    <!-- Marquee de selección 2D (modo select, ratón). Position fixed → coords de cliente. -->
+    <div v-if="selectMarquee" class="cal-marquee" :style="marqueeStyle"></div>
 
     <!-- ── MOBILE: vista de 1 día ── -->
     <template v-if="showSingleDay">
@@ -1641,7 +1686,6 @@ watch(periodKey, (newKey, oldKey) => {
               :class="{
                 'cal-col__cell--top': isHourTop(slot),
                 'cal-col__cell--bottom': !isHourTop(slot),
-                'cal-col__cell--preselected': mobileTapSlot && mobileTapSlot.dayIdx === activeMobileDay && mobileTapSlot.slot === slot,
               }"
               :style="{ height: SLOT_H + 'px' }"
               :data-day="activeMobileDay"
@@ -1669,15 +1713,6 @@ watch(periodKey, (newKey, oldKey) => {
               :style="selectionStyle"
             >
               <span v-if="activeTool !== 'select'" class="cal-drag__label">{{ selectionLabel }}</span>
-            </div>
-
-            <!-- Mobile preselection indicator -->
-            <div
-              v-if="mobileTapSlot && mobileTapSlot.dayIdx === activeMobileDay"
-              class="cal-preselect"
-              :style="mobilePreselectionStyle"
-            >
-              <span class="cal-preselect__label">Toca de nuevo para crear</span>
             </div>
 
             <!-- Block drag ghost -->
@@ -1821,7 +1856,6 @@ watch(periodKey, (newKey, oldKey) => {
               :class="{
                 'cal-col__cell--top': isHourTop(slot),
                 'cal-col__cell--bottom': !isHourTop(slot),
-                'cal-col__cell--preselected': mobileTapSlot && mobileTapSlot.dayIdx === dayIdx && mobileTapSlot.slot === slot,
               }"
               :style="{ height: COMPACT_SLOT_H + 'px' }"
               :data-day="dayIdx"
@@ -2423,6 +2457,16 @@ watch(periodKey, (newKey, oldKey) => {
   border: 1.5px dashed rgba(96, 165, 250, 0.5);
 }
 
+/* Marquee 2D real del modo select (rectángulo en coords de cliente). */
+.cal-marquee {
+  position: fixed;
+  z-index: 60;
+  pointer-events: none;
+  background: rgba(96, 165, 250, 0.14);
+  border: 1.5px dashed rgba(96, 165, 250, 0.7);
+  border-radius: 4px;
+}
+
 .cal-col--dragging {
   background: rgba(42, 199, 143, 0.04);
 }
@@ -2491,35 +2535,6 @@ watch(periodKey, (newKey, oldKey) => {
   pointer-events: none;
 }
 
-/* ========== Mobile preselection ========== */
-.cal-col__cell--preselected {
-  background: rgba(42, 199, 143, 0.1) !important;
-}
-
-.cal-preselect {
-  position: absolute;
-  left: 2%;
-  width: 96%;
-  background: rgba(42, 199, 143, 0.08);
-  border: 2px dashed rgba(42, 199, 143, 0.35);
-  border-radius: 4px;
-  z-index: 13;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  pointer-events: none;
-  animation: drag-in 0.15s ease;
-}
-
-.cal-preselect__label {
-  font-size: 0.65rem;
-  font-weight: 600;
-  color: var(--primary-500);
-  background: var(--cal-header);
-  padding: 0.1rem 0.5rem;
-  border-radius: 3px;
-  white-space: nowrap;
-}
 
 /* ========== Mobile nav de días ========== */
 .cal-mobile-nav {

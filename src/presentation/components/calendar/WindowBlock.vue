@@ -56,9 +56,14 @@ const shortTime = computed(() => {
 
 const top = () => Math.max(0, (props.window.startHour - props.baseHour) * props.hourHeight + 2)
 const height = () => Math.max(props.hourHeight / 2, (props.window.endHour - props.window.startHour) * props.hourHeight - 4)
-// Llenar el ancho de la columna/día (con un hilo de separación entre sub-cols).
+// Llenar el ancho de la columna/día dejando un pequeño aire a la derecha (estilo
+// Google Calendar): el bloque no pega al borde de la columna. GAP en px para que
+// sea consistente sin importar el zoom/ancho.
+const GAP = 6 // px de respiro a la derecha
 const left = () => props.totalCols === 1 ? '0.5%' : `${(props.col / props.totalCols) * 99 + 0.5}%`
-const width = () => props.totalCols === 1 ? '99%' : `${99 / props.totalCols - 0.5}%`
+const width = () => props.totalCols === 1
+  ? `calc(99% - ${GAP}px)`
+  : `calc(${99 / props.totalCols - 0.5}% - ${GAP}px)`
 
 const statusClass = () => {
   if (!props.window.isActive) return 'wb--inactive'

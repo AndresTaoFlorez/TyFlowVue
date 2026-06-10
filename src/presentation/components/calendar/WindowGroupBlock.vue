@@ -29,9 +29,13 @@ const { width: groupWidthPx } = useElementSize(wgbEl)
 
 const groupTop = () => Math.max(0, (props.group.startHour - props.baseHour) * props.hourHeight + 2)
 const groupHeight = () => Math.max(props.hourHeight / 2, (props.group.endHour - props.group.startHour) * props.hourHeight - 4)
-// Llenar el ancho de la columna/día (con un hilo de separación entre sub-cols).
+// Llenar el ancho de la columna/día dejando un pequeño aire a la derecha
+// (estilo Google Calendar), igual que WindowBlock.
+const GAP = 6 // px de respiro a la derecha
 const left = () => props.totalCols === 1 ? '0.5%' : `${(props.col / props.totalCols) * 99 + 0.5}%`
-const width = () => props.totalCols === 1 ? '99%' : `${99 / props.totalCols - 0.5}%`
+const width = () => props.totalCols === 1
+  ? `calc(99% - ${GAP}px)`
+  : `calc(${99 / props.totalCols - 0.5}% - ${GAP}px)`
 
 const count = () => props.group.windows.length
 

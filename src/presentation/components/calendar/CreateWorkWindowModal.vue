@@ -523,12 +523,6 @@ const handleSubmit = () => {
   align-items: center;
   justify-content: center;
   z-index: 100;
-  animation: cwm-fade 0.15s ease;
-}
-
-@keyframes cwm-fade {
-  from { opacity: 0; }
-  to { opacity: 1; }
 }
 
 .modal {
@@ -540,7 +534,6 @@ const handleSubmit = () => {
   max-height: 90vh;
   display: flex;
   flex-direction: column;
-  animation: cwm-pop 0.18s cubic-bezier(0.2, 0.9, 0.3, 1.2);
 }
 
 @keyframes cwm-pop {
@@ -1050,12 +1043,13 @@ const handleSubmit = () => {
 .dropdown-enter-from { opacity: 0; transform: translateY(-4px); }
 .dropdown-leave-to { opacity: 0; }
 
-/* ---- Transition ---- */
+/* ---- Transition ---- (una sola animación de entrada, vía clases del
+   <Transition>; sin animaciones siempre-activas que se re-disparen → sin parpadeo) */
 .modal-enter-active { transition: opacity 0.18s ease; }
 .modal-enter-active .modal { animation: pop-in 0.18s cubic-bezier(0.2, 0.9, 0.3, 1.2); }
 .modal-leave-active { transition: opacity 0.15s ease; }
 .modal-leave-active .modal { animation: pop-out 0.15s ease forwards; }
-.modal-leave-to { opacity: 0; }
+.modal-enter-from, .modal-leave-to { opacity: 0; }
 
 @keyframes pop-in {
   from { transform: scale(0.93) translateY(6px); opacity: 0; }
@@ -1066,9 +1060,30 @@ const handleSubmit = () => {
   to   { transform: scale(0.93) translateY(6px); opacity: 0; }
 }
 
+/* Móvil: crear a pantalla completa (subruta estilo Google Calendar). */
 @media (max-width: 480px) {
-  .modal { max-width: calc(100% - 2rem); }
+  .overlay { align-items: stretch; }
+  .modal {
+    max-width: 100%;
+    width: 100%;
+    height: 100dvh;
+    max-height: 100dvh;
+    border-radius: 0;
+  }
+  /* La entrada como hoja se gatea bajo enter-active (no siempre-activa). */
+  .modal-enter-active .modal { animation: cwm-sheet-up 0.22s cubic-bezier(0.2, 0.8, 0.2, 1); }
+  .modal-leave-active .modal { animation: cwm-sheet-down 0.18s ease forwards; }
   .person-row { flex-wrap: wrap; }
   .mini-picker { min-width: calc(50% - 1rem); }
+}
+
+@keyframes cwm-sheet-down {
+  from { transform: translateY(0); }
+  to { transform: translateY(100%); }
+}
+
+@keyframes cwm-sheet-up {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
 }
 </style>

@@ -26,6 +26,21 @@ vez de pedirle al usuario que mande screenshots.
 (clica botones por texto; vacío = sin clic) · `--viewport WxH` · `--wait ms` ·
 `--full` página completa · `--selector` espera CSS antes de capturar.
 
+### Interacción (no solo capturas estáticas)
+- `--key s,e,v` — pulsa cada tecla y captura tras cada una (p.ej. atajos de toolbar).
+- `--scroll "selector:600"` — scroll de 600px dentro del contenedor y captura.
+- `--script <archivo.cjs>` — escenario que conduce drag/click/teclas/scroll y lee
+  texto del DOM. Reemplaza el bucle de vistas. El módulo exporta
+  `module.exports = async (ctx) => {}` con
+  `ctx = { page, theme, sleep, shot, pressKey, click, clickByText, drag, scroll, getText, BASE }`.
+  Escenarios en `scenarios/` (son datos del harness, NO copias del harness).
+  Ejemplo: `scenarios/selbar-count.cjs` verifica la reconciliación de la sel-bar.
+
+Acceso al estado de la app desde `page.evaluate`:
+`document.querySelector('#app').__vue_app__.config.globalProperties.$pinia._s.get('calendar')`
+(o `'users'`) da la instancia del store Pinia — llamar acciones y leer estado para
+sembrar datos reales y disparar reactividad. Los bloques tienen `[data-window-id]`.
+
 Credenciales por env `TYFLOW_EMAIL` / `TYFLOW_PASSWORD` (o defaults en el script).
 
 ## Arquitectura de carpetas
