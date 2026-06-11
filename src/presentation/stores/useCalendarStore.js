@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { ref, computed, watch } from 'vue'
 import { fetchWorkWindowsUseCase } from '@/application/use-cases/work-windows/FetchWorkWindowsUseCase'
 import { createWorkWindowUseCase } from '@/application/use-cases/work-windows/CreateWorkWindowUseCase'
+import { createRecurringWorkWindowsUseCase } from '@/application/use-cases/work-windows/CreateRecurringWorkWindowsUseCase'
 import { deleteWorkWindowUseCase } from '@/application/use-cases/work-windows/DeleteWorkWindowUseCase'
 import { updateWorkWindowUseCase } from '@/application/use-cases/work-windows/UpdateWorkWindowUseCase'
 import { rescheduleWorkWindowUseCase } from '@/application/use-cases/work-windows/RescheduleWorkWindowUseCase'
@@ -107,6 +108,27 @@ export const useCalendarStore = defineStore('calendar', () => {
   // optimista y que el backend la refleje.
   const _RECENT_WINDOW_MS = 30_000
 
+  // ---- Tombstones CRDT (borrados recientes) ----
+  // El LWW protege ventanas MODIFICADAS hace poco, pero un borrado las saca de
+  // windows.value y pierden esa protección: un fetch que ya estaba en vuelo
+  // (prefetch de vecinos, recarga por evento batch) resuelve con datos previos
+  // al DELETE y _mergeWindows las "resucitaba". El tombstone recuerda el id
+  // borrado durante _RECENT_WINDOW_MS y bloquea su reaparición por fetch o RT.
+  const _recentDeletes = new Map()   // id -> epoch ms
+  function _markDeleted(ids) {
+    const t = Date.now()
+    for (const id of ids) _recentDeletes.set(id, t)
+  }
+  function _unmarkDeleted(ids) {
+    for (const id of ids) _recentDeletes.delete(id)
+  }
+  function _isRecentlyDeleted(id) {
+    const t = _recentDeletes.get(id)
+    if (!t) return false
+    if (Date.now() - t > _RECENT_WINDOW_MS) { _recentDeletes.delete(id); return false }
+    return true
+  }
+
   // ---- Fetched range tracking (accumulative strategy) ----
   const _fetchedRanges = []        // Array of { from, to } ISO date ranges already loaded
   let _initialLoadDone = false
@@ -148,9 +170,69 @@ export const useCalendarStore = defineStore('calendar', () => {
     localStorage.setItem(DENSITY_KEY, val)
   }
 
-  // ---- Filters ----
-  const filtroSpecialist = ref('all')
-  const filtroApp = ref('all')
+  // ---- Filters (multi-select, modelo de EXCLUSIÓN) ----
+  // Se guardan los OCULTOS: default vacío = todo visible, y especialistas/apps
+  // nuevos quedan visibles sin tocar el filtro guardado.
+  const HIDDEN_SPECS_KEY = 'tyflow_cal_hidden_specs'
+  const HIDDEN_APPS_KEY = 'tyflow_cal_hidden_apps'
+  const SHOW_ACTIVE_KEY = 'tyflow_cal_show_active'
+  const SHOW_INACTIVE_KEY = 'tyflow_cal_show_inactive'
+
+  function _loadHidden(key) {
+    try { return new Set(JSON.parse(localStorage.getItem(key) || '[]')) }
+    catch { return new Set() }
+  }
+
+  const hiddenSpecs = ref(_loadHidden(HIDDEN_SPECS_KEY))
+  const hiddenApps = ref(_loadHidden(HIDDEN_APPS_KEY))
+  const showActive = ref(localStorage.getItem(SHOW_ACTIVE_KEY) !== 'false')
+  const showInactive = ref(localStorage.getItem(SHOW_INACTIVE_KEY) !== 'false')
+
+  function _persistHidden(key, set) {
+    localStorage.setItem(key, JSON.stringify([...set]))
+  }
+
+  function toggleSpecFilter(id) {
+    const next = new Set(hiddenSpecs.value)
+    next.has(id) ? next.delete(id) : next.add(id)
+    hiddenSpecs.value = next
+    _persistHidden(HIDDEN_SPECS_KEY, next)
+  }
+
+  function toggleAppFilter(id) {
+    const next = new Set(hiddenApps.value)
+    next.has(id) ? next.delete(id) : next.add(id)
+    hiddenApps.value = next
+    _persistHidden(HIDDEN_APPS_KEY, next)
+  }
+
+  // visible=true → mostrar todos (vaciar ocultos); false → ocultar todos los ids dados
+  function setAllSpecs(visible, allIds = []) {
+    const next = visible ? new Set() : new Set(allIds)
+    hiddenSpecs.value = next
+    _persistHidden(HIDDEN_SPECS_KEY, next)
+  }
+
+  function setAllApps(visible, allIds = []) {
+    const next = visible ? new Set() : new Set(allIds)
+    hiddenApps.value = next
+    _persistHidden(HIDDEN_APPS_KEY, next)
+  }
+
+  function toggleShowActive() {
+    showActive.value = !showActive.value
+    localStorage.setItem(SHOW_ACTIVE_KEY, String(showActive.value))
+  }
+
+  function toggleShowInactive() {
+    showInactive.value = !showInactive.value
+    localStorage.setItem(SHOW_INACTIVE_KEY, String(showInactive.value))
+  }
+
+  // ---- Seam Crear (CalSidebar se publica en el board del sidebar vía
+  // Teleport; el ref del store evita acoplar el flujo a la jerarquía DOM) ----
+  const createRequest = ref(null)   // { mode: 'single'|'bulk', ts }
+  function requestCreate(mode) { createRequest.value = { mode, ts: Date.now() } }
 
   // ---- Computed dates ----
   const weekDates = computed(() => {
@@ -211,27 +293,18 @@ export const useCalendarStore = defineStore('calendar', () => {
       if (from && to && w.scheduledDate) {
         if (w.scheduledDate < from || w.scheduledDate > to) return false
       }
-      if (filtroSpecialist.value !== 'all' && w.specialistId !== filtroSpecialist.value) return false
-      if (filtroApp.value !== 'all' && w.applicationId !== filtroApp.value) return false
+      if (hiddenSpecs.value.has(w.specialistId)) return false
+      if (hiddenApps.value.has(w.applicationId)) return false
+      if (!showActive.value && w.isActive) return false
+      if (!showInactive.value && !w.isActive) return false
       return true
     })
   })
 
-  // ---- Filter options (based on loaded windows) ----
+  // ---- Filter options ----
   const specialistsConVentana = computed(() => {
     const userStore = useUserStore()
     return userStore.users.filter(u => u.specialistId && u.isActive && u.specialistIsActive !== false)
-  })
-
-  const specOptions = computed(() => {
-    const ids = new Set(windows.value.map(w => w.specialistId))
-    return specialistsConVentana.value.filter(u => ids.has(u.specialistId))
-  })
-
-  const appOptions = computed(() => {
-    const userStore = useUserStore()
-    const ids = new Set(windows.value.map(w => w.applicationId))
-    return userStore.applications.filter(a => ids.has(a.id))
   })
 
   // ---- Sync offsets when switching views (preserves the currently visible date) ----
@@ -328,6 +401,7 @@ export const useCalendarStore = defineStore('calendar', () => {
     const merged = []
     const placed = new Set()
     for (const fw of fetched) {
+      if (_isRecentlyDeleted(fw.id)) continue   // tombstone: borrada localmente
       const local = recentLocal.get(fw.id)
       merged.push(local || fw)   // local reciente gana sobre el backend stale
       placed.add(fw.id)
@@ -484,6 +558,43 @@ export const useCalendarStore = defineStore('calendar', () => {
     return windows.value.find(x => x.id === id)
   }
 
+  // Cola de mutaciones POR VENTANA: si el usuario mueve/redimensiona la misma
+  // ventana varias veces seguidas, los PATCH se serializan en orden. Sin esto,
+  // dos PATCH en vuelo pueden llegar al backend desordenados y el estado final
+  // queda en la posición del arrastre N-1 → "brinco" al refrescar.
+  const _mutationChains = new Map()
+  function _enqueueMutation(id, fn) {
+    const prev = _mutationChains.get(id) || Promise.resolve()
+    const run = prev.catch(() => {}).then(fn)
+    const tracked = run.finally(() => {
+      if (_mutationChains.get(id) === tracked) _mutationChains.delete(id)
+    })
+    _mutationChains.set(id, tracked)
+    return run
+  }
+
+  /** Variante grupal: espera las colas de TODAS las ventanas implicadas. */
+  function _enqueueGroupMutation(ids, fn) {
+    const prevs = [...ids].map(id => (_mutationChains.get(id) || Promise.resolve()).catch(() => {}))
+    const run = Promise.all(prevs).then(fn)
+    for (const id of ids) {
+      const tracked = run.catch(() => {}).finally(() => {
+        if (_mutationChains.get(id) === tracked) _mutationChains.delete(id)
+      })
+      _mutationChains.set(id, tracked)
+    }
+    return run
+  }
+
+  /** Rollback protegido: restaura el original SOLO donde nuestro optimista
+   *  sigue vigente — un movimiento más nuevo encima no se pisa. */
+  function _rollbackOptimistic(originals, optimisticMap) {
+    windows.value = windows.value.map(w =>
+      optimisticMap.get(w.id) === w ? (originals.get(w.id) || w) : w
+    )
+    _invalidateCache()
+  }
+
   function _isPlaceholder(id) {
     return typeof id === 'string' && id.startsWith('__new_')
   }
@@ -503,6 +614,11 @@ export const useCalendarStore = defineStore('calendar', () => {
     [/already inherits/i, 'Esta ventana ya tiene herencia activa.'],
     [/not found.*already deleted/i, 'Ventana no encontrada o ya fue eliminada.'],
     [/not found/i, 'Ventana de trabajo no encontrada.'],
+    [/Cannot delete a sealed work window that has assignments/i, 'No se puede eliminar: la ventana ya inició y tiene casos asignados.'],
+    [/is sealed/i, 'La ventana ya inició y no se puede modificar.'],
+    [/overlaps with an existing/i, 'El horario se solapa con una ventana existente del mismo especialista y aplicación.'],
+    [/already ended/i, 'La ventana ya finalizó.'],
+    [/starting in the past|starts_at to a past/i, 'No se pueden crear ventanas que inician en el pasado.'],
   ]
 
   function _translateMessage(msg) {
@@ -701,14 +817,15 @@ export const useCalendarStore = defineStore('calendar', () => {
         inherits_on_reopen: item.inheritsOnReopen ?? false,
         affinity_weight: item.affinityWeight ?? null,
       }
-      return new WorkWindow(raw)
+      // withLocalUpdate: protege el placeholder de un merge stale en vuelo
+      return new WorkWindow(raw).withLocalUpdate()
     })
     const placeholderIds = new Set(placeholders.map(p => p.id))
     windows.value = [...windows.value, ...placeholders]
     _invalidateCache()
 
     try {
-      const created = await createWorkWindowUseCase(data)
+      const created = (await createWorkWindowUseCase(data)).map(w => w.withLocalUpdate())
       const createdIds = new Set(created.map(w => w.id))
       windows.value = [
         ...windows.value.filter(w => !placeholderIds.has(w.id) && !createdIds.has(w.id)),
@@ -718,6 +835,7 @@ export const useCalendarStore = defineStore('calendar', () => {
 
       // Undo = delete the created windows
       _pushUndo(snapshot, async () => {
+        _markDeleted(createdIds)
         await Promise.all([...createdIds].map(id => deleteWorkWindowUseCase(id)))
       })
 
@@ -729,15 +847,80 @@ export const useCalendarStore = defineStore('calendar', () => {
     }
   }
 
+  /**
+   * Crea series RECURRENTES vía POST /work-windows/recurring (una llamada por
+   * combo especialista+app). El backend encadena la herencia automáticamente
+   * (1ª ocurrencia hereda solo si hay ventana previa; 2..N entre sí) y cada
+   * serie es atómica. Si un combo falla, los anteriores quedan creados y el
+   * error reporta el progreso.
+   *
+   * @param {Array<{specialistId, applicationId}>} combos
+   * @param {string[]} dates  fechas YYYY-MM-DD (ya expandidas por el modal)
+   * @param {string} startTime HH:MM
+   * @param {string} endTime HH:MM
+   * @param {number} [affinityWeight=1]
+   */
+  async function createRecurringWindows(combos, dates, startTime, endTime, affinityWeight = 1) {
+    if (!combos.length || !dates.length) throw { userMessage: 'Nada que crear.' }
+    const now = new Date()
+    for (const date of dates) {
+      const startsAt = WorkWindow.toTimestampTz(date, startTime)
+      if (startsAt && new Date(startsAt) < now) {
+        throw { userMessage: 'No se puede crear una ventana que inicie en el pasado.' }
+      }
+    }
+    const snapshot = [...windows.value]
+    const slots = dates.map(date => ({ date, startTime, endTime }))
+    const allCreated = []
+
+    // Merge con dedupe: el evento realtime window_created puede haberlas
+    // añadido ya durante el await (carrera RT vs respuesta HTTP).
+    function _mergeCreated(list) {
+      const ids = new Set(list.map(w => w.id))
+      windows.value = [...windows.value.filter(w => !ids.has(w.id)), ...list]
+      _invalidateCache()
+      _pushUndo(snapshot, async () => {
+        _markDeleted(ids)
+        await WorkWindowRepository.deleteWindows([...ids])
+      })
+    }
+
+    try {
+      for (const combo of combos) {
+        const created = await createRecurringWorkWindowsUseCase({
+          specialistId: combo.specialistId,
+          applicationId: combo.applicationId,
+          slots,
+          affinityWeight,
+        })
+        // Sellar como cambio local reciente (CRDT LWW) para que un fetch en
+        // background no las pise mientras el backend propaga.
+        allCreated.push(...created.map(w => w.withLocalUpdate()))
+      }
+    } catch (e) {
+      if (allCreated.length > 0) {
+        // Series previas ya creadas (cada serie es atómica, el lote no)
+        _mergeCreated(allCreated)
+        e.userMessage = `${(e.userMessage || 'Error al crear la serie.')} (${allCreated.length} ventanas de combos anteriores sí se crearon.)`
+      }
+      throw e
+    }
+    _mergeCreated(allCreated)
+    return allCreated
+  }
+
+  // Regla de borrado: una ventana SELLADA (starts_at <= now, ya inició o pasó)
+  // NO se elimina — se valida en el front para cortar la acción de inmediato.
+  const _SEALED_DELETE_MSG = 'No se puede eliminar una ventana que ya inició.'
+
   async function deleteWindow(id) {
     if (_isPlaceholder(id)) throw { userMessage: 'La ventana aún se está creando, intenta de nuevo.' }
     const original = _findOriginal(id)
-    if (original?.isSealed) {
-      throw { userMessage: 'No se pueden eliminar ventanas selladas.' }
-    }
+    if (original?.isSealed) throw { userMessage: _SEALED_DELETE_MSG }
     const snapshot = [...windows.value]
 
-    // Optimistic
+    // Optimistic (+ tombstone: un fetch en vuelo no debe resucitarla)
+    _markDeleted([id])
     windows.value = windows.value.filter(w => w.id !== id)
     _invalidateCache()
 
@@ -750,6 +933,7 @@ export const useCalendarStore = defineStore('calendar', () => {
         })
       }
     } catch (e) {
+      _unmarkDeleted([id])
       windows.value = snapshot
       _invalidateCache()
       throw e
@@ -854,9 +1038,13 @@ export const useCalendarStore = defineStore('calendar', () => {
     }
     const snapshot = [...windows.value]
     const originals = group.windows.map(w => _findOriginal(w.id)).filter(Boolean)
+    if (originals.some(w => w.isSealed)) {
+      throw { userMessage: 'El grupo contiene ventanas que ya iniciaron y no se pueden eliminar.' }
+    }
 
-    // Optimistic
+    // Optimistic (+ tombstones)
     const ids = new Set(group.windows.map(w => w.id))
+    _markDeleted(ids)
     windows.value = windows.value.filter(w => !ids.has(w.id))
     _invalidateCache()
 
@@ -869,6 +1057,7 @@ export const useCalendarStore = defineStore('calendar', () => {
         }
       })
     } catch (e) {
+      _unmarkDeleted(ids)
       windows.value = snapshot
       _invalidateCache()
       throw e
@@ -878,11 +1067,15 @@ export const useCalendarStore = defineStore('calendar', () => {
   async function batchDelete(ids) {
     ids = ids.filter(id => !_isPlaceholder(id))
     if (ids.length === 0) throw { userMessage: 'Las ventanas aún se están creando, intenta de nuevo.' }
+    // Selladas fuera: solo se eliminan las futuras de la selección.
+    ids = ids.filter(id => !_findOriginal(id)?.isSealed)
+    if (ids.length === 0) throw { userMessage: 'Las ventanas seleccionadas ya iniciaron y no se pueden eliminar.' }
     const snapshot = [...windows.value]
     const originals = ids.map(id => _findOriginal(id)).filter(Boolean)
 
-    // Optimistic — remove from current view AND all cached weeks
+    // Optimistic — remove from current view AND all cached weeks (+ tombstones)
     const deleteSet = new Set(ids)
+    _markDeleted(deleteSet)
     windows.value = windows.value.filter(w => !deleteSet.has(w.id))
     _purgeFromAllCaches(deleteSet)
     _invalidateCache()
@@ -895,7 +1088,11 @@ export const useCalendarStore = defineStore('calendar', () => {
           await createWorkWindowUseCase([_windowToCreateData(w)])
         }
       })
+      return ids.length
     } catch (e) {
+      // Borrado parcial posible (Promise.all): quitar tombstones y refetch
+      // para reflejar la verdad del backend.
+      _unmarkDeleted(deleteSet)
       _invalidateCache()
       await loadWindows()
       throw e
@@ -953,7 +1150,7 @@ export const useCalendarStore = defineStore('calendar', () => {
           },
         }
       })
-      await batchUpdateWorkWindowsUseCase(items)
+      await _enqueueGroupMutation(batchIds, () => batchUpdateWorkWindowsUseCase(items))
       _pushUndo(snapshot, async () => {
         const undoItems = [...originals.values()].map(orig => ({
           window: orig,
@@ -962,8 +1159,7 @@ export const useCalendarStore = defineStore('calendar', () => {
         await batchUpdateWorkWindowsUseCase(undoItems)
       })
     } catch (e) {
-      windows.value = windows.value.map(w => originals.get(w.id) || w)
-      _invalidateCache()
+      _rollbackOptimistic(originals, optimisticMap)
       throw e
     }
   }
@@ -1014,7 +1210,7 @@ export const useCalendarStore = defineStore('calendar', () => {
           },
         }
       })
-      await batchUpdateWorkWindowsUseCase(items)
+      await _enqueueGroupMutation(batchIds, () => batchUpdateWorkWindowsUseCase(items))
       _pushUndo(snapshot, async () => {
         const undoItems = [...originals.values()].map(orig => ({
           window: orig,
@@ -1023,8 +1219,7 @@ export const useCalendarStore = defineStore('calendar', () => {
         await batchUpdateWorkWindowsUseCase(undoItems)
       })
     } catch (e) {
-      windows.value = windows.value.map(w => originals.get(w.id) || w)
-      _invalidateCache()
+      _rollbackOptimistic(originals, optimisticMap)
       throw e
     }
   }
@@ -1135,6 +1330,7 @@ export const useCalendarStore = defineStore('calendar', () => {
         const wE = _timeToMinutes(w.endTime)
         if (eraseE <= wS || eraseS >= wE) continue
         if (eraseS <= wS && eraseE >= wE) {
+          if (w.isSealed) continue   // selladas no se eliminan (regla de borrado)
           allDeletes.push(w)
         } else if (eraseS <= wS) {
           // This would push starts_at forward — blocked for in-shift windows
@@ -1225,6 +1421,7 @@ export const useCalendarStore = defineStore('calendar', () => {
       // Undo = delete splits, restore updates, recreate deletes
       _pushUndo(snapshot, async () => {
         if (splitCreatedIds.length > 0) {
+          _markDeleted(splitCreatedIds)
           await Promise.all(splitCreatedIds.map(id => deleteWorkWindowUseCase(id)))
         }
         const restoreItems = [
@@ -1254,6 +1451,9 @@ export const useCalendarStore = defineStore('calendar', () => {
     if (_isEnded(w)) throw { userMessage: 'No se puede modificar una ventana finalizada.' }
     const snapshot = [...windows.value]
     const updated = await updateWorkWindowUseCase(w, payload)
+    // Superada (LWW per-item, §15): el backend descartó este update porque ya
+    // envió uno más nuevo para esta window — no-op; la ganadora pinta el estado.
+    if (!updated) return w
     if (payload.targetDate && payload.targetDate !== w.scheduledDate) {
       _removeWindow(w.id)
       _addWindows([updated])
@@ -1290,7 +1490,7 @@ export const useCalendarStore = defineStore('calendar', () => {
     const optimistic = _buildOptimistic(original, { startTime, endTime })
     _replaceWindow(w.id, optimistic)
     try {
-      await updateWorkWindowUseCase(original, { startTime, endTime })
+      await _enqueueMutation(w.id, () => updateWorkWindowUseCase(original, { startTime, endTime }))
       // Undo = resize back
       _pushUndo(snapshot, async () => {
         await updateWorkWindowUseCase(original, {
@@ -1299,7 +1499,9 @@ export const useCalendarStore = defineStore('calendar', () => {
         })
       })
     } catch (e) {
-      _replaceWindow(w.id, original)
+      // Revertir SOLO si nuestro optimista sigue siendo el vigente; si hay un
+      // movimiento más nuevo encima, no pisarlo (evita el brinco hacia atrás).
+      if (_findOriginal(w.id) === optimistic) _replaceWindow(w.id, original)
       throw e
     }
   }
@@ -1366,7 +1568,7 @@ export const useCalendarStore = defineStore('calendar', () => {
           },
         }
       })
-      await batchUpdateWorkWindowsUseCase(items)
+      await _enqueueGroupMutation(groupIds, () => batchUpdateWorkWindowsUseCase(items))
       _pushUndo(snapshot, async () => {
         const undoItems = [...originals.values()].map(orig => ({
           window: orig,
@@ -1375,8 +1577,7 @@ export const useCalendarStore = defineStore('calendar', () => {
         await batchUpdateWorkWindowsUseCase(undoItems)
       })
     } catch (e) {
-      windows.value = windows.value.map(w => originals.get(w.id) || w)
-      _invalidateCache()
+      _rollbackOptimistic(originals, optimisticMap)
       throw e
     }
   }
@@ -1405,7 +1606,7 @@ export const useCalendarStore = defineStore('calendar', () => {
     const optimistic = _buildOptimistic(original, { startTime, endTime, targetDate })
     _replaceWindow(w.id, optimistic)
     try {
-      await rescheduleWorkWindowUseCase(original, { startTime, endTime, targetDate })
+      await _enqueueMutation(w.id, () => rescheduleWorkWindowUseCase(original, { startTime, endTime, targetDate }))
       // Undo = reschedule back
       _pushUndo(snapshot, async () => {
         await rescheduleWorkWindowUseCase(
@@ -1414,7 +1615,8 @@ export const useCalendarStore = defineStore('calendar', () => {
         )
       })
     } catch (e) {
-      _replaceWindow(w.id, original)
+      // Revertir SOLO si nuestro optimista sigue vigente (ver resizeWindow).
+      if (_findOriginal(w.id) === optimistic) _replaceWindow(w.id, original)
       throw e
     }
   }
@@ -1474,7 +1676,7 @@ export const useCalendarStore = defineStore('calendar', () => {
           },
         }
       })
-      await batchUpdateWorkWindowsUseCase(items)
+      await _enqueueGroupMutation(groupIds, () => batchUpdateWorkWindowsUseCase(items))
       _pushUndo(snapshot, async () => {
         const undoItems = [...originals.values()].map(orig => ({
           window: orig,
@@ -1483,8 +1685,7 @@ export const useCalendarStore = defineStore('calendar', () => {
         await batchUpdateWorkWindowsUseCase(undoItems)
       })
     } catch (e) {
-      windows.value = windows.value.map(w => originals.get(w.id) || w)
-      _invalidateCache()
+      _rollbackOptimistic(originals, optimisticMap)
       throw e
     }
   }
@@ -1541,38 +1742,78 @@ export const useCalendarStore = defineStore('calendar', () => {
   function updateMobile(val) { isMobile.value = val }
 
   // ---- Realtime handlers ----
+  // El backend difunde los eventos también al cliente que originó la mutación
+  // (eco). Sin guardas, ese eco pisa el estado optimista local y produce:
+  //  - duplicado momentáneo al crear (placeholder + ventana real del eco), y
+  //  - "brincos" al mover/redimensionar rápido (el eco del movimiento N-1
+  //    llega cuando ya se aplicó el optimista del movimiento N y lo revierte).
+  // Se aplica aquí la MISMA regla CRDT LWW de _mergeWindows: un cambio local
+  // reciente (_localUpdatedAt < _RECENT_WINDOW_MS) gana sobre lo remoto.
+
+  /** CRDT LWW: true si la copia local fue modificada hace poco y debe ganar. */
+  function _isRecentLocal(id) {
+    const w = windows.value.find(x => x.id === id)
+    return !!(w && w._localUpdatedAt &&
+      Date.now() - new Date(w._localUpdatedAt).getTime() < _RECENT_WINDOW_MS)
+  }
+
   function onWindowCreatedRT(data) {
     const items = Array.isArray(data) ? data : [data]
     const existingIds = new Set(windows.value.map(w => w.id))
-    const newWindows = items
-      .map(d => new WorkWindow(d))
-      .filter(w => !existingIds.has(w.id))
-    if (newWindows.length > 0) _addWindows(newWindows)
+    const incoming = items
+      .map(d => new WorkWindow(d).withLocalUpdate())
+      .filter(w => !existingIds.has(w.id) && !_isRecentlyDeleted(w.id))
+    if (incoming.length === 0) return
+
+    // Si la ventana entrante corresponde a un placeholder optimista nuestro
+    // (misma especialista+app y mismos instantes), lo SUSTITUYE en vez de
+    // convivir con él — es lo que se veía como "duplicada por un momento".
+    const matchesPlaceholder = (ph, w) =>
+      ph.specialistId === w.specialistId &&
+      ph.applicationId === w.applicationId &&
+      new Date(ph.startsAt).getTime() === new Date(w.startsAt).getTime() &&
+      new Date(ph.endsAt).getTime() === new Date(w.endsAt).getTime()
+
+    const replacedPlaceholders = new Set()
+    for (const w of incoming) {
+      const ph = windows.value.find(x => _isPlaceholder(x.id) && !replacedPlaceholders.has(x.id) && matchesPlaceholder(x, w))
+      if (ph) replacedPlaceholders.add(ph.id)
+    }
+    windows.value = [
+      ...windows.value.filter(w => !replacedPlaceholders.has(w.id)),
+      ...incoming,
+    ]
+    _invalidateCache()
   }
 
   function onWindowUpdatedRT(data) {
     const updated = new WorkWindow(data)
+    if (_isRecentLocal(updated.id) || _isRecentlyDeleted(updated.id)) return
     _replaceWindow(updated.id, updated)
   }
 
   function onWindowDeletedRT(data) {
     const id = typeof data === 'string' ? data : data.id
+    _markDeleted([id])   // tombstone: que un fetch stale no la resucite
     _removeWindow(id)
   }
 
   function onWindowToggledRT(data) {
     const updated = new WorkWindow(data)
+    if (_isRecentLocal(updated.id) || _isRecentlyDeleted(updated.id)) return
     _replaceWindow(updated.id, updated)
   }
 
   function onWindowMergedRT(data) {
     // data: { mode, deleted_ids: [...], windows: [<raw window>, ...] }
     if (data.deleted_ids) {
+      _markDeleted(data.deleted_ids)
       for (const id of data.deleted_ids) _removeWindow(id)
     }
     const items = data.windows || []
     for (const raw of items) {
       const ww = new WorkWindow(raw)
+      if (_isRecentLocal(ww.id) || _isRecentlyDeleted(ww.id)) continue
       const exists = windows.value.some(w => w.id === ww.id)
       if (exists) _replaceWindow(ww.id, ww)
       else _addWindows([ww])
@@ -1636,14 +1877,25 @@ export const useCalendarStore = defineStore('calendar', () => {
     undo,
 
     // Filters
-    filtroSpecialist,
-    filtroApp,
-    specOptions,
-    appOptions,
+    hiddenSpecs,
+    hiddenApps,
+    showActive,
+    showInactive,
+    toggleSpecFilter,
+    toggleAppFilter,
+    setAllSpecs,
+    setAllApps,
+    toggleShowActive,
+    toggleShowInactive,
     specialistsConVentana,
+
+    // Crear seam (CalSidebar → CalendarioView)
+    createRequest,
+    requestCreate,
 
     // CRUD
     createWindows,
+    createRecurringWindows,
     deleteWindow,
     deleteGroup,
     toggleWindow,

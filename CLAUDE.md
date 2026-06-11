@@ -73,6 +73,10 @@ View → Store → UseCase → Repository → HTTP Client → REST API
 - `GET /roles` — List all roles
 - `GET /areas` — List all areas
 
+## Building pages/menus (shell boards contract)
+
+The shell (AppTopbar + AppSidebar) is a fixed chassis with contextual outlets. Views publish content into them via `<TopbarBoard>` / `<SidebarBoard>` (Teleport), and declare main-area treatment via `route.meta.mainMode`/`dense`. **Read `UI_BOARDS.md` before creating or restructuring any page/menu** — it is the manual for the contract (recipe, per-board style rules, gotchas, reference consumers).
+
 ## Conventions
 
 - **Path alias:** `@` maps to `src/` (configured in vite.config.js and jsconfig.json)

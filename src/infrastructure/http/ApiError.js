@@ -64,6 +64,22 @@ export class ApiError extends Error {
   }
 
   /**
+   * Crea un ApiError para una petición SUPERADA (409 + X-Superseded: true,
+   * API_CONTRACT §21): una petición más nueva para los mismos recursos ya llegó
+   * al backend y esta fue descartada sin tocar la DB. Los call sites deben
+   * tratarla como no-op silencioso (sin pintar, sin error, sin retry).
+   */
+  static superseded(data) {
+    return new ApiError({
+      status: 409,
+      message: 'Petición superada por una más reciente.',
+      code: 'SUPERSEDED',
+      detail: data?.detail ?? data ?? null,
+      fields: null,
+    })
+  }
+
+  /**
    * Crea un ApiError para errores de red (sin conexión, timeout, DNS).
    */
   static networkError(originalError) {
@@ -86,6 +102,7 @@ export class ApiError extends Error {
   get isForbidden() { return this.status === 403 }
   get isNotFound() { return this.status === 404 }
   get isConflict() { return this.status === 409 }
+  get isSuperseded() { return this.code === 'SUPERSEDED' }
   get isValidation() { return this.status === 422 || this.code === 'VALIDATION_ERROR' }
   get isServerError() { return this.status >= 500 }
   get isRateLimit() { return this.status === 429 }

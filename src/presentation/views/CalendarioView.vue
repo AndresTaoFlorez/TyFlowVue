@@ -9,7 +9,11 @@ import { useCalendarStore } from '@/presentation/stores/useCalendarStore'
 import WeekCalendar from '@/presentation/components/calendar/WeekCalendar.vue'
 import WorkWindowModal from '@/presentation/components/calendar/WorkWindowModal.vue'
 import CreateWorkWindowModal from '@/presentation/components/calendar/CreateWorkWindowModal.vue'
+import BulkAssignModal from '@/presentation/components/calendar/BulkAssignModal.vue'
 import WindowGroupPanel from '@/presentation/components/calendar/WindowGroupPanel.vue'
+import CalSidebar from '@/presentation/components/calendar/CalSidebar.vue'
+import TopbarBoard from '@/presentation/components/layout/TopbarBoard.vue'
+import SidebarBoard from '@/presentation/components/layout/SidebarBoard.vue'
 import { fmtHM, fmtTimeFromMins } from '@/presentation/helpers/formatTime'
 import SectionLoader from '@/presentation/components/layout/SectionLoader.vue'
 import ToastNotification from '@/presentation/components/layout/ToastNotification.vue'
@@ -28,7 +32,7 @@ useCalendarRealtime()
 const {
   calView, weekDates, monthDates, currentMonth, weekLabel,
   loading, windowsFiltradas, monthOffset,
-  filtroSpecialist, filtroApp, specOptions, appOptions, specialistsConVentana,
+  specialistsConVentana,
   isMobile, canUndo, density,
 } = storeToRefs(calStore)
 
@@ -44,6 +48,7 @@ const onDatePicked = (e) => {
 const selectedWindow = ref(null)
 const openModalInEdit = ref(false)
 const mostrarCrear = ref(false)
+const mostrarBulk = ref(false)
 const creando = ref(false)
 const errorCrear = ref('')
 const prefillData = ref(null)
@@ -410,6 +415,18 @@ const openCreatePanel = () => {
   mostrarCrear.value = true
 }
 
+// Crear desde el sidebar interno (CalSidebar → store seam): 'single' abre el
+// modal de ventana individual, 'bulk' el de asignación masiva.
+watch(() => calStore.createRequest, (req) => {
+  if (!req) return
+  if (req.mode === 'bulk') {
+    errorCrear.value = ''
+    mostrarBulk.value = true
+  } else {
+    openCreatePanel()
+  }
+})
+
 // ---- Crear ventanas ----
 const handleCreate = async (data) => {
   creando.value = true
@@ -417,11 +434,27 @@ const handleCreate = async (data) => {
   try {
     const created = await calStore.createWindows(data)
     mostrarCrear.value = false
+    mostrarBulk.value = false
     prefillData.value = null
     const n = created.length
     showToast(n === 1 ? 'Ventana de trabajo creada.' : `${n} ventanas de trabajo creadas.`)
   } catch (e) {
     errorCrear.value = e.userMessage || 'Error al crear la ventana.'
+  } finally {
+    creando.value = false
+  }
+}
+
+// ---- Crear series recurrentes (asignación masiva) ----
+const handleCreateRecurring = async ({ combos, dates, startTime, endTime, affinityWeight }) => {
+  creando.value = true
+  errorCrear.value = ''
+  try {
+    const created = await calStore.createRecurringWindows(combos, dates, startTime, endTime, affinityWeight)
+    mostrarBulk.value = false
+    showToast(created.length === 1 ? 'Ventana de trabajo creada.' : `${created.length} ventanas de trabajo creadas.`)
+  } catch (e) {
+    errorCrear.value = e.userMessage || 'Error al crear las ventanas.'
   } finally {
     creando.value = false
   }
@@ -513,6 +546,24 @@ const handleDeleteGroup = async (group) => {
   }
 }
 
+// ---- Habilitar/inhabilitar el grupo en lote (desde el modal de grupo) ----
+const handleToggleGroup = async (targets) => {
+  modalLoading.value = true
+  try {
+    await calStore.batchToggle(targets.map(w => w.id))
+    // Refrescar las ventanas del grupo abierto con el estado nuevo del store
+    for (const w of targets) {
+      const updated = calStore.windows.find(x => x.id === w.id)
+      if (updated) syncGroupWindow(updated)
+    }
+    showToast(`${targets.length} ventana(s) actualizada(s).`)
+  } catch (e) {
+    showToast(e.userMessage || 'Error al cambiar estado.', 'error')
+  } finally {
+    modalLoading.value = false
+  }
+}
+
 // ---- Actualizar ventana (edición de horario) ----
 const handleUpdate = async (w, payload) => {
   modalLoading.value = true
@@ -542,8 +593,12 @@ const handleErase = async ({ dates, startTime, endTime }) => {
 const handleBatchDelete = async () => {
   if (selectedWindows.value.size === 0) return
   try {
-    await calStore.batchDelete([...selectedWindows.value])
-    showToast(`${selectedWindows.value.size} ventana(s) eliminada(s).`)
+    // batchDelete excluye selladas (no eliminables) y devuelve cuántas borró
+    const deleted = await calStore.batchDelete([...selectedWindows.value])
+    const skipped = selectedWindows.value.size - deleted
+    showToast(skipped > 0
+      ? `${deleted} eliminada(s); ${skipped} ya iniciaron y no se pueden eliminar.`
+      : `${deleted} ventana(s) eliminada(s).`)
     selectedWindows.value = new Set()
   } catch (e) {
     showToast(e.userMessage || 'Error al eliminar.', 'error')
@@ -724,7 +779,9 @@ const returnToGroup = ref(null)
 const onGroupSelect = (w) => {
   returnToGroup.value = selectedGroup.value
   selectedGroup.value = null
-  openModalInEdit.value = false
+  // El lápiz del grupo abre DIRECTO en edición (un solo paso); las ventanas
+  // selladas (ya iniciadas) se abren en vista porque no son editables (§4).
+  openModalInEdit.value = !!w.isFuture
   selectedWindow.value = w
 }
 
@@ -781,6 +838,7 @@ const onKeydown = (e) => {
     if (activeTool.value !== 'default') { setTool('default'); return }
     if (selectedWindow.value) selectedWindow.value = null
     else if (mostrarCrear.value) { mostrarCrear.value = false; prefillData.value = null; errorCrear.value = '' }
+    else if (mostrarBulk.value) { mostrarBulk.value = false; errorCrear.value = '' }
   }
   // Delete/Supr: eliminar ventanas seleccionadas o la ventana activa
   if (e.key === 'Delete') {
@@ -812,7 +870,7 @@ function isTypingTarget(el) {
 let _modalSyncing = false
 
 // refs → URL (abrir = push para que Atrás cierre; cerrar = replace)
-watch([selectedWindow, selectedGroup, mostrarCrear], ([w, g, creating]) => {
+watch([selectedWindow, selectedGroup, mostrarCrear, mostrarBulk], ([w, g, creating, bulk]) => {
   if (_modalSyncing) return
   const q = { ...route.query }
   delete q.window
@@ -821,8 +879,9 @@ watch([selectedWindow, selectedGroup, mostrarCrear], ([w, g, creating]) => {
   if (w) q.window = w.id
   else if (g) q.group = g.windows?.[0]?.id
   else if (creating) q.new = '1'
+  else if (bulk) q.new = 'bulk'
   if (q.window === route.query.window && q.group === route.query.group && q.new === route.query.new) return
-  const opening = !!(w || g || creating)
+  const opening = !!(w || g || creating || bulk)
   _modalSyncing = true
   const nav = opening ? router.push({ query: q }) : router.replace({ query: q })
   Promise.resolve(nav).catch(() => {}).finally(() => { _modalSyncing = false })
@@ -842,20 +901,24 @@ function syncModalsFromRoute() {
     }
     if (selectedGroup.value) selectedGroup.value = null
     if (mostrarCrear.value) mostrarCrear.value = false
+    if (mostrarBulk.value) mostrarBulk.value = false
   } else if (gid) {
     selectedGroup.value = findGroupForWindow(calStore.windows, gid)
     selectedWindow.value = null
     mostrarCrear.value = false
+    mostrarBulk.value = false
   } else if (isNew) {
     selectedWindow.value = null
     selectedGroup.value = null
-    mostrarCrear.value = true
+    mostrarCrear.value = isNew !== 'bulk'
+    mostrarBulk.value = isNew === 'bulk'
   } else {
     selectedWindow.value = null
     selectedGroup.value = null
     returnToGroup.value = null
     // Cerrar crear y limpiar su estado al volver con Atrás.
     if (mostrarCrear.value) { mostrarCrear.value = false; errorCrear.value = ''; prefillData.value = null }
+    if (mostrarBulk.value) { mostrarBulk.value = false; errorCrear.value = '' }
   }
   _modalSyncing = false
 }
@@ -899,22 +962,24 @@ onUnmounted(() => {
 
 <template>
   <section class="content" :class="{ 'content--with-fab': authStore.isAdmin && isMobile }">
-    <Teleport to="#topbar-actions" defer>
-      <button v-if="authStore.isAdmin && !isMobile" @click="openCreatePanel" class="btn-create">
-        <i class='bx bx-plus'></i>
-        <span class="btn-create__label">Nueva Ventana</span>
-        <span class="btn-create__short">Nueva</span>
-      </button>
-    </Teleport>
+    <!-- El botón de crear vive ahora en el sidebar interno (CalSidebar → Crear).
+         En móvil queda el FAB (el sidebar es drawer). -->
 
-    <!-- Toolbar -->
+    <!-- Board del sidebar: Crear / mini-cal / filtros -->
+    <SidebarBoard>
+      <CalSidebar />
+    </SidebarBoard>
+
+    <!-- Toolbar → board de la topbar en escritorio (el calendario usa ese
+         espacio en lugar del título). En móvil queda en sitio, como card. -->
+    <TopbarBoard :disabled="isMobile">
     <div class="toolbar">
-      <!-- Row 1: nav + label -->
+      <!-- Row 1: nav + label (orden del mockup: Hoy · ‹ › · fecha · … · controles) -->
       <div class="toolbar__row">
+        <button class="toolbar__today" @click="slideDir = ''; calStore.goToday()">Hoy</button>
         <button class="toolbar__arrow" @click="slideDir = 'slide-right'; calStore.prevNav()">
           <i class='bx bx-chevron-left'></i>
         </button>
-        <button class="toolbar__today" @click="slideDir = ''; calStore.goToday()">Hoy</button>
         <button class="toolbar__arrow" @click="slideDir = 'slide-left'; calStore.nextNav()">
           <i class='bx bx-chevron-right'></i>
         </button>
@@ -923,6 +988,8 @@ onUnmounted(() => {
           <i class='bx bx-calendar'></i>
         </button>
         <input ref="datePickerRef" type="date" class="toolbar__date-picker" @change="onDatePicked" />
+
+        <div class="toolbar__spacer"></div>
 
         <!-- View dropdown (siempre visible) -->
         <div class="viewdd" ref="viewDdRef">
@@ -939,6 +1006,22 @@ onUnmounted(() => {
               <span v-else-if="opt.disabled" class="viewdd__soon">Próximamente</span>
             </button>
           </div>
+        </div>
+
+        <!-- Density selector (desktop only) -->
+        <div v-if="!isMobile" class="seg seg--icons toolbar__density">
+          <button class="seg__btn" :class="{ 'seg__btn--active': density === 'compact' }"
+            @click="calStore.setDensity('compact')" title="Compacto">
+            <i class='bx bx-menu'></i>
+          </button>
+          <button class="seg__btn" :class="{ 'seg__btn--active': density === 'comfortable' }"
+            @click="calStore.setDensity('comfortable')" title="Normal">
+            <i class='bx bx-align-justify'></i>
+          </button>
+          <button class="seg__btn" :class="{ 'seg__btn--active': density === 'spacious' }"
+            @click="calStore.setDensity('spacious')" title="Espacioso">
+            <i class='bx bx-expand-vertical'></i>
+          </button>
         </div>
 
         <!-- Tool toggle (admin only, hidden on mobile via CSS) -->
@@ -964,70 +1047,18 @@ onUnmounted(() => {
           <i class='bx bx-undo'></i>
         </button>
 
-        <!-- Density selector (desktop only) -->
-        <div v-if="!isMobile" class="seg seg--icons toolbar__density">
-          <button class="seg__btn" :class="{ 'seg__btn--active': density === 'compact' }"
-            @click="calStore.setDensity('compact')" title="Compacto">
-            <i class='bx bx-menu'></i>
-          </button>
-          <button class="seg__btn" :class="{ 'seg__btn--active': density === 'comfortable' }"
-            @click="calStore.setDensity('comfortable')" title="Normal">
-            <i class='bx bx-align-justify'></i>
-          </button>
-          <button class="seg__btn" :class="{ 'seg__btn--active': density === 'spacious' }"
-            @click="calStore.setDensity('spacious')" title="Espacioso">
-            <i class='bx bx-expand-vertical'></i>
-          </button>
-        </div>
-
-        <!-- Filter toggle (mobile only, collapses filters) -->
-        <button v-if="isMobile" class="toolbar__filter-toggle"
+        <!-- Toggle de herramientas (móvil; los filtros viven en CalSidebar) -->
+        <button v-if="isMobile && authStore.isAdmin" class="toolbar__filter-toggle"
           :class="{ 'toolbar__filter-toggle--active': showMobileFilters }"
           @click="showMobileFilters = !showMobileFilters">
           <i class='bx bx-filter-alt'></i>
         </button>
       </div>
 
-      <!-- Row 2: legend + filters (desktop inline / mobile collapsible) -->
-      <div v-if="!isMobile" class="toolbar__row toolbar__row--secondary">
-        <div class="toolbar__legend">
-          <span class="toolbar__legend-item">
-            <span class="toolbar__dot toolbar__dot--open"></span>Activa
-          </span>
-          <span class="toolbar__legend-item">
-            <span class="toolbar__dot toolbar__dot--inactive"></span>Inactiva
-          </span>
-        </div>
-        <div class="toolbar__filters">
-          <select v-if="authStore.isAdmin" v-model="filtroSpecialist" class="toolbar__select">
-            <option value="all">Todos los especialistas</option>
-            <option v-for="s in specOptions" :key="s.specialistId" :value="s.specialistId">
-              {{ s.fullName }}
-            </option>
-          </select>
-          <select v-model="filtroApp" class="toolbar__select">
-            <option value="all">Todas las apps</option>
-            <option v-for="a in appOptions" :key="a.id" :value="a.id">
-              {{ a.name }}
-            </option>
-          </select>
-        </div>
-      </div>
-
-      <!-- Mobile: collapsible filters -->
+      <!-- Los filtros de especialista/app/estado viven ahora en el sidebar
+           interno (CalSidebar). En móvil el toggle de filtros despliega solo
+           las herramientas. -->
       <div v-if="isMobile && showMobileFilters" class="toolbar__mobile-filters">
-        <select v-if="authStore.isAdmin" v-model="filtroSpecialist" class="toolbar__select toolbar__select--full">
-          <option value="all">Todos los especialistas</option>
-          <option v-for="s in specOptions" :key="s.specialistId" :value="s.specialistId">
-            {{ s.fullName }}
-          </option>
-        </select>
-        <select v-model="filtroApp" class="toolbar__select toolbar__select--full">
-          <option value="all">Todas las apps</option>
-          <option v-for="a in appOptions" :key="a.id" :value="a.id">
-            {{ a.name }}
-          </option>
-        </select>
         <div v-if="authStore.isAdmin" class="seg seg--icons toolbar__tools toolbar__tools--mobile">
           <button class="seg__btn" :class="{ 'seg__btn--active': activeTool === 'default' }"
             @click="setTool('default')" title="Modo normal">
@@ -1044,6 +1075,7 @@ onUnmounted(() => {
         </div>
       </div>
     </div>
+    </TopbarBoard>
 
     <!-- Month strip (mobile only, month view) -->
     <div v-if="isMobile && calView === 'month'" class="month-strip">
@@ -1080,7 +1112,9 @@ onUnmounted(() => {
     <!-- Modal detalle -->
     <Transition name="ww-modal">
       <WorkWindowModal v-if="selectedWindow" :window="selectedWindow" :specialist-name="calStore.specName(selectedWindow)"
-        :application-name="calStore.appName(selectedWindow)" :loading="modalLoading"
+        :application-name="calStore.appName(selectedWindow)"
+        :app-color="calStore.findApp(selectedWindow.applicationId)?.color || ''"
+        :loading="modalLoading"
         :start-in-edit-mode="openModalInEdit"
         :show-back-button="!!returnToGroup"
         :has-clipboard="!!clipboard"
@@ -1096,7 +1130,7 @@ onUnmounted(() => {
       :applications="userStore.applications" :all-windows="calStore.windows" :loading="modalLoading" :cut-window-ids="cutWindowIds"
       @close="selectedGroup = null"
       @select="onGroupSelect" @delete="handleDelete"
-      @delete-group="handleDeleteGroup" @toggle="handleToggle"
+      @delete-group="handleDeleteGroup" @toggle="handleToggle" @toggle-group="handleToggleGroup"
       @copy="(w) => { clipboard = { type: 'window', data: w, cut: false }; showToast('Ventana copiada.') }"
       @cut="(w) => { clipboard = { type: 'window', data: w, cut: true }; cutWindowIds = new Set([w.id]); showToast('Ventana cortada.') }"
       @disinherit="handleDisinherit" @reinherit="handleReinherit" />
@@ -1105,6 +1139,11 @@ onUnmounted(() => {
     <CreateWorkWindowModal :visible="mostrarCrear" :creating="creando" :error="errorCrear"
       :specialists="specialistsConVentana" :applications="userStore.applications" :prefill="prefillData"
       @close="mostrarCrear = false; errorCrear = ''; prefillData = null" @create="handleCreate" />
+
+    <!-- Modal asignación masiva (series recurrentes vía POST /work-windows/recurring) -->
+    <BulkAssignModal :visible="mostrarBulk" :creating="creando" :error="errorCrear"
+      :specialists="specialistsConVentana" :applications="userStore.applications"
+      @close="mostrarBulk = false; errorCrear = ''" @create="handleCreateRecurring" />
 
     <!-- Mobile FAB -->
     <button v-if="authStore.isAdmin && isMobile" class="btn-fab" @click="openCreatePanel">
@@ -1162,38 +1201,15 @@ onUnmounted(() => {
   flex-direction: column;
 }
 
-.btn-create {
-  display: flex;
-  align-items: center;
-  gap: 0.45rem;
-  padding: 0.6rem 1.05rem;
-  background-color: var(--primary-500);
-  color: white;
-  font-weight: 600;
-  font-size: 0.88rem;
-  border-radius: 10px;
-  border: none;
-  cursor: pointer;
-  transition: all 0.15s;
-  box-shadow: 0 2px 8px rgba(42, 199, 143, 0.3);
-}
-
-.btn-create:hover {
-  background-color: var(--primary-600);
-  box-shadow: 0 4px 14px rgba(42, 199, 143, 0.4);
-  transform: translateY(-1px);
-}
-
-.btn-create:active {
-  transform: scale(0.97);
-}
-
-.btn-create i {
-  font-size: 1.1rem;
-}
-
-.btn-create__short {
-  display: none;
+/* Escritorio: el main va sin padding (mainMode 'bare'); el toolbar vive en la
+   topbar y el área del grid recupera su respiro lateral aquí. */
+@media (min-width: 769px) {
+  .content {
+    gap: 0.5rem;
+  }
+  .cal-area {
+    padding: 0.25rem 0.75rem 0.75rem;
+  }
 }
 
 /* ---- Mobile FAB ---- */
@@ -1247,6 +1263,10 @@ onUnmounted(() => {
 }
 
 /* ---- Toolbar ---- */
+/* En escritorio el toolbar se publica en el board de la topbar (TopbarBoard)
+   y ocupa el espacio central de la barra: transparente, sin padding propio
+   (la topbar ya trae el suyo). En móvil el TopbarBoard va disabled y el
+   toolbar queda en sitio, como card dentro de la vista. */
 .toolbar {
   background: var(--surface);
   padding: 0.7rem 1.25rem;
@@ -1257,6 +1277,17 @@ onUnmounted(() => {
   gap: 0.35rem;
 }
 
+@media (min-width: 769px) {
+  .toolbar {
+    background: transparent;
+    border: none;
+    border-radius: 0;
+    padding: 0;
+    flex: 1;
+    min-width: 0;
+  }
+}
+
 .toolbar__row {
   display: flex;
   align-items: center;
@@ -1264,8 +1295,8 @@ onUnmounted(() => {
   min-width: 0;
 }
 
-.toolbar__row--secondary {
-  gap: 0.5rem;
+.toolbar__spacer {
+  flex: 1;
 }
 
 /* Ghost circular icon buttons (prev/next, undo) */
@@ -1578,70 +1609,6 @@ onUnmounted(() => {
   border-color: #8b5cf6;
 }
 
-/* Legend */
-.toolbar__legend {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  flex-shrink: 0;
-}
-
-.toolbar__legend-item {
-  display: flex;
-  align-items: center;
-  gap: 0.25rem;
-  font-size: 0.65rem;
-  font-weight: 500;
-  color: var(--muted);
-}
-
-.toolbar__dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 2px;
-  border-left: 2.5px solid;
-}
-
-.toolbar__dot--open {
-  background: rgba(42, 199, 143, 0.15);
-  border-left-color: var(--primary-500);
-}
-
-.toolbar__dot--inactive {
-  background: var(--inactive-fill);
-  border-left-color: var(--inactive-bar);
-}
-
-/* Filters */
-.toolbar__filters {
-  display: flex;
-  gap: 0.35rem;
-  flex-shrink: 0;
-  margin-left: auto;
-}
-
-.toolbar__select {
-  height: 32px;
-  padding: 0 1.8rem 0 0.7rem;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  font-size: 0.76rem;
-  font-weight: 500;
-  color: var(--text);
-  background: var(--surface-2);
-  cursor: pointer;
-  transition: border-color 0.15s;
-}
-
-.toolbar__select:focus {
-  outline: none;
-  border-color: var(--border-strong);
-}
-
-.toolbar__select--full {
-  width: 100%;
-}
-
 /* Mobile filter toggle */
 .toolbar__filter-toggle--active {
   color: var(--primary-500);
@@ -1708,13 +1675,6 @@ onUnmounted(() => {
 }
 
 /* ---- Responsive ---- */
-
-/* Tablet & small desktop */
-@media (max-width: 900px) {
-  .toolbar__legend {
-    display: none;
-  }
-}
 
 /* Mobile */
 @media (max-width: 768px) {

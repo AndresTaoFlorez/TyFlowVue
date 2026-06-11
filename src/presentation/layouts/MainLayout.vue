@@ -52,7 +52,8 @@ const sidebarResizing = ref(false)
 
 const layoutStyle = computed(() => {
   if (viewportWidth.value <= BP_MOBILE) return {}
-  const width = sidebarCollapsed.value ? 72 : sidebarWidth.value
+  // Colapso TOTAL (mockup): el rail se va a 0 y queda el .nav-fab para reabrir.
+  const width = sidebarCollapsed.value ? 0 : sidebarWidth.value
   const style = { gridTemplateColumns: `${width}px 1fr` }
   if (sidebarResizing.value) style.transition = 'none'
   return style
@@ -94,11 +95,12 @@ const onSidebarResizeDblclick = () => {
   localStorage.setItem('tyflow_sidebar_width', String(SIDEBAR_DEFAULT))
 }
 
-const flushRoutes = ['/app/applications', '/app/calendar', '/app/cases']
-const isFlush = computed(() => flushRoutes.some(r => route.path.startsWith(r)))
+// Tratamiento del main declarado por ruta (contrato de boards):
+// meta.mainMode = 'flush' (padding mínimo) | 'bare' (la vista gestiona su
+// lienzo a sangre completa, p.ej. el calendario). Sin meta → padding normal.
+const mainMode = computed(() => route.meta.mainMode || '')
 
-// Auto-collapse sidebar on dense views when viewport is narrow
-const denseRoutes = ['/app/applications', '/app/calendar', '/app/cases']
+// Auto-collapse sidebar on dense views (meta.dense) when viewport is narrow
 let userExpandedSidebar = false
 
 const persistCollapsed = (val) => {
@@ -106,8 +108,8 @@ const persistCollapsed = (val) => {
   localStorage.setItem('tyflow_sidebar_collapsed', String(val))
 }
 
-watch([() => route.path, viewportWidth], ([path, width]) => {
-  const isDense = denseRoutes.some(r => path.startsWith(r))
+watch([() => route.path, viewportWidth], ([, width]) => {
+  const isDense = !!route.meta.dense
   if (isDense && width < 1200 && width > 768 && !sidebarCollapsed.value && !userExpandedSidebar) {
     persistCollapsed(true)
   }
@@ -149,6 +151,11 @@ onUnmounted(() => {
 
     <AppSidebar :collapsed="collapsedDesktop" @navigate="closeMobileSidebar" @toggle-sidebar="toggleSidebar" />
 
+    <!-- Rail colapsado a 0 (mockup): pestaña flotante para reabrir -->
+    <button v-if="collapsedDesktop" class="nav-fab" @click="toggleSidebar" title="Mostrar menú">
+      <i class='bx bx-chevrons-right'></i>
+    </button>
+
     <div
       v-if="!sidebarCollapsed && viewportWidth > 768"
       class="layout__resize"
@@ -158,7 +165,7 @@ onUnmounted(() => {
       @dblclick="onSidebarResizeDblclick"
     ></div>
 
-    <main class="layout__main" :class="{ 'layout__main--flush': isFlush }">
+    <main class="layout__main" :class="{ 'layout__main--flush': mainMode === 'flush', 'layout__main--bare': mainMode === 'bare' }">
       <router-view />
     </main>
 

@@ -24,8 +24,10 @@ export function useCalendarPages(calStore) {
       if (from && to && w.scheduledDate) {
         if (w.scheduledDate < from || w.scheduledDate > to) return false
       }
-      if (calStore.filtroSpecialist !== 'all' && w.specialistId !== calStore.filtroSpecialist) return false
-      if (calStore.filtroApp !== 'all' && w.applicationId !== calStore.filtroApp) return false
+      if (calStore.hiddenSpecs.has(w.specialistId)) return false
+      if (calStore.hiddenApps.has(w.applicationId)) return false
+      if (!calStore.showActive && w.isActive) return false
+      if (!calStore.showInactive && !w.isActive) return false
       return true
     })
   }

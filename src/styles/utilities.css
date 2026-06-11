@@ -33,27 +33,28 @@
   display: flex;
   align-items: center;
   gap: 0.45rem;
-  padding: 0.4rem 0.85rem;
+  padding: 0.6rem 1.05rem;
   background-color: var(--primary-500);
   color: white;
   font-weight: 600;
-  font-size: 0.82rem;
-  border-radius: var(--radius-md);
+  font-size: 0.88rem;
+  border-radius: 10px;
   border: none;
   cursor: pointer;
-  transition: background-color 0.15s, box-shadow 0.15s, transform 0.1s;
-  box-shadow: 0 1px 3px rgba(42, 199, 143, 0.25);
+  transition: all 0.15s;
+  box-shadow: 0 2px 8px rgba(42, 199, 143, 0.3);
 }
 
 .topbar__actions .btn-create:hover,
 .topbar__actions .btn-edit:hover {
   background-color: var(--primary-600);
-  box-shadow: 0 3px 8px rgba(42, 199, 143, 0.3);
+  box-shadow: 0 4px 14px rgba(42, 199, 143, 0.4);
+  transform: translateY(-1px);
 }
 
 .topbar__actions .btn-create:active,
 .topbar__actions .btn-edit:active {
-  transform: scale(0.97);
+  transform: translateY(0) scale(0.98);
 }
 
 .topbar__actions .btn-create i,

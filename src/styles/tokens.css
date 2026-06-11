@@ -9,11 +9,12 @@
   --primary-500: #2AC78F;
   --primary-600: #249F75;
   --primary-700: #197A57;
-  --primary-gradient: linear-gradient(135deg, #2AC78F 0%, #3EE0A1 100%);
 
   /* Backgrounds */
   --bg-main: #ffffff;
   --bg-card: #f5f2f2;
+  /* Fondo unificado del shell (sidebar + topbar + main) — un solo color */
+  --app-bg: #f5f2f2;
 
   /* Text */
   --text-primary: #1F2937;
@@ -110,12 +111,13 @@
   --sidebar-width-collapsed: 72px;
   --topbar-height: 68px;
 
-  /* Nav rail (global sidebar) — always dark, regardless of app theme */
-  --nav-bg: #0e1119;
-  --nav-border: #1f2530;
-  --nav-text: #99a0b3;
-  --nav-text-active: var(--primary-500);
-  --nav-hover: #171b25;
+  /* Nav rail (global sidebar) — sigue el tema de la app */
+  --nav-bg: var(--app-bg);
+  --nav-border: #e2e5ea;
+  --nav-text: #5b6372;
+  --nav-text-strong: #1f2937;
+  --nav-text-active: var(--primary-600);
+  --nav-hover: rgba(20, 30, 55, 0.06);
 
   /* Radius */
   --radius-sm: 6px;
@@ -171,11 +173,6 @@
   --muted: #6b7280;
   --faint: #9aa3b2;
 
-  /* Warning / holiday accent */
-  --warn: #F59E0B;
-  --warn-600: #D97706;
-  --holiday-wash: rgba(245,158,11,0.06);
-  --holiday-line: rgba(245,158,11,0.32);
   --weekend-wash: rgba(20,30,55,0.022);
 
   /* Window block corner radius (Calendar redesign) */
@@ -211,6 +208,7 @@
   /* Backgrounds */
   --bg-main: #111827;
   --bg-card: #1F2937;
+  --app-bg: #0e1119;
 
   /* Text */
   --text-primary: #F9FAFB;
@@ -280,12 +278,13 @@
   --priority-high-bg: #7C2D12;
   --priority-urgent-bg: #7F1D1D;
 
-  /* Calendar color system (dark) — cuadrilla de UN solo tono profundo */
-  --cal-shell: #09101a;
-  --cal-header: #09101a;
-  --cal-col: #09101a;
-  --cal-col-alt: #09101a;
-  --cal-col-other: #070c15;
+  /* Calendar color system (dark) — cuadrilla de UN solo tono profundo,
+     el MISMO del shell (--app-bg) para un fondo continuo */
+  --cal-shell: #0e1119;
+  --cal-header: #0e1119;
+  --cal-col: #0e1119;
+  --cal-col-alt: #0e1119;
+  --cal-col-other: #0a0d14;
   --cal-border: #1b2233;
   --cal-grid: #161d2b;
   --cal-grid-half: #11161f;
@@ -295,7 +294,7 @@
   --cal-today-tint: rgba(42,199,143,0.05);
   --cal-hover: rgba(255,255,255,0.035);
   --cal-overlay: rgba(255,255,255,0.08);
-  --block-mix-bg: #09101a;
+  --block-mix-bg: #0e1119;
   --block-text-light: 78%;
   --inactive-fill: rgba(120, 128, 150, 0.10);
   --inactive-stripe: rgba(120, 128, 150, 0.16);
@@ -314,13 +313,13 @@
   --muted: #888fa1;
   --faint: #636a7b;
 
-  /* Warning / holiday accent */
-  --warn: #F59E0B;
-  --warn-600: #FBBF24;
-  --holiday-wash: rgba(245,158,11,0.07);
-  --holiday-line: rgba(245,158,11,0.30);
   --weekend-wash: rgba(120,128,150,0.05);
 
-  /* Sidebar */
-  --primary-gradient: linear-gradient(135deg, #111827 0%, #1a2234 100%);
+  /* Nav rail (global sidebar) — mismo fondo unificado del shell */
+  --nav-bg: var(--app-bg);
+  --nav-border: #1d2330;
+  --nav-text: #99a0b3;
+  --nav-text-strong: #eef1f6;
+  --nav-text-active: var(--primary-500);
+  --nav-hover: #171b25;
 }

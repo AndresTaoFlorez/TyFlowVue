@@ -1,4 +1,5 @@
 <script setup>
+import '@/styles/components/calendar/cal-modal.css'
 import { ref, watch, computed, nextTick } from 'vue'
 import { fmtDateISO } from '@/presentation/helpers/formatDate'
 
@@ -301,12 +302,14 @@ const handleSubmit = () => {
     <Transition name="modal">
       <div v-if="visible" class="overlay" @click.self="$emit('close')">
         <div class="modal" @click="closeDropdowns">
+          <div class="modal__top"></div>
           <!-- Header -->
-          <div class="modal__header">
-            <span class="modal__title">Nueva ventana de trabajo</span>
-            <button @click="$emit('close')" class="modal__close" :disabled="creating">
-              <i class='bx bx-x'></i>
-            </button>
+          <div class="modal__head">
+            <div>
+              <div class="modal__title">Nueva ventana de trabajo</div>
+              <div class="modal__sub">Disponibilidad de uno o varios especialistas</div>
+            </div>
+            <button @click="$emit('close')" class="modal__x" :disabled="creating">&times;</button>
           </div>
 
           <!-- Body -->
@@ -499,12 +502,12 @@ const handleSubmit = () => {
           </div>
 
           <!-- Footer -->
-          <div class="modal__footer">
-            <span v-if="totalWindows > 1" class="modal__count">Se crearán {{ totalWindows }} ventanas</span>
-            <button class="btn-cancel" @click="$emit('close')" :disabled="creating">Cancelar</button>
-            <button class="btn-save" :disabled="creating || !canSubmit" @click="handleSubmit">
+          <div class="modal__foot cwm__foot">
+            <span v-if="totalWindows > 1" class="cwm__count">Se crearán {{ totalWindows }} ventanas</span>
+            <button class="mbtn" @click="$emit('close')" :disabled="creating">Cancelar</button>
+            <button class="mbtn mbtn--primary" :disabled="creating || !canSubmit" @click="handleSubmit">
               <i v-if="creating" class='bx bx-loader-alt bx-spin'></i>
-              Guardar
+              Crear
             </button>
           </div>
         </div>
@@ -525,58 +528,20 @@ const handleSubmit = () => {
   z-index: 100;
 }
 
+/* El shell base (.modal/__top/__head/__x) viene de cal-modal.css;
+   aquí solo las desviaciones de este modal. */
 .modal {
-  background: var(--bg-main, white);
-  width: 100%;
   max-width: 480px;
-  border-radius: 16px;
-  box-shadow: 0 12px 32px rgba(20, 30, 55, 0.16);
   max-height: 90vh;
-  display: flex;
-  flex-direction: column;
 }
-
-@keyframes cwm-pop {
-  from { opacity: 0; transform: scale(0.96); }
-  to { opacity: 1; transform: scale(1); }
-}
-
-/* ---- Header ---- */
-.modal__header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 1.1rem 1.4rem;
-  border-bottom: 1px solid var(--border-light);
-  background: var(--bg-main, white);
-  border-radius: 16px 16px 0 0;
-  flex-shrink: 0;
-}
-
-.modal__title {
-  font-size: 0.95rem;
-  font-weight: 700;
-  color: var(--text-primary);
-}
-
-.modal__close {
-  background: none;
-  border: none;
-  font-size: 1.3rem;
-  color: var(--text-secondary);
-  cursor: pointer;
-  border-radius: var(--radius-sm);
-  padding: 0.15rem;
-  transition: color 0.12s;
-}
-
-.modal__close:hover { color: var(--text-primary); }
 
 /* ---- Body ---- */
+/* Las filas (.row) llevan su propio padding lateral; sin gap del shell. */
 .modal__body {
-  padding: 0.5rem 0;
+  padding: 0.5rem 0 1rem;
   overflow-y: auto;
   flex: 1;
+  gap: 0;
 }
 
 /* ---- Row ---- */
@@ -588,11 +553,11 @@ const handleSubmit = () => {
   transition: background 0.1s;
 }
 
-.row:hover { background: var(--bg-card); }
+.row:hover { background: var(--surface-2); }
 
 .row > i {
   font-size: 1.05rem;
-  color: var(--text-secondary);
+  color: var(--muted);
   width: 1.2rem;
   flex-shrink: 0;
   text-align: center;
@@ -609,12 +574,12 @@ const handleSubmit = () => {
 
 .row__date {
   height: 38px;
-  border: 1px solid var(--border-light);
+  border: 1px solid var(--border);
   border-radius: 9px;
-  background: var(--bg-card);
+  background: var(--surface-2);
   font-size: 0.8rem;
   font-weight: 500;
-  color: var(--text-primary);
+  color: var(--text);
   padding: 0 0.7rem;
   cursor: pointer;
   outline: none;
@@ -624,7 +589,7 @@ const handleSubmit = () => {
 
 .row__hint {
   font-size: 0.7rem;
-  color: var(--text-secondary);
+  color: var(--muted);
   text-transform: capitalize;
 }
 
@@ -639,7 +604,7 @@ const handleSubmit = () => {
 .row__datetime-label {
   font-size: 0.65rem;
   font-weight: 600;
-  color: var(--text-secondary);
+  color: var(--muted);
   text-transform: uppercase;
   letter-spacing: 0.03em;
 }
@@ -704,13 +669,13 @@ const handleSubmit = () => {
 
 .time-input {
   height: 38px;
-  border: 1px solid var(--border-light);
-  background: var(--bg-card);
+  border: 1px solid var(--border);
+  background: var(--surface-2);
   border-radius: 9px;
   padding: 0 0.7rem;
   font-size: 0.85rem;
   font-weight: 600;
-  color: var(--text-primary);
+  color: var(--text);
   width: 7.5rem;
   outline: none;
   transition: border-color 0.15s;
@@ -721,7 +686,7 @@ const handleSubmit = () => {
 }
 
 .time-dash {
-  color: var(--text-secondary);
+  color: var(--muted);
   font-size: 0.8rem;
 }
 
@@ -737,13 +702,13 @@ const handleSubmit = () => {
 
 .weight-input {
   height: 38px;
-  border: 1px solid var(--border-light);
-  background: var(--bg-card);
+  border: 1px solid var(--border);
+  background: var(--surface-2);
   border-radius: 9px;
   padding: 0 0.7rem;
   font-size: 0.85rem;
   font-weight: 600;
-  color: var(--text-primary);
+  color: var(--text);
   width: 8rem;
   outline: none;
   transition: border-color 0.15s;
@@ -767,7 +732,7 @@ const handleSubmit = () => {
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  color: var(--text-secondary);
+  color: var(--muted);
   padding: 0.6rem 1.4rem 0.2rem;
 }
 
@@ -782,7 +747,7 @@ const handleSubmit = () => {
 .person-row__remove {
   background: none;
   border: none;
-  color: var(--text-secondary);
+  color: var(--muted);
   font-size: 1rem;
   cursor: pointer;
   padding: 0.15rem;
@@ -802,24 +767,24 @@ const handleSubmit = () => {
   flex: 1;
   min-width: 0;
   padding: 0.35rem 0.5rem;
-  border: 1px solid var(--border-light);
+  border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   cursor: pointer;
   transition: border-color 0.12s;
 }
 
-.mini-picker:hover { border-color: var(--primary-400); }
+.mini-picker:hover { border-color: var(--border-strong); }
 
 .mini-picker > i {
   font-size: 0.85rem;
-  color: var(--text-secondary);
+  color: var(--muted);
   flex-shrink: 0;
 }
 
 .mini-picker__value {
   font-size: 0.78rem;
   font-weight: 600;
-  color: var(--text-primary);
+  color: var(--text);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -827,7 +792,7 @@ const handleSubmit = () => {
 }
 
 .mini-picker__value--placeholder {
-  color: var(--text-secondary);
+  color: var(--muted);
   font-weight: 500;
 }
 
@@ -836,7 +801,7 @@ const handleSubmit = () => {
   border: none;
   background: none;
   font-size: 0.78rem;
-  color: var(--text-primary);
+  color: var(--text);
   outline: none;
   padding: 0;
   min-width: 0;
@@ -847,8 +812,8 @@ const handleSubmit = () => {
   top: calc(100% + 4px);
   left: 0;
   right: 0;
-  background: var(--bg-main);
-  border: 1px solid var(--border-light);
+  background: var(--surface);
+  border: 1px solid var(--border);
   border-radius: var(--radius-md);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
   max-height: 160px;
@@ -860,7 +825,7 @@ const handleSubmit = () => {
 .mini-picker__option {
   padding: 0.4rem 0.5rem;
   font-size: 0.78rem;
-  color: var(--text-primary);
+  color: var(--text);
   border-radius: var(--radius-sm);
   cursor: pointer;
   transition: background 0.1s;
@@ -869,13 +834,13 @@ const handleSubmit = () => {
   text-overflow: ellipsis;
 }
 
-.mini-picker__option:hover { background: var(--bg-card); }
+.mini-picker__option:hover { background: var(--surface-2); }
 .mini-picker__option--active { background: rgba(42, 199, 143, 0.08); color: var(--primary-600); font-weight: 600; }
 
 .mini-picker__empty {
   padding: 0.5rem;
   font-size: 0.75rem;
-  color: var(--text-secondary);
+  color: var(--muted);
   text-align: center;
 }
 
@@ -887,9 +852,9 @@ const handleSubmit = () => {
   margin: 0.25rem 1.4rem;
   padding: 0.35rem 0.6rem;
   background: none;
-  border: 1px dashed var(--border-light);
+  border: 1px dashed var(--border);
   border-radius: var(--radius-sm);
-  color: var(--text-secondary);
+  color: var(--muted);
   font-size: 0.75rem;
   font-weight: 600;
   cursor: pointer;
@@ -898,7 +863,7 @@ const handleSubmit = () => {
 
 .btn-add-person:hover {
   color: var(--primary-500);
-  border-color: var(--primary-400);
+  border-color: var(--border-strong);
 }
 
 .btn-add-person:disabled { opacity: 0.4; cursor: not-allowed; }
@@ -926,17 +891,17 @@ const handleSubmit = () => {
 .row__label {
   flex: 1;
   font-size: 0.82rem;
-  color: var(--text-secondary);
+  color: var(--muted);
   transition: color 0.15s;
 }
 
-.row__label--active { color: var(--text-primary); }
+.row__label--active { color: var(--text); }
 
 .switch {
   width: 1.85rem;
   height: 1.05rem;
   border-radius: var(--radius-full);
-  background: var(--border-light);
+  background: var(--border);
   position: relative;
   transition: background 0.2s;
   flex-shrink: 0;
@@ -962,7 +927,7 @@ const handleSubmit = () => {
 .modal__hint {
   margin: -0.2rem 1.4rem 0.3rem 2.8rem;
   font-size: 0.7rem;
-  color: var(--text-secondary);
+  color: var(--muted);
   line-height: 1.35;
 }
 
@@ -983,59 +948,23 @@ const handleSubmit = () => {
 .modal__error i { font-size: 0.95rem; }
 
 /* ---- Footer ---- */
-.modal__footer {
-  display: flex;
+.cwm__foot {
   align-items: center;
-  justify-content: flex-end;
-  gap: 0.6rem;
-  padding: 0.85rem 1.4rem;
-  border-top: 1px solid var(--border-light);
-  border-radius: 0 0 16px 16px;
-  background: var(--bg-main, white);
-  flex-shrink: 0;
+  padding-top: 0.6rem;
+  border-top: 1px solid var(--border-soft);
 }
 
-.modal__count {
+.cwm__foot .mbtn {
+  flex: 0 0 auto;
+  padding: 0 1.1rem;
+}
+
+.cwm__count {
   font-size: 0.72rem;
   font-weight: 600;
   color: var(--primary-500);
   margin-right: auto;
 }
-
-.btn-cancel {
-  height: 40px;
-  padding: 0 0.9rem;
-  font-size: 0.85rem;
-  font-weight: 600;
-  border: 1px solid var(--border-light);
-  color: var(--text-secondary);
-  background: var(--bg-main, white);
-  border-radius: 9px;
-  cursor: pointer;
-  transition: color 0.12s;
-}
-
-.btn-cancel:hover { color: var(--text-primary); }
-
-.btn-save {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.3rem;
-  height: 40px;
-  padding: 0 1rem;
-  background: var(--primary-500);
-  color: white;
-  font-weight: 600;
-  font-size: 0.85rem;
-  border: none;
-  border-radius: 9px;
-  cursor: pointer;
-  transition: background 0.15s;
-}
-
-.btn-save:hover:not(:disabled) { background: var(--primary-600); }
-.btn-save:disabled { opacity: 0.4; cursor: not-allowed; }
 
 /* Dropdown transition */
 .dropdown-enter-active { transition: opacity 0.12s ease, transform 0.12s ease; }

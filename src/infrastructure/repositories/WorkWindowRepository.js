@@ -1,5 +1,6 @@
 import client from '@/infrastructure/http/client'
 import { WorkWindow } from '@/domain/entities/WorkWindow'
+import { nextSyncSeq, syncGuardHeaders } from '@/infrastructure/sync/syncSeq'
 
 export const WorkWindowRepository = {
   async fetchAll(params = {}) {
@@ -29,8 +30,29 @@ export const WorkWindowRepository = {
     return items.map((item) => new WorkWindow(item))
   },
 
+  /**
+   * Crea una SERIE recurrente para un par especialista+aplicación.
+   * El backend (fn_create_recurring_work_windows) ordena las ocurrencias,
+   * resuelve la cadena de herencia automáticamente (§11.2 de las reglas) y es
+   * atómico: cualquier fallo revierte toda la serie.
+   * occurrences: [{ starts_at, ends_at }] (timestamptz ISO, máx 200).
+   */
+  async createRecurring({ specialistId, applicationId, occurrences, affinityWeight = 1 }) {
+    const { data } = await client.post('/work-windows/recurring', {
+      specialist_id: specialistId,
+      application_id: applicationId,
+      occurrences,
+      affinity_weight: affinityWeight,
+    })
+    const items = Array.isArray(data) ? data : data.data ?? data.items ?? []
+    return items.map((item) => new WorkWindow(item))
+  },
+
   _buildPatchItem(id, { startsAt = null, endsAt = null, note = null, inheritsOnReopen = null, affinityWeight = undefined } = {}) {
-    const item = { id }
+    // op_seq: supersesión per-item (API_CONTRACT §15) — si el backend ya
+    // recibió un op_seq más nuevo para esta window, descarta este item y lo
+    // devuelve en `superseded` (sin emitir su evento WebSocket).
+    const item = { id, op_seq: nextSyncSeq() }
     if (startsAt != null) item.starts_at = startsAt
     if (endsAt != null) item.ends_at = endsAt
     if (note != null) item.note = note
@@ -43,6 +65,7 @@ export const WorkWindowRepository = {
     const item = this._buildPatchItem(id, fields)
     const { data } = await client.patch('/work-windows', { windows: [item] })
     const items = Array.isArray(data) ? data : data.updated ?? data.data ?? data.items ?? []
+    // Superada → null: el caller lo trata como no-op (la ganadora pinta).
     return items.length > 0 ? new WorkWindow(items[0]) : null
   },
 
@@ -50,11 +73,27 @@ export const WorkWindowRepository = {
     const windows = items.map(({ id, ...fields }) => this._buildPatchItem(id, fields))
     const { data } = await client.patch('/work-windows', { windows })
     const result = Array.isArray(data) ? data : data.updated ?? data.data ?? data.items ?? []
-    return { updated: result.map(w => new WorkWindow(w)), failed: [] }
+    return {
+      updated: result.map(w => new WorkWindow(w)),
+      failed: (Array.isArray(data) ? [] : data.failed) ?? [],
+      // Items descartados por LWW ({id, op_seq, superseded_by}) — ignorarlos:
+      // ya enviamos un op_seq más nuevo para esas mismas windows.
+      superseded: (Array.isArray(data) ? [] : data.superseded) ?? [],
+    }
   },
 
   async deleteWindows(ids) {
-    await client.delete('/work-windows', { data: { ids } })
+    try {
+      await client.delete('/work-windows', {
+        data: { ids },
+        headers: syncGuardHeaders(ids.map(id => `work_window:${id}`)),
+      })
+    } catch (e) {
+      // Superada (409 X-Superseded): una mutación más nueva para estas windows
+      // ya llegó — el delete fue descartado. No-op silencioso (§21).
+      if (e.isSuperseded) return
+      throw e
+    }
   },
 
   async toggleWindows(ids) {

@@ -35,6 +35,13 @@ client.interceptors.response.use(
     const status = error.response.status
     const data = error.response.data
 
+    // Supersesión LWW (API_CONTRACT §21): el backend descartó esta mutación
+    // porque ya llegó una más nueva para los mismos recursos (X-Sync-Keys).
+    // No es un conflicto de datos: los call sites la tratan como no-op.
+    if (status === 409 && String(error.response.headers?.['x-superseded']) === 'true') {
+      return Promise.reject(ApiError.superseded(data))
+    }
+
     if (status === 401) {
       const originalRequest = error.config
       const isAuthEndpoint = originalRequest.url?.startsWith('/auth/')

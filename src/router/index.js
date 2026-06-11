@@ -53,13 +53,15 @@ const router = createRouter({
           path: 'applications',
           name: 'applications',
           component: ApplicationsView,
-          meta: { requiresAdmin: true, title: 'Aplicaciones' },
+          meta: { requiresAdmin: true, title: 'Aplicaciones', mainMode: 'flush', dense: true },
         },
         {
           path: 'calendar',
           name: 'calendar',
           component: CalendarioView,
-          meta: { title: 'Calendario' },
+          // mainMode 'bare': el calendario gestiona su lienzo a sangre completa
+          // y publica su toolbar/filtros en los boards del shell.
+          meta: { title: 'Calendario', mainMode: 'bare', dense: true },
         },
         {
           path: 'cases',
@@ -69,37 +71,37 @@ const router = createRouter({
           path: 'cases/list/:status',
           name: 'cases-list',
           component: CasesView,
-          meta: { title: 'Casos' },
+          meta: { title: 'Casos', mainMode: 'flush', dense: true },
         },
         {
           path: 'cases/list/:status/:id',
           name: 'cases-list-detail',
           component: CasesView,
-          meta: { title: 'Caso' },
+          meta: { title: 'Caso', mainMode: 'flush', dense: true },
         },
         {
           path: 'cases/specialists',
           name: 'cases-specialists',
           component: CasesView,
-          meta: { title: 'Especialistas' },
+          meta: { title: 'Especialistas', mainMode: 'flush', dense: true },
         },
         {
           path: 'cases/loads',
           name: 'cases-loads',
           component: CasesView,
-          meta: { title: 'Cargas' },
+          meta: { title: 'Cargas', mainMode: 'flush', dense: true },
         },
         {
           path: 'cases/loads/:specialistId',
           name: 'cases-loads-specialist',
           component: CasesView,
-          meta: { title: 'Cargas' },
+          meta: { title: 'Cargas', mainMode: 'flush', dense: true },
         },
         {
           path: 'cases/loads/:specialistId/:caseId',
           name: 'cases-loads-case',
           component: CasesView,
-          meta: { title: 'Cargas' },
+          meta: { title: 'Cargas', mainMode: 'flush', dense: true },
         },
         {
           path: 'settings',

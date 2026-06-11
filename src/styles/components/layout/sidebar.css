@@ -1,140 +1,203 @@
 /* =========================================
-   Sidebar Header (logo + collapse)
+   Sidebar
+   ========================================= */
+.sidebar {
+  background: var(--nav-bg);
+  border-right: 1px solid var(--nav-border);
+  display: flex;
+  flex-direction: column;
+  color: var(--nav-text);
+  overflow: hidden;
+  height: 100%;
+}
+
+/* Outlet del board contextual (contrato de boards): las vistas montan aquí
+   su contenido vía <SidebarBoard>. */
+.sidebar__board {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* =========================================
+   Sidebar Header (brand → menú contextual + ocultar)
    ========================================= */
 .sidebar__header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 1rem;
   gap: 0.5rem;
   min-width: 0;
-  overflow: hidden;
+  padding: 0.7rem 0.75rem 0.6rem;
 }
+
+.sidebar__brand-wrap {
+  position: relative;
+  min-width: 0;
+  flex: 1;
+}
+
+/* El brand es un BOTÓN (estilo Notion): hover lo resalta y muestra el caret;
+   click despliega el menú contextual de navegación. */
 .sidebar__brand {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.55rem;
   min-width: 0;
+  max-width: 100%;
   overflow: hidden;
+  padding: 0.3rem 0.45rem;
+  border-radius: 8px;
+  background: transparent;
+  cursor: pointer;
+  transition: background 0.12s;
 }
+.sidebar__brand:hover,
+.sidebar__brand--open {
+  background: var(--nav-hover);
+}
+
 .sidebar__logo {
   width: 28px;
   height: 28px;
   flex-shrink: 0;
-  border-radius: 6px;
+  border-radius: 8px;
 }
+
 .sidebar__brand-name {
-  font-size: 1.05rem;
+  font-size: 1.02rem;
   font-weight: 800;
-  color: white;
-  letter-spacing: -0.02em;
+  color: var(--nav-text-strong);
+  letter-spacing: -0.01em;
   white-space: nowrap;
   overflow: hidden;
 }
-.sidebar__collapse-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  border-radius: var(--radius-md);
-  background: rgba(255, 255, 255, 0.08);
-  color: rgba(255, 255, 255, 0.65);
-  font-size: 1.1rem;
-  cursor: pointer;
-  transition: background 0.15s, color 0.15s;
-  border: none;
-  flex-shrink: 0;
-}
-.sidebar__collapse-btn:hover {
-  background: rgba(255, 255, 255, 0.2);
-  color: white;
-}
-/* Collapsed: stack logo above toggle, centered */
-.layout--collapsed .sidebar__header {
-  flex-direction: column;
-  align-items: center;
-  gap: 0.4rem;
-}
-.layout--collapsed .sidebar__brand-name {
-  display: none;
-}
 
-/* =========================================
-   Sidebar
-   ========================================= */
-.sidebar {
-  background: var(--primary-gradient);
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  padding: 1.5rem 1rem;
-  color: white;
-  overflow: hidden;
-  height: 100%;
-}
-.sidebar__list { display: flex; flex-direction: column; gap: 0.5rem; }
-.sidebar__icon {
-  font-size: 1.3rem;
-  flex-shrink: 0;
-}
 .sidebar__label {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   min-width: 0;
 }
-.sidebar__link {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 0.75rem 0.75rem;
-  border-radius: var(--radius-md);
-  color: rgba(255, 255, 255, 0.85);
-  font-weight: 500;
-  font-size: 0.92rem;
-  transition: background 0.2s ease, color 0.2s ease, transform 0.2s ease;
-  background: transparent;
-  width: 100%;
-  text-align: left;
-  min-width: 0;
-  overflow: hidden;
+
+/* Caret del menú: oculto hasta hacer hover sobre el brand (o menú abierto) */
+.sidebar__brand-caret {
+  font-size: 1.05rem;
+  color: var(--nav-text);
+  opacity: 0;
+  flex-shrink: 0;
+  transition: opacity 0.12s, transform 0.12s;
 }
-.sidebar__link:hover {
-  background-color: rgba(255, 255, 255, 0.15);
-  color: white;
-  transform: translateX(4px);
+.sidebar__brand:hover .sidebar__brand-caret,
+.sidebar__brand--open .sidebar__brand-caret {
+  opacity: 1;
 }
-.sidebar__link--active {
-  background-color: var(--bg-main);
-  color: var(--primary-700);
-  font-weight: 700;
-}
-.sidebar__footer {
-  border-top: 1px solid rgba(255, 255, 255, 0.2);
-  padding-top: 1rem;
-  margin-top: auto;
+.sidebar__brand--open .sidebar__brand-caret {
+  transform: rotate(180deg);
 }
 
-/* Collapsed sidebar state */
-.layout--collapsed .sidebar {
-  padding: 1rem 0.35rem;
+/* Botón de ocultar («): invisible hasta hacer hover sobre CUALQUIER parte
+   de la sidebar (estilo Notion). */
+.sidebar__collapse-btn {
+  display: flex;
   align-items: center;
-}
-.layout--collapsed .sidebar__link {
   justify-content: center;
-  padding: 0.75rem 0.5rem;
-  gap: 0;
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--nav-text);
+  font-size: 1.15rem;
+  cursor: pointer;
+  flex-shrink: 0;
+  opacity: 0;
+  transition: opacity 0.12s, background 0.12s, color 0.12s;
 }
-.layout--collapsed .sidebar__label {
-  display: none;
+.sidebar:hover .sidebar__collapse-btn,
+.sidebar__collapse-btn:focus-visible {
+  opacity: 1;
 }
-.layout--collapsed .sidebar__link:hover {
-  transform: none;
+.sidebar__collapse-btn:hover {
+  background: var(--nav-hover);
+  color: var(--nav-text-strong);
 }
-.layout--collapsed .sidebar__footer {
+
+/* =========================================
+   Menú contextual de navegación (dropdown del brand)
+   ========================================= */
+.navmenu {
+  /* fixed: escapa del overflow:hidden de la sidebar (top/left vía JS) */
+  position: fixed;
+  min-width: 225px;
+  padding: 0.4rem;
   display: flex;
   flex-direction: column;
+  gap: 2px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: var(--shadow-pop);
+  z-index: 300;
+}
+
+.navmenu__item {
+  display: flex;
   align-items: center;
+  gap: 0.65rem;
+  padding: 0.5rem 0.6rem;
+  border-radius: 8px;
+  color: var(--text);
+  font-size: 0.88rem;
+  font-weight: 600;
+  background: transparent;
+  cursor: pointer;
   width: 100%;
+  text-align: left;
+  white-space: nowrap;
+  transition: background 0.1s, color 0.1s;
+}
+.navmenu__item:hover {
+  background: var(--surface-hover);
+}
+.navmenu__item--active {
+  color: var(--nav-text-active);
+  background: color-mix(in srgb, var(--primary-500) 12%, transparent);
+}
+.navmenu__item--logout:hover {
+  color: var(--error-500);
+}
+
+.navmenu__icon {
+  font-size: 1.15rem;
+  flex-shrink: 0;
+  opacity: 0.85;
+}
+
+.navmenu__sep {
+  height: 1px;
+  background: var(--border-soft);
+  margin: 0.3rem 0.2rem;
+}
+
+/* Transición del dropdown */
+.navmenu-enter-active,
+.navmenu-leave-active {
+  transition: opacity 0.12s ease, transform 0.12s ease;
+}
+.navmenu-enter-from,
+.navmenu-leave-to {
+  opacity: 0;
+  transform: translateY(-4px);
+}
+
+/* =========================================
+   Mobile: sin hover — caret y ocultar siempre visibles
+   ========================================= */
+@media (max-width: 768px) {
+  .sidebar__brand-caret,
+  .sidebar__collapse-btn {
+    opacity: 1;
+  }
 }
