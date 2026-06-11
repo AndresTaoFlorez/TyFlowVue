@@ -132,9 +132,23 @@ function onResize() {
   viewportWidth.value = window.innerWidth
 }
 
-onMounted(() => window.addEventListener('resize', onResize))
+// Atajo global 'b' (de "barra"): abre/cierra la sidebar. Se ignora mientras
+// el usuario escribe en inputs/textareas/contenteditables o con modificadores.
+function onKeydown(e) {
+  if (e.key !== 'b' && e.key !== 'B') return
+  if (e.ctrlKey || e.metaKey || e.altKey) return
+  const tag = e.target?.tagName
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || e.target?.isContentEditable) return
+  toggleSidebar()
+}
+
+onMounted(() => {
+  window.addEventListener('resize', onResize)
+  window.addEventListener('keydown', onKeydown)
+})
 onUnmounted(() => {
   window.removeEventListener('resize', onResize)
+  window.removeEventListener('keydown', onKeydown)
   document.removeEventListener('mousemove', onSidebarResizeMove)
   document.removeEventListener('mouseup', onSidebarResizeEnd)
 })

@@ -302,3 +302,49 @@ const workloadSync = new SyncEngine({
 ```
 
 Util para datos transitorios que no necesitan sobrevivir un refresh.
+
+## Supersesión de peticiones stale (backend LWW)
+
+El backend descarta mutaciones viejas cuando ya recibió una más nueva para los
+mismos recursos. El lado cliente vive en `syncSeq.js` (mismo módulo sync) y es
+**opt-in**: peticiones sin marcar se comportan como siempre; los GET nunca se
+cortan. Detalle completo: API_CONTRACT.md del backend, §21 (headers) y §15
+(per-item en work windows).
+
+### 1. Headers a nivel request (POST/PUT/PATCH/DELETE)
+
+```js
+import { syncGuardHeaders } from '@/infrastructure/sync/syncSeq'
+
+await client.delete('/work-windows', {
+  data: { ids },
+  headers: syncGuardHeaders(ids.map(id => `work_window:${id}`)),
+})
+```
+
+- `X-Sync-Seq`: contador monotónico estrictamente creciente (anclado a
+  `Date.now()` para sobrevivir recargas).
+- `X-Sync-Keys`: recursos que toca la petición (`tipo:id,tipo:id`).
+
+Si la petición llega DESPUÉS que una más nueva para esos recursos, el backend
+responde `409` + header `X-Superseded: true` sin tocar la DB. El interceptor de
+`client.js` lo convierte en `ApiError` con `isSuperseded === true`. Los call
+sites lo tratan como **no-op silencioso**: no pintar, no mostrar error, no
+reintentar — el estado final llega con la respuesta de la petición ganadora.
+
+### 2. Per-item en PATCH /work-windows
+
+Cada item del batch lleva `op_seq` (mismo contador; lo añade
+`WorkWindowRepository._buildPatchItem`). La respuesta separa tres arrays:
+
+- `updated` — aplicados.
+- `failed` — rechazados por validación.
+- `superseded` — `{id, op_seq, superseded_by}`: descartados porque ya se envió
+  un `op_seq` más nuevo para esa misma window. **Ignorarlos por completo**; no
+  emiten eventos WebSocket `work_window.updated` (solo la ganadora emite).
+
+### Qué proteger (y qué no)
+
+Solo operaciones de estado **absoluto** (mover/redimensionar con horas finales,
+delete) son LWW-safe. Operaciones **relativas** (toggle = flip) NO: descartar
+una cambia el resultado final. Por eso `toggleWindows` no lleva guard.
