@@ -1,12 +1,19 @@
 <script setup>
 import { computed } from 'vue'
 import { useCasesStore } from '@/presentation/stores/useCasesStore'
+import { useUserStore } from '@/presentation/stores/useUserStore'
+import UserAvatar from '@/presentation/components/shared/UserAvatar.vue'
 
 const store = useCasesStore()
+const userStore = useUserStore()
 const MAX_LOAD = 10
 
 const workloads = computed(() => store.specialistWorkloads)
 const recent = computed(() => store.recentAssignments)
+
+function preferencesFor(specialistId) {
+  return userStore.users.find(u => u.specialistId === specialistId)?.preferences || null
+}
 
 function initials(name) {
   if (!name) return '?'
@@ -54,9 +61,13 @@ function fmtTime(iso) {
 
       <div v-for="s in workloads" :key="s.specialist_id" class="sc">
         <div class="sc__left">
-          <div class="sc__avatar" :style="{ background: hslColor(s.full_name) }">
-            {{ initials(s.full_name) }}
-          </div>
+          <UserAvatar
+            :preferences="preferencesFor(s.specialist_id)"
+            :name="s.full_name"
+            :bg-color="hslColor(s.full_name)"
+            size="32px"
+            class="sc__avatar"
+          />
           <div class="sc__info">
             <span class="sc__name">{{ s.full_name }}</span>
             <span class="sc__status" :class="s.is_available ? 'sc__status--on' : 'sc__status--off'">

@@ -2,6 +2,7 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { useCasesStore } from '@/presentation/stores/useCasesStore'
 import { useUserStore } from '@/presentation/stores/useUserStore'
+import UserAvatar from '@/presentation/components/shared/UserAvatar.vue'
 
 const store     = useCasesStore()
 const userStore = useUserStore()
@@ -156,9 +157,13 @@ onMounted(() => {
     <div class="esv__grid">
       <div v-for="s in rows" :key="s.specialist_id" class="ec">
         <div class="ec__head">
-          <div class="ec__avatar" :style="{ background: hslColor(s.full_name) }">
-            {{ initials(s.full_name) }}
-          </div>
+          <UserAvatar
+            :preferences="userStore.users.find(u => u.specialistId === s.specialist_id)?.preferences || null"
+            :name="s.full_name"
+            :bg-color="hslColor(s.full_name)"
+            size="46px"
+            class="ec__avatar"
+          />
           <div class="ec__info">
             <div class="ec__name">{{ s.full_name }}</div>
             <div class="ec__meta">

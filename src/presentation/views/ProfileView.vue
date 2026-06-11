@@ -13,7 +13,8 @@ import { usePendingFields } from '@/presentation/composables/usePendingFields'
 const authStore = useAuthStore()
 const userStore = useUserStore()
 const router = useRouter()
-const { profile } = storeToRefs(authStore)
+const { profile, avatarUrl } = storeToRefs(authStore)
+const avatarEmoji = computed(() => profile.value?.preferences?.avatar_emoji || null)
 const { isAdmin } = storeToRefs(authStore)
 
 const editando = ref(false)
@@ -29,6 +30,51 @@ const cargandoSelects = ref(false)
 const formularioOriginal = ref({})
 const initialCategories = ref({})
 const { isPending, markPending, clearPending, hasChanges } = usePendingFields()
+
+// ---- Foto de perfil ----
+// avatarUrl (con cache-buster estable) vive en el authStore para que se cargue
+// UNA sola vez y se cachee hasta el próximo cambio.
+const fileInput = ref(null)
+const uploadingAvatar = ref(false)
+const toastType = ref('success')
+const MAX_AVATAR_BYTES = 5 * 1024 * 1024
+const AVATAR_TYPES = ['image/png', 'image/jpeg', 'image/webp', 'image/gif']
+
+const initials = computed(() =>
+  `${(profile.value?.firstName?.[0] || '').toUpperCase()}${(profile.value?.firstSurname?.[0] || '').toUpperCase()}`
+)
+
+const notify = (msg, type = 'success') => {
+  toastType.value = type
+  toastMessage.value = msg
+  toastVisible.value = true
+}
+
+const triggerFilePick = () => { if (!uploadingAvatar.value) fileInput.value?.click() }
+
+const onAvatarPicked = async (e) => {
+  const file = e.target.files?.[0]
+  e.target.value = ''   // permite volver a elegir el mismo archivo
+  if (!file) return
+  if (!AVATAR_TYPES.includes(file.type)) {
+    notify('Formato no soportado. Usa PNG, JPG, WEBP o GIF.', 'error')
+    return
+  }
+  if (file.size > MAX_AVATAR_BYTES) {
+    notify('La imagen supera el máximo de 5 MB.', 'error')
+    return
+  }
+  uploadingAvatar.value = true
+  try {
+    await authStore.uploadAvatar(file)   // el store hace bump del cache-buster
+    notify('Foto de perfil actualizada.')
+  } catch (err) {
+    // 400 = formato no soportado o archivo muy grande (también validado arriba).
+    notify(err.userMessage || err.message || 'No se pudo subir la foto.', 'error')
+  } finally {
+    uploadingAvatar.value = false
+  }
+}
 
 const resolveRoleNames = (roleIds) =>
   roleIds
@@ -194,8 +240,7 @@ const guardar = async () => {
     markPending(formularioOriginal.value, formulario.value)
     await Promise.all([authStore.fetchProfile(), userStore.loadUsers({ force: true })])
     clearPending()
-    toastMessage.value = 'Perfil actualizado correctamente.'
-    toastVisible.value = true
+    notify('Perfil actualizado correctamente.')
   } catch (error) {
     if (cambioEmail) {
       cerrarEditar()
@@ -246,7 +291,25 @@ onUnmounted(() => {
       <!-- Columna izquierda: identidad -->
       <div class="profile-identity">
         <div class="profile-identity__avatar">
-          <span>{{ (profile.firstName?.[0] || '').toUpperCase() }}{{ (profile.firstSurname?.[0] || '').toUpperCase() }}</span>
+          <img v-if="avatarUrl" :src="avatarUrl" alt="Foto de perfil" class="profile-identity__photo" />
+          <span v-else-if="avatarEmoji" class="profile-identity__emoji" role="img">{{ avatarEmoji }}</span>
+          <span v-else>{{ initials }}</span>
+          <button
+            type="button"
+            class="profile-identity__avatar-btn"
+            :title="avatarUrl ? 'Cambiar foto' : 'Subir foto'"
+            :disabled="uploadingAvatar"
+            @click="triggerFilePick"
+          >
+            <i class='bx' :class="uploadingAvatar ? 'bx-loader-alt bx-spin' : 'bx-camera'"></i>
+          </button>
+          <input
+            ref="fileInput"
+            type="file"
+            class="profile-identity__file"
+            accept="image/png,image/jpeg,image/webp,image/gif"
+            @change="onAvatarPicked"
+          />
         </div>
         <h2 class="profile-identity__name">{{ profile.fullName }}</h2>
         <span class="profile-identity__email">{{ profile.email || '—' }}</span>
@@ -463,6 +526,7 @@ onUnmounted(() => {
     <ToastNotification
       :visible="toastVisible"
       :message="toastMessage"
+      :type="toastType"
       @close="toastVisible = false"
     />
   </section>
@@ -523,6 +587,7 @@ onUnmounted(() => {
 }
 
 .profile-identity__avatar {
+  position: relative;
   width: 5rem;
   height: 5rem;
   border-radius: var(--radius-full, 50%);
@@ -536,6 +601,45 @@ onUnmounted(() => {
   letter-spacing: 0.05em;
   flex-shrink: 0;
 }
+
+.profile-identity__photo {
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  object-fit: cover;
+  display: block;
+}
+
+.profile-identity__emoji {
+  font-size: 2rem;
+  line-height: 1;
+  user-select: none;
+}
+
+.profile-identity__file { display: none; }
+
+.profile-identity__avatar-btn {
+  position: absolute;
+  bottom: -2px;
+  right: -2px;
+  width: 1.9rem;
+  height: 1.9rem;
+  border-radius: 50%;
+  background: var(--primary-500);
+  color: #fff;
+  border: 2px solid var(--bg-main);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.9rem;
+  cursor: pointer;
+  box-shadow: var(--shadow-sm);
+  transition: background 0.15s, transform 0.1s;
+}
+
+.profile-identity__avatar-btn:hover:not(:disabled) { background: var(--primary-600); }
+.profile-identity__avatar-btn:active:not(:disabled) { transform: scale(0.94); }
+.profile-identity__avatar-btn:disabled { opacity: 0.7; cursor: default; }
 
 .profile-identity__name {
   font-size: 1.1rem;

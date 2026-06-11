@@ -9,6 +9,8 @@ const prefs = usePreferencesStore()
 const props = defineProps({
   window: { type: Object, required: true },
   specialistName: { type: String, default: '—' },
+  specialistAvatar: { type: String, default: null },
+  specialistEmoji: { type: String, default: null },
   applicationName: { type: String, default: '—' },
   appColor: { type: String, default: null },
   hourHeight: { type: Number, default: 60 },
@@ -119,7 +121,11 @@ const { fontSize } = useAdaptiveFont(wbEl, {
 
     <template v-if="!compact">
       <div class="wb__head">
-        <span class="wb__avatar">{{ initials }}</span>
+        <span class="wb__avatar">
+          <img v-if="specialistAvatar" :src="specialistAvatar" class="wb__avatar-img" alt="" loading="lazy" />
+          <span v-else-if="specialistEmoji" class="wb__avatar-emoji" role="img">{{ specialistEmoji }}</span>
+          <template v-else>{{ initials }}</template>
+        </span>
         <span class="wb__name">
           <i v-if="inherited" class='bx bx-link wb__inherit-icon'></i>
           {{ specialistName }}
@@ -149,8 +155,8 @@ const { fontSize } = useAdaptiveFont(wbEl, {
 <style scoped>
 .wb {
   position: absolute;
-  /* Rounded muy leve, estilo iOS (esquinas suaves, no el típico radio grande). */
-  border-radius: var(--wb-radius, 4px);
+  /* Rounded suave estilo Google Calendar. */
+  border-radius: var(--wb-radius, 7px);
   /* Gutter derecho responsive (ver media query al final). */
   --wb-gap: 6px;
   padding: 0.3rem 0.5rem;
@@ -234,6 +240,21 @@ const { fontSize } = useAdaptiveFont(wbEl, {
   background: var(--app-color);
   flex-shrink: 0;
   line-height: 1;
+  overflow: hidden;
+}
+
+/* Foto del especialista (cacheada por el navegador; URL estable). */
+.wb__avatar-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 50%;
+}
+
+.wb__avatar-emoji {
+  font-size: 0.85em;
+  line-height: 1;
+  display: block;
 }
 
 /* ── Name ── */

@@ -7,6 +7,7 @@ import { fmtHM, fmtSlotTime, formatHour, formatHourCompact } from '@/presentatio
 import { fmtDateISO } from '@/presentation/helpers/formatDate'
 import { readableTextColor } from '@/presentation/utils/color'
 import { usePreferencesStore } from '@/presentation/stores/usePreferencesStore'
+import { getHoliday } from '@/config/holidays'
 
 const _prefs = usePreferencesStore()
 // Mejor color de texto para horas/cabecera, calculado sobre el tono real de la
@@ -1468,6 +1469,9 @@ const onGroupClick = (group, e) => {
 const findSpecialist = (id) => props.specialists.find(u => u.specialistId === id)
 const findApp = (id) => props.applications.find(a => a.id === id)
 const specName = (w) => findSpecialist(w.specialistId)?.fullName || w.specialistId
+// Foto del especialista (URL pública del backend, cacheada por el navegador).
+const specAvatar = (w) => findSpecialist(w.specialistId)?.preferences?.avatar_url || null
+const specEmoji  = (w) => findSpecialist(w.specialistId)?.preferences?.avatar_emoji || null
 const appName = (w) => findApp(w.applicationId)?.name || w.applicationId
 const appColor = (w) => { const a = findApp(w.applicationId); return a?.color || a?.theme?.color || null }
 
@@ -1501,6 +1505,7 @@ const compactTimeTop = computed(() => {
 
 const isWeekend = (dayIdx) => dayIdx >= 5
 const isHourTop = (slot) => slot % 2 === 0
+const holidayName = (dateStr) => getHoliday(dateStr)
 
 // ---- Month view ----
 const monthWindowsByDate = computed(() => {
@@ -1692,7 +1697,7 @@ watch(periodKey, (newKey, oldKey) => {
           </div>
 
           <!-- Columna del día activo -->
-          <div class="cal-col" :class="{ 'cal-col--today': activeMobileDay === todayIndex }">
+          <div class="cal-col" :class="{ 'cal-col--today': activeMobileDay === todayIndex, 'cal-col--holiday': !!holidayName(weekDates[activeMobileDay]) }">
             <div
               v-for="slot in SLOTS"
               :key="slot"
@@ -1787,6 +1792,8 @@ watch(periodKey, (newKey, oldKey) => {
                 v-else
                 :window="item.window"
                 :specialist-name="specName(item.window)"
+                :specialist-avatar="specAvatar(item.window)"
+                :specialist-emoji="specEmoji(item.window)"
                 :application-name="appName(item.window)"
                 :app-color="appColor(item.window)"
                 :hour-height="HOUR_H"
@@ -1832,6 +1839,7 @@ watch(periodKey, (newKey, oldKey) => {
             :class="{
               'cal-header__day--today': i === todayIndex,
               'cal-header__day--weekend': isWeekend(i),
+              'cal-header__day--holiday': !!holidayName(date),
             }"
           >
             <span class="cal-header__label">{{ DAY_LABELS[i] }}</span>
@@ -1859,6 +1867,7 @@ watch(periodKey, (newKey, oldKey) => {
             :class="{
               'cal-col--today': dayIdx === todayIndex,
               'cal-col--weekend': isWeekend(dayIdx),
+              'cal-col--holiday': !!holidayName(date),
               'cal-col--dragging': dragging && isDayInSelection(dayIdx),
             }"
           >
@@ -1926,6 +1935,8 @@ watch(periodKey, (newKey, oldKey) => {
                 v-else
                 :window="item.window"
                 :specialist-name="specName(item.window)"
+                :specialist-avatar="specAvatar(item.window)"
+                :specialist-emoji="specEmoji(item.window)"
                 :application-name="appName(item.window)"
                 :app-color="appColor(item.window)"
                 :hour-height="COMPACT_HOUR_H"
@@ -2040,10 +2051,14 @@ watch(periodKey, (newKey, oldKey) => {
             :class="{
               'cal-header__day--today': i === todayIndex,
               'cal-header__day--weekend': isWeekend(i),
+              'cal-header__day--holiday': !!holidayName(date),
             }"
           >
             <span class="cal-header__label">{{ DAY_LABELS[i] }}</span>
             <span class="cal-header__num" :class="{ 'cal-header__num--today': i === todayIndex }">{{ parseInt(date.split('-')[2]) }}</span>
+            <span v-if="holidayName(date)" class="cal-header__holiday" :title="holidayName(date)">
+              <i class='bx bx-gift'></i>{{ holidayName(date) }}
+            </span>
             <div
               v-if="i < weekDates.length - 1"
               class="cal-header__resize"
@@ -2070,6 +2085,7 @@ watch(periodKey, (newKey, oldKey) => {
             :class="{
               'cal-col--today': dayIdx === todayIndex,
               'cal-col--weekend': isWeekend(dayIdx),
+              'cal-col--holiday': !!holidayName(date),
               'cal-col--dragging': dragging && isDayInSelection(dayIdx),
             }"
           >
@@ -2143,6 +2159,8 @@ watch(periodKey, (newKey, oldKey) => {
                 v-else
                 :window="item.window"
                 :specialist-name="specName(item.window)"
+                :specialist-avatar="specAvatar(item.window)"
+                :specialist-emoji="specEmoji(item.window)"
                 :application-name="appName(item.window)"
                 :app-color="appColor(item.window)"
                 :hour-height="HOUR_H"
@@ -2205,8 +2223,7 @@ watch(periodKey, (newKey, oldKey) => {
 /* ========== Shell ========== */
 .cal {
   background: var(--cal-shell);
-  border: 1px solid var(--cal-border);
-  border-radius: 0;
+  border-radius: var(--radius-lg);
   overflow: hidden;
   user-select: none;
   display: flex;
@@ -2259,8 +2276,30 @@ watch(periodKey, (newKey, oldKey) => {
 
 .cal-header__day:last-child { border-right: none; }
 
-.cal-header__day--today { background: rgba(42, 199, 143, 0.06); }
-.cal-header__day--weekend:not(.cal-header__day--today) { background: var(--cal-shell); }
+.cal-header__day--today { background: transparent; }
+.cal-header__day--weekend:not(.cal-header__day--today) { background: transparent; }
+
+.cal-header__holiday {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-top: 3px;
+  font-size: 0.56rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  color: var(--warn-600);
+  background: rgba(245, 158, 11, 0.14);
+  padding: 1px 7px;
+  border-radius: 999px;
+  max-width: 96%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cal-header__holiday i { font-size: 0.6rem; }
+
+[data-theme="dark"] .cal-header__holiday { color: #FBBF24; }
 
 .cal-header__label {
   font-size: 0.62rem;
@@ -2289,8 +2328,9 @@ watch(periodKey, (newKey, oldKey) => {
 }
 
 .cal-header__num--today {
-  background: var(--primary-500);
-  color: #fff;
+  background: color-mix(in srgb, var(--primary-500) 16%, transparent);
+  color: var(--primary-500);
+  font-weight: 700;
 }
 
 .cal-header__day--weekend:not(.cal-header__day--today) .cal-header__num {
@@ -2298,7 +2338,7 @@ watch(periodKey, (newKey, oldKey) => {
 }
 
 .cal-header__day--compact-cell.cal-header__day--today {
-  background: rgba(42, 199, 143, 0.15);
+  background: transparent;
 }
 
 /* Column resize handle */
@@ -2372,8 +2412,9 @@ watch(periodKey, (newKey, oldKey) => {
 }
 
 .cal-col:last-child { border-right: none; }
-.cal-col--today { background: rgba(42, 199, 143, 0.03); }
-.cal-col--weekend:not(.cal-col--today) { background: var(--cal-col-alt); }
+.cal-col--today { background: transparent; }
+.cal-col--weekend:not(.cal-col--today) { background: transparent; }
+.cal-col--holiday:not(.cal-col--today) { background: var(--holiday-wash); }
 
 /* Half-hour cells */
 .cal-col__cell {
@@ -2385,9 +2426,9 @@ watch(periodKey, (newKey, oldKey) => {
   border-top: 1px solid var(--cal-grid);
 }
 
-/* Bottom of hour (half mark) — dashed subtle border */
+/* Bottom of hour (half mark) — no separate line, matches mockup's single hairline-per-hour grid */
 .cal-col__cell--bottom {
-  border-top: 1px dashed var(--cal-grid-half);
+  border-top: none;
 }
 
 /* First cell: no double border with header */

@@ -52,6 +52,29 @@ const selectedGroup = ref(null)
 const showMobileFilters = ref(false)
 const slideDir = ref('') // 'slide-left' | 'slide-right'
 
+// ---- View dropdown (Día / 5 días / Semana / Mes / Agenda) ----
+const VIEW_OPTIONS = [
+  { key: 'day', label: 'Día' },
+  { key: '5days', label: '5 días', disabled: true },
+  { key: 'week', label: 'Semana' },
+  { key: 'month', label: 'Mes' },
+  { key: 'agenda', label: 'Agenda', disabled: true },
+]
+const viewMenuOpen = ref(false)
+const viewDdRef = ref(null)
+const viewLabel = computed(() => VIEW_OPTIONS.find(v => v.key === calView.value)?.label || 'Semana')
+function toggleViewMenu() { viewMenuOpen.value = !viewMenuOpen.value }
+function selectView(opt) {
+  if (opt.disabled) return
+  calView.value = opt.key
+  viewMenuOpen.value = false
+}
+function onViewDdDocClick(e) {
+  if (viewMenuOpen.value && viewDdRef.value && !viewDdRef.value.contains(e.target)) {
+    viewMenuOpen.value = false
+  }
+}
+
 // Month strip for mobile month view
 const monthStripItems = computed(() => {
   const meses = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic']
@@ -863,12 +886,14 @@ onMounted(() => {
   window.addEventListener('keydown', onKeydown)
   window.addEventListener('resize', onResize)
   window.addEventListener('click', closeCtxMenu)
+  document.addEventListener('click', onViewDdDocClick)
 })
 
 onUnmounted(() => {
   window.removeEventListener('keydown', onKeydown)
   window.removeEventListener('resize', onResize)
   window.removeEventListener('click', closeCtxMenu)
+  document.removeEventListener('click', onViewDdDocClick)
 })
 </script>
 
@@ -899,50 +924,57 @@ onUnmounted(() => {
         </button>
         <input ref="datePickerRef" type="date" class="toolbar__date-picker" @change="onDatePicked" />
 
-        <!-- View toggle (siempre visible) -->
-        <div class="toolbar__views">
-          <button class="toolbar__view-btn" :class="{ 'toolbar__view-btn--active': calView === 'day' }"
-            @click="calView = 'day'">Día</button>
-          <button class="toolbar__view-btn" :class="{ 'toolbar__view-btn--active': calView === 'week' }"
-            @click="calView = 'week'"><span class="toolbar__view-full">Semana</span><span class="toolbar__view-short">Sem</span></button>
-          <button class="toolbar__view-btn" :class="{ 'toolbar__view-btn--active': calView === 'month' }"
-            @click="calView = 'month'">Mes</button>
+        <!-- View dropdown (siempre visible) -->
+        <div class="viewdd" ref="viewDdRef">
+          <button class="viewdd__btn" @click="toggleViewMenu">
+            <span>{{ viewLabel }}</span>
+            <i class='bx bx-chevron-down viewdd__caret' :class="{ 'viewdd__caret--open': viewMenuOpen }"></i>
+          </button>
+          <div v-if="viewMenuOpen" class="viewdd__menu">
+            <button v-for="opt in VIEW_OPTIONS" :key="opt.key" class="viewdd__opt"
+              :class="{ 'viewdd__opt--on': calView === opt.key, 'viewdd__opt--disabled': opt.disabled }"
+              @click="selectView(opt)">
+              <span>{{ opt.label }}</span>
+              <i v-if="calView === opt.key" class='bx bx-check'></i>
+              <span v-else-if="opt.disabled" class="viewdd__soon">Próximamente</span>
+            </button>
+          </div>
         </div>
 
         <!-- Tool toggle (admin only, hidden on mobile via CSS) -->
-        <div v-if="authStore.isAdmin" class="toolbar__tools">
-          <button class="toolbar__tool-btn" :class="{ 'toolbar__tool-btn--active': activeTool === 'default' }"
+        <div v-if="authStore.isAdmin" class="seg seg--icons toolbar__tools">
+          <button class="seg__btn" :class="{ 'seg__btn--active': activeTool === 'default' }"
             @click="setTool('default')" title="Modo normal (V)">
             <i class='bx bx-pointer'></i>
           </button>
-          <button class="toolbar__tool-btn" :class="{ 'toolbar__tool-btn--active': activeTool === 'eraser' }"
+          <button class="seg__btn" :class="{ 'seg__btn--active': activeTool === 'eraser' }"
             @click="setTool('eraser')" title="Borrador (E)">
             <i class='bx bx-eraser'></i>
           </button>
-          <button class="toolbar__tool-btn" :class="{ 'toolbar__tool-btn--active': activeTool === 'select' }"
+          <button class="seg__btn" :class="{ 'seg__btn--active': activeTool === 'select' }"
             @click="setTool('select')" title="Seleccionar (S)">
             <i class='bx bx-select-multiple'></i>
           </button>
         </div>
 
         <!-- Undo button (hidden on mobile via CSS) -->
-        <button v-if="authStore.isAdmin" class="toolbar__undo-btn" :disabled="!canUndo"
+        <button v-if="authStore.isAdmin" class="tb-icon toolbar__undo-btn" :disabled="!canUndo"
           @click="calStore.undo().then(() => showToast('Acción deshecha.')).catch(() => showToast('Error al deshacer.', 'error'))"
           title="Deshacer (Ctrl+Z)">
           <i class='bx bx-undo'></i>
         </button>
 
         <!-- Density selector (desktop only) -->
-        <div v-if="!isMobile" class="toolbar__density">
-          <button class="toolbar__density-btn" :class="{ 'toolbar__density-btn--active': density === 'compact' }"
+        <div v-if="!isMobile" class="seg seg--icons toolbar__density">
+          <button class="seg__btn" :class="{ 'seg__btn--active': density === 'compact' }"
             @click="calStore.setDensity('compact')" title="Compacto">
             <i class='bx bx-menu'></i>
           </button>
-          <button class="toolbar__density-btn" :class="{ 'toolbar__density-btn--active': density === 'comfortable' }"
+          <button class="seg__btn" :class="{ 'seg__btn--active': density === 'comfortable' }"
             @click="calStore.setDensity('comfortable')" title="Normal">
             <i class='bx bx-align-justify'></i>
           </button>
-          <button class="toolbar__density-btn" :class="{ 'toolbar__density-btn--active': density === 'spacious' }"
+          <button class="seg__btn" :class="{ 'seg__btn--active': density === 'spacious' }"
             @click="calStore.setDensity('spacious')" title="Espacioso">
             <i class='bx bx-expand-vertical'></i>
           </button>
@@ -996,16 +1028,16 @@ onUnmounted(() => {
             {{ a.name }}
           </option>
         </select>
-        <div v-if="authStore.isAdmin" class="toolbar__tools toolbar__tools--mobile">
-          <button class="toolbar__tool-btn" :class="{ 'toolbar__tool-btn--active': activeTool === 'default' }"
+        <div v-if="authStore.isAdmin" class="seg seg--icons toolbar__tools toolbar__tools--mobile">
+          <button class="seg__btn" :class="{ 'seg__btn--active': activeTool === 'default' }"
             @click="setTool('default')" title="Modo normal">
             <i class='bx bx-pointer'></i>
           </button>
-          <button class="toolbar__tool-btn" :class="{ 'toolbar__tool-btn--active': activeTool === 'eraser' }"
+          <button class="seg__btn" :class="{ 'seg__btn--active': activeTool === 'eraser' }"
             @click="setTool('eraser')" title="Borrador">
             <i class='bx bx-eraser'></i>
           </button>
-          <button class="toolbar__tool-btn" :class="{ 'toolbar__tool-btn--active': activeTool === 'select' }"
+          <button class="seg__btn" :class="{ 'seg__btn--active': activeTool === 'select' }"
             @click="setTool('select')" title="Seleccionar">
             <i class='bx bx-select-multiple'></i>
           </button>
@@ -1196,8 +1228,8 @@ onUnmounted(() => {
 /* ---- Filter toggle ---- */
 .toolbar__filter-toggle {
   background: none;
-  border: 1px solid var(--border-light);
-  color: var(--text-secondary);
+  border: 1px solid var(--border);
+  color: var(--muted);
   font-size: 1.1rem;
   width: 32px;
   height: 32px;
@@ -1216,10 +1248,10 @@ onUnmounted(() => {
 
 /* ---- Toolbar ---- */
 .toolbar {
-  background: var(--bg-main);
+  background: var(--surface);
   padding: 0.7rem 1.25rem;
   border-radius: var(--radius-md);
-  border: 1px solid var(--border-light);
+  border: 1px solid var(--border);
   display: flex;
   flex-direction: column;
   gap: 0.35rem;
@@ -1228,7 +1260,7 @@ onUnmounted(() => {
 .toolbar__row {
   display: flex;
   align-items: center;
-  gap: 0.35rem;
+  gap: 0.55rem;
   min-width: 0;
 }
 
@@ -1236,76 +1268,85 @@ onUnmounted(() => {
   gap: 0.5rem;
 }
 
-.toolbar__arrow {
+/* Ghost circular icon buttons (prev/next, undo) */
+.toolbar__arrow,
+.tb-icon {
   background: none;
-  border: 1px solid var(--border-light);
-  color: var(--text-secondary);
-  font-size: 1.1rem;
-  width: 32px;
-  height: 32px;
-  border-radius: 8px;
+  border: none;
+  color: var(--muted);
+  font-size: 1.2rem;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: all 0.15s;
+  transition: all 0.14s;
   flex-shrink: 0;
 }
 
-.toolbar__arrow:hover {
-  color: var(--primary-500);
-  border-color: var(--primary-500);
-  background: rgba(42, 199, 143, 0.04);
+.toolbar__arrow:hover,
+.tb-icon:not(:disabled):hover {
+  background: var(--surface-hover);
+  color: var(--text);
 }
 
+.tb-icon:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+/* Pill "Hoy" button */
 .toolbar__today {
   background: none;
-  border: 1px solid var(--border-light);
-  height: 32px;
-  padding: 0 0.8rem;
-  border-radius: 8px;
-  font-size: 0.78rem;
+  border: 1px solid var(--border);
+  height: 36px;
+  padding: 0 1.05rem;
+  border-radius: 999px;
+  font-size: 0.8rem;
   font-weight: 600;
-  color: var(--text-primary);
+  color: var(--text);
   cursor: pointer;
   transition: all 0.15s;
   flex-shrink: 0;
 }
 
 .toolbar__today:hover {
-  background: var(--primary-500);
-  color: white;
-  border-color: var(--primary-500);
+  background: var(--surface-hover);
+  border-color: var(--border-strong);
 }
 
+/* Date title — large, light weight (Google Calendar style) */
 .toolbar__date-btn {
   display: inline-flex;
   align-items: center;
-  gap: 0.4rem;
-  height: 32px;
-  padding: 0 0.75rem;
+  gap: 0.5rem;
+  height: 36px;
+  padding: 0 0.6rem;
   background: none;
-  border: 1px solid var(--border-light);
+  border: none;
   border-radius: 8px;
   cursor: pointer;
   margin-right: auto;
+  margin-left: 0.4rem;
   transition: all 0.15s;
   min-width: 0;
 }
 
 .toolbar__date-btn:hover {
-  border-color: var(--primary-500);
-  background: rgba(42, 199, 143, 0.06);
+  background: var(--surface-hover);
 }
 
 .toolbar__date-btn:hover i {
-  color: var(--primary-500);
+  color: var(--text);
 }
 
 .toolbar__date-text {
-  font-size: 0.82rem;
-  font-weight: 600;
-  color: var(--text-primary);
+  font-size: 1.35rem;
+  font-weight: 400;
+  letter-spacing: 0.01em;
+  color: var(--text);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1314,7 +1355,7 @@ onUnmounted(() => {
 
 .toolbar__date-btn i {
   font-size: 0.9rem;
-  color: var(--text-secondary);
+  color: var(--faint);
   flex-shrink: 0;
   transition: color 0.15s;
 }
@@ -1328,161 +1369,161 @@ onUnmounted(() => {
   overflow: hidden;
 }
 
-/* View toggle (segmented control) */
-.toolbar__views {
-  display: flex;
-  border: 1px solid var(--border-light);
-  border-radius: 8px;
-  overflow: hidden;
+/* View dropdown (replaces segmented Día/Semana/Mes control) */
+.viewdd {
+  position: relative;
   flex-shrink: 0;
 }
 
-.toolbar__view-btn {
-  padding: 0 0.7rem;
-  height: 32px;
-  font-size: 0.74rem;
+.viewdd__btn {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  height: 36px;
+  padding: 0 0.7rem 0 1rem;
+  white-space: nowrap;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text);
+  font-size: 0.82rem;
   font-weight: 600;
-  color: var(--text-secondary);
-  background: var(--bg-main);
-  border: none;
   cursor: pointer;
+  font-family: inherit;
   transition: all 0.12s;
 }
 
-.toolbar__view-short { display: none; }
-.toolbar__view-full { display: inline; }
-
-.toolbar__view-btn+.toolbar__view-btn {
-  border-left: 1px solid var(--border-light);
+.viewdd__btn:hover {
+  background: var(--surface-hover);
+  border-color: var(--border-strong);
 }
 
-.toolbar__view-btn:hover {
-  color: var(--text-primary);
-  background: var(--bg-card);
+.viewdd__caret {
+  font-size: 1.1rem;
+  color: var(--muted);
+  transition: transform 0.15s;
 }
 
-.toolbar__view-btn--active {
-  background: var(--primary-500);
-  color: white;
+.viewdd__caret--open {
+  transform: rotate(180deg);
 }
 
-.toolbar__view-btn--active:hover {
-  background: var(--primary-600);
-  color: white;
-}
-
-/* Tool toggle */
-.toolbar__tools {
+.viewdd__menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  min-width: 160px;
+  z-index: 50;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  box-shadow: var(--shadow-pop);
+  padding: 5px;
   display: flex;
-  border: 1px solid var(--border-light);
-  border-radius: 8px;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.viewdd__opt {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  width: 100%;
+  padding: 0.5rem 0.7rem;
+  border: none;
+  background: none;
+  border-radius: 7px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 0.84rem;
+  font-weight: 500;
+  color: var(--text);
+  text-align: left;
+  transition: background 0.12s;
+}
+
+.viewdd__opt:hover {
+  background: var(--surface-hover);
+}
+
+.viewdd__opt i {
+  font-size: 1rem;
+  color: var(--primary-500);
+}
+
+.viewdd__opt--on {
+  color: var(--primary-500);
+  font-weight: 600;
+}
+
+.viewdd__opt--disabled {
+  cursor: default;
+  color: var(--faint);
+}
+
+.viewdd__opt--disabled:hover {
+  background: none;
+}
+
+.viewdd__soon {
+  font-size: 0.6rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--faint);
+}
+
+/* Pill segmented controls (tools / density) */
+.seg {
+  display: flex;
+  height: 36px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
   overflow: hidden;
+  background: transparent;
   flex-shrink: 0;
+}
+
+.seg + .seg,
+.seg.toolbar__tools,
+.seg.toolbar__density {
   margin-left: 0.25rem;
 }
 
-.toolbar__tool-btn {
-  width: 32px;
-  height: 32px;
-  font-size: 1rem;
-  color: var(--text-secondary);
-  background: var(--bg-main);
+.seg__btn {
+  padding: 0 0.7rem;
+  height: 100%;
   border: none;
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.95rem;
+  font-weight: 600;
   cursor: pointer;
-  transition: all 0.15s;
+  transition: all 0.12s;
   display: flex;
   align-items: center;
   justify-content: center;
+  gap: 0.3rem;
 }
 
-.toolbar__tool-btn+.toolbar__tool-btn {
-  border-left: 1px solid var(--border-light);
+.seg__btn + .seg__btn {
+  border-left: 1px solid var(--border);
 }
 
-.toolbar__tool-btn:hover {
-  color: var(--text-primary);
-  background: var(--bg-card);
+.seg__btn:hover {
+  color: var(--text);
+  background: var(--surface-hover);
 }
 
-.toolbar__tool-btn--active {
+.seg__btn--active {
   background: var(--primary-500);
-  color: white;
+  color: #fff;
 }
 
-.toolbar__tool-btn--active:hover {
+.seg__btn--active:hover {
   background: var(--primary-600);
-  color: white;
-}
-
-/* Density selector */
-.toolbar__density {
-  display: flex;
-  border: 1px solid var(--border-light);
-  border-radius: 8px;
-  overflow: hidden;
-  flex-shrink: 0;
-  margin-left: 0.15rem;
-}
-
-.toolbar__density-btn {
-  width: 32px;
-  height: 32px;
-  font-size: 1rem;
-  color: var(--text-secondary);
-  background: var(--bg-main);
-  border: none;
-  cursor: pointer;
-  transition: all 0.15s;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.toolbar__density-btn+.toolbar__density-btn {
-  border-left: 1px solid var(--border-light);
-}
-
-.toolbar__density-btn:hover {
-  color: var(--text-primary);
-  background: var(--bg-card);
-}
-
-.toolbar__density-btn--active {
-  background: var(--primary-500);
-  color: white;
-}
-
-.toolbar__density-btn--active:hover {
-  background: var(--primary-600);
-  color: white;
-}
-
-/* Undo button */
-.toolbar__undo-btn {
-  width: 32px;
-  height: 32px;
-  font-size: 1.05rem;
-  color: var(--text-secondary);
-  background: none;
-  border: 1px solid var(--border-light);
-  border-radius: 8px;
-  cursor: pointer;
-  transition: all 0.15s;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  margin-left: 0.15rem;
-}
-
-.toolbar__undo-btn:not(:disabled):hover {
-  color: var(--primary-500);
-  border-color: var(--primary-500);
-}
-
-.toolbar__undo-btn:disabled {
-  opacity: 0.3;
-  cursor: default;
+  color: #fff;
 }
 
 /* Selection action bar */
@@ -1551,7 +1592,7 @@ onUnmounted(() => {
   gap: 0.25rem;
   font-size: 0.65rem;
   font-weight: 500;
-  color: #8993a4;
+  color: var(--muted);
 }
 
 .toolbar__dot {
@@ -1567,8 +1608,8 @@ onUnmounted(() => {
 }
 
 .toolbar__dot--inactive {
-  background: #f0f1f3;
-  border-left-color: #c1c7d0;
+  background: var(--inactive-fill);
+  border-left-color: var(--inactive-bar);
 }
 
 /* Filters */
@@ -1582,19 +1623,19 @@ onUnmounted(() => {
 .toolbar__select {
   height: 32px;
   padding: 0 1.8rem 0 0.7rem;
-  border: 1px solid var(--border-light);
+  border: 1px solid var(--border);
   border-radius: 8px;
   font-size: 0.76rem;
   font-weight: 500;
-  color: var(--text-primary);
-  background: var(--bg-main);
+  color: var(--text);
+  background: var(--surface-2);
   cursor: pointer;
   transition: border-color 0.15s;
 }
 
 .toolbar__select:focus {
   outline: none;
-  border-color: var(--primary-500);
+  border-color: var(--border-strong);
 }
 
 .toolbar__select--full {
@@ -1689,11 +1730,8 @@ onUnmounted(() => {
     display: none;
   }
 
-  .toolbar__view-short { display: inline; }
-  .toolbar__view-full { display: none; }
-
   .toolbar__date-text {
-    font-size: 0.72rem;
+    font-size: 1rem;
   }
 
   .toolbar__date-btn {
@@ -1730,17 +1768,19 @@ onUnmounted(() => {
   }
 
   .toolbar__arrow {
-    padding: 0.15rem 0.25rem;
-    font-size: 0.9rem;
+    width: 30px;
+    height: 30px;
+    font-size: 1rem;
   }
 
   .toolbar__today {
-    padding: 0.15rem 0.35rem;
-    font-size: 0.65rem;
+    height: 30px;
+    padding: 0 0.6rem;
+    font-size: 0.7rem;
   }
 
   .toolbar__date-text {
-    font-size: 0.65rem;
+    font-size: 0.95rem;
   }
 
   .toolbar__date-btn {
@@ -1752,9 +1792,10 @@ onUnmounted(() => {
     font-size: 0.75rem;
   }
 
-  .toolbar__view-btn {
-    padding: 0.15rem 0.35rem;
-    font-size: 0.6rem;
+  .viewdd__btn {
+    height: 30px;
+    padding: 0 0.5rem 0 0.7rem;
+    font-size: 0.7rem;
   }
 
   .btn-fab {

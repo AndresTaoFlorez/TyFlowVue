@@ -44,6 +44,18 @@ export const UserRepository = {
     return data
   },
 
+  async uploadAvatar(file) {
+    // Subida directa multipart al backend (campo del archivo: `data`). El backend
+    // guarda el binario y devuelve el perfil completo (igual que GET /users/me),
+    // con preferences.avatar_url ya resuelto. El Bearer lo pone el interceptor.
+    const fd = new FormData()
+    fd.append('data', file)
+    const { data } = await client.post('/users/me/avatar', fd, {
+      headers: { 'Content-Type': 'multipart/form-data' }, // axios añade el boundary
+    })
+    return new User(data)
+  },
+
   async fetchByApplication(applicationId) {
     const { data } = await client.get('/users', {
       params: { is_specialist: true, application_ids: applicationId },

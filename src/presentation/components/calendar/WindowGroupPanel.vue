@@ -1,6 +1,7 @@
 <script setup>
 import ContextMenu from '@/presentation/components/shared/ContextMenu.vue'
 import SpecialistGroupCard from '@/presentation/components/calendar/SpecialistGroupCard.vue'
+import UserAvatar from '@/presentation/components/shared/UserAvatar.vue'
 import { ref, computed } from 'vue'
 
 const props = defineProps({
@@ -189,9 +190,13 @@ function onCtxAction(action) {
 
         <!-- Specialist summary header -->
         <div class="detail-head">
-          <div class="detail-head__avatar" :style="{ background: appColor(detailGroup.windows[0]) }">
-            {{ initialsOf(detailGroup.specialist.fullName) }}
-          </div>
+          <UserAvatar
+            :preferences="detailGroup.specialist.preferences"
+            :name="detailGroup.specialist.fullName"
+            :bg-color="appColor(detailGroup.windows[0])"
+            size="30px"
+            class="detail-head__avatar"
+          />
           <div class="detail-head__info">
             <div class="detail-head__name">{{ detailGroup.specialist.fullName }}</div>
             <div class="detail-head__meta">

@@ -41,7 +41,14 @@ const surface = computed(() => { void prefs.theme; return appTintSurface(repColo
 
 const avatars = computed(() => props.group.windows.map(w => {
   const spec = props.specialists.find(s => s.specialistId === w.specialistId)
-  return { id: w.id, initials: _initials(spec?.fullName || ''), color: _colorOf(w), name: spec?.fullName || '' }
+  return {
+    id: w.id,
+    initials: _initials(spec?.fullName || ''),
+    color: _colorOf(w),
+    name: spec?.fullName || '',
+    avatar: spec?.preferences?.avatar_url || null,
+    emoji:  spec?.preferences?.avatar_emoji || null,
+  }
 }))
 const shownAvatars = computed(() => avatars.value.slice(0, MAX_AVATARS))
 const overflowCount = computed(() => Math.max(0, avatars.value.length - MAX_AVATARS))
@@ -106,8 +113,11 @@ const { fontSize } = useAdaptiveFont(wgbEl, { min: 11, max: 18, base: 12, refWid
 
     <template v-if="!compact">
       <div class="wgb__head">
-        <span v-for="a in shownAvatars" :key="a.id" class="wgb__avatar" :style="{ background: a.color }"
-          :title="a.name">{{ a.initials }}</span>
+        <span v-for="a in shownAvatars" :key="a.id" class="wgb__avatar" :style="{ background: a.color }" :title="a.name">
+          <img v-if="a.avatar" :src="a.avatar" class="wgb__avatar-img" alt="" loading="lazy" />
+          <span v-else-if="a.emoji" class="wgb__avatar-emoji" role="img">{{ a.emoji }}</span>
+          <template v-else>{{ a.initials }}</template>
+        </span>
         <span v-if="overflowCount > 0" class="wgb__avatar wgb__avatar--more">+{{ overflowCount }}</span>
       </div>
       <span v-if="height() > 42" class="wgb__time">{{ timeRange }}</span>
@@ -116,8 +126,11 @@ const { fontSize } = useAdaptiveFont(wgbEl, { min: 11, max: 18, base: 12, refWid
 
     <template v-if="compact && height() >= 16">
       <div class="wgb__head wgb__head--compact">
-        <span v-for="a in shownAvatars" :key="a.id" class="wgb__avatar wgb__avatar--compact"
-          :style="{ background: a.color }">{{ a.initials }}</span>
+        <span v-for="a in shownAvatars" :key="a.id" class="wgb__avatar wgb__avatar--compact" :style="{ background: a.color }">
+          <img v-if="a.avatar" :src="a.avatar" class="wgb__avatar-img" alt="" loading="lazy" />
+          <span v-else-if="a.emoji" class="wgb__avatar-emoji" role="img">{{ a.emoji }}</span>
+          <template v-else>{{ a.initials }}</template>
+        </span>
         <span v-if="overflowCount > 0" class="wgb__avatar wgb__avatar--compact wgb__avatar--more">+{{ overflowCount }}</span>
       </div>
     </template>
@@ -135,8 +148,8 @@ const { fontSize } = useAdaptiveFont(wgbEl, { min: 11, max: 18, base: 12, refWid
 /* Mismo look que WindowBlock (.wb): un solo bloque con el color de la app. */
 .wgb {
   position: absolute;
-  /* Rounded muy leve, estilo iOS (igual que WindowBlock). */
-  border-radius: var(--wb-radius, 4px);
+  /* Mismo radio que WindowBlock. */
+  border-radius: var(--wb-radius, 7px);
   --wb-gap: 6px;
   padding: 0.3rem 0.5rem;
   cursor: pointer;
@@ -213,8 +226,24 @@ const { fontSize } = useAdaptiveFont(wgbEl, { min: 11, max: 18, base: 12, refWid
   /* Anillo del color del bloque para separar avatares solapados. */
   box-shadow: 0 0 0 1.5px var(--app-bg);
   margin-left: calc(var(--wb-fs, 0.8rem) * -0.32);
+  overflow: hidden;
 }
 .wgb__head > .wgb__avatar:first-child { margin-left: 0; }
+
+/* Foto del especialista dentro del avatar del grupo. */
+.wgb__avatar-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 50%;
+  display: block;
+}
+
+.wgb__avatar-emoji {
+  font-size: 0.85em;
+  line-height: 1;
+  display: block;
+}
 
 .wgb__avatar--more {
   background: color-mix(in srgb, var(--app-color) 55%, #334155);

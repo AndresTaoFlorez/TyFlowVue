@@ -64,7 +64,17 @@ export function monthNumForOffset(offset) {
 
 export const useCalendarStore = defineStore('calendar', () => {
   // ---- Navigation ----
-  const calView = ref(window.innerWidth < BP_MOBILE ? 'day' : 'week')
+  const CAL_VIEW_KEY = 'tyflow_cal_view'
+  const _storedView = localStorage.getItem(CAL_VIEW_KEY)
+  const _validViews = ['day', 'week', 'month']
+  const calView = ref(
+    window.innerWidth < BP_MOBILE
+      ? 'day'
+      : (_validViews.includes(_storedView) ? _storedView : 'week')
+  )
+  watch(calView, (val) => {
+    if (_validViews.includes(val)) localStorage.setItem(CAL_VIEW_KEY, val)
+  })
   const weekOffset = ref(0)
   const dayOffset = ref(0)
   const monthOffset = ref(0)
@@ -586,6 +596,14 @@ export const useCalendarStore = defineStore('calendar', () => {
     return w.endsAt && new Date(w.endsAt) < new Date()
   }
 
+  // Validación de "pasado" para mover ventanas: el inicio no puede quedar antes
+  // de AHORA. Se valida en el FRONT (antes del optimista y de llamar al backend)
+  // para no perder tiempo ni dejar el estado a medias si el backend rechaza.
+  const _PAST_MOVE_MSG = 'No se puede mover una ventana antes de la hora actual.'
+  function _startsInPast(ts) {
+    return ts ? new Date(ts) < new Date() : false
+  }
+
   function _todayISO() {
     return fmtDateISO(new Date())
   }
@@ -904,6 +922,7 @@ export const useCalendarStore = defineStore('calendar', () => {
       const raw = orig._toRaw()
       raw.starts_at = _dateToTimestampTz(new Date(new Date(orig.startsAt).getTime() + deltaMs))
       raw.ends_at = _dateToTimestampTz(new Date(new Date(orig.endsAt).getTime() + deltaMs))
+      if (_startsInPast(raw.starts_at)) throw { userMessage: _PAST_MOVE_MSG }
       optimisticMap.set(id, new WorkWindow(raw).withLocalUpdate())
     }
 
@@ -1371,6 +1390,11 @@ export const useCalendarStore = defineStore('calendar', () => {
       throw { userMessage: 'No se puede mover una ventana en turno activo.' }
     }
     const date = targetDate || original.scheduledDate
+    // No permitir mover el inicio al pasado (validación rápida en el front).
+    const effStart = startTime != null ? startTime : original.startTime
+    if (_startsInPast(WorkWindow.toTimestampTz(date, effStart))) {
+      throw { userMessage: _PAST_MOVE_MSG }
+    }
     const conflict = _checkOverlap(original.specialistId, date, startTime, endTime, [w.id], original.applicationId)
     if (conflict) {
       throw { userMessage: 'El horario se superpone con otra ventana del mismo especialista y aplicación.' }
@@ -1419,6 +1443,7 @@ export const useCalendarStore = defineStore('calendar', () => {
       const raw = orig._toRaw()
       raw.starts_at = _dateToTimestampTz(new Date(new Date(orig.startsAt).getTime() + deltaMs))
       raw.ends_at = _dateToTimestampTz(new Date(new Date(orig.endsAt).getTime() + deltaMs))
+      if (_startsInPast(raw.starts_at)) throw { userMessage: _PAST_MOVE_MSG }
       optimisticMap.set(gw.id, new WorkWindow(raw).withLocalUpdate())
     }
 

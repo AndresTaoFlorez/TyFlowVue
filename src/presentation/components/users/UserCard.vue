@@ -1,4 +1,6 @@
 <script setup>
+import UserAvatar from '@/presentation/components/shared/UserAvatar.vue'
+
 defineProps({
   user: { type: Object, required: true },
   toggling: { type: Boolean, default: false },
@@ -16,9 +18,7 @@ defineEmits(['toggle', 'edit', 'select'])
       <label v-if="selectable" class="user-card__check" @click.stop>
         <input type="checkbox" :checked="selected" @change="$emit('select', user.id)">
       </label>
-      <div class="user-card__avatar">
-        <i class='bx bx-user'></i>
-      </div>
+      <UserAvatar :preferences="user.preferences" :name="user.fullName" size="2.25rem" class="user-card__avatar" />
       <div class="user-card__identity">
         <h3 class="user-card__name">{{ user.fullName }}</h3>
         <span class="user-card__email">{{ user.email || '—' }}</span>
@@ -111,15 +111,6 @@ defineEmits(['toggle', 'edit', 'select'])
 }
 
 .user-card__avatar {
-  width: 2.25rem;
-  height: 2.25rem;
-  border-radius: var(--radius-full, 50%);
-  background: var(--bg-card, #f3f4f6);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 1.15rem;
-  color: var(--text-secondary);
   flex-shrink: 0;
 }
 
