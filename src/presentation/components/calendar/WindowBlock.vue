@@ -57,13 +57,13 @@ const shortTime = computed(() => {
 const top = () => Math.max(0, (props.window.startHour - props.baseHour) * props.hourHeight + 2)
 const height = () => Math.max(props.hourHeight / 2, (props.window.endHour - props.window.startHour) * props.hourHeight - 4)
 // Llenar el ancho de la columna/día dejando un pequeño aire a la derecha (estilo
-// Google Calendar): el bloque no pega al borde de la columna. GAP en px para que
-// sea consistente sin importar el zoom/ancho.
-const GAP = 6 // px de respiro a la derecha
+// Google Calendar). El gutter es RESPONSIVE vía la variable CSS --wb-gap (6px en
+// escritorio, 2px en pantallas pequeñas; ver media query), para que en móvil no
+// se coma el ancho de columnas finas.
 const left = () => props.totalCols === 1 ? '0.5%' : `${(props.col / props.totalCols) * 99 + 0.5}%`
 const width = () => props.totalCols === 1
-  ? `calc(99% - ${GAP}px)`
-  : `calc(${99 / props.totalCols - 0.5}% - ${GAP}px)`
+  ? 'calc(99% - var(--wb-gap, 6px))'
+  : `calc(${99 / props.totalCols - 0.5}% - var(--wb-gap, 6px))`
 
 const statusClass = () => {
   if (!props.window.isActive) return 'wb--inactive'
@@ -149,7 +149,10 @@ const { fontSize } = useAdaptiveFont(wbEl, {
 <style scoped>
 .wb {
   position: absolute;
-  border-radius: 0;
+  /* Rounded muy leve, estilo iOS (esquinas suaves, no el típico radio grande). */
+  border-radius: var(--wb-radius, 4px);
+  /* Gutter derecho responsive (ver media query al final). */
+  --wb-gap: 6px;
   padding: 0.3rem 0.5rem;
   cursor: pointer;
   overflow: hidden;
@@ -159,6 +162,24 @@ const { fontSize } = useAdaptiveFont(wbEl, {
   gap: 0.1rem;
   transition: transform 0.1s ease, box-shadow 0.15s ease, filter 0.15s ease;
   container-type: size;
+}
+
+/* Pantallas pequeñas: gutter mínimo + sombra sutil a la derecha (borde
+   superpuesto) para que las columnas finas sigan distinguiéndose. */
+@media (max-width: 768px) {
+  .wb { --wb-gap: 2px; }
+  .wb::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: 3px;
+    background: linear-gradient(to right, transparent, rgba(15, 23, 42, 0.14));
+    border-top-right-radius: inherit;
+    border-bottom-right-radius: inherit;
+    pointer-events: none;
+  }
 }
 
 .wb:hover {
@@ -334,10 +355,16 @@ const { fontSize } = useAdaptiveFont(wbEl, {
 }
 
 /* ── Selected ── */
+/* Doble anillo (blanco + azul fuerte) dibujado POR DENTRO para que resalte sobre
+   cualquier color de ventana y no lo recorten las columnas. En light mode el
+   azul claro anterior + brightness se perdía; ahora usa azul saturado + anillo
+   blanco de separación. */
 .wb--selected {
-  outline: 2px solid #60a5fa;
-  outline-offset: -1px;
-  filter: brightness(1.1);
+  outline: 3px solid #1d4ed8;
+  outline-offset: -3px;
+  box-shadow: inset 0 0 0 2px #ffffff;
+  filter: saturate(1.2);
+  z-index: 5;
 }
 
 /* ── Cut ── */

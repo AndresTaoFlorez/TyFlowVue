@@ -112,6 +112,17 @@ export class WorkWindow {
 
   toJSON() { return this._toRaw() }
 
+  /**
+   * Sella la instancia con la marca CRDT (Last-Write-Wins) de cambio local
+   * reciente. El merge con datos del backend preserva las ventanas selladas
+   * dentro de la ventana de tiempo reciente, evitando que un fetch en background
+   * (aún stale) pise una ventana recién movida/redimensionada → sin "saltos".
+   */
+  withLocalUpdate() {
+    this._localUpdatedAt = new Date().toISOString()
+    return this
+  }
+
   _toRaw() {
     return {
       id: this.id,

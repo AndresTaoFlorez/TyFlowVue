@@ -69,17 +69,33 @@ export const useCalendarStore = defineStore('calendar', () => {
   const dayOffset = ref(0)
   const monthOffset = ref(0)
 
-  // ---- SyncEngine (cache persistence) ----
+  // ---- SyncEngine (USO PARCIAL / AISLADO en el calendario) ----
+  //
+  // El SyncEngine (infrastructure/sync/SyncEngine.js) es un motor genérico
+  // cache-first con CRDT Last-Write-Wins. Otros stores (users, applications,
+  // cases) lo usan COMPLETO: `syncInBackground()` hace fetch + merge + persist.
+  //
+  // El calendario lo usa SOLO para HIDRATAR desde caché al arrancar
+  // (`loadFromCache()` abajo). NO usa su ciclo de sync porque las ventanas se
+  // piden por RANGO de fechas (estrategia acumulativa, ver `_fetchRange` /
+  // `loadWindows`), no como un dataset completo — por eso `fetchRemote` va vacío.
+  // La reconciliación CRDT (LWW) se reimplementa en `_mergeWindows` con la misma
+  // semántica del engine (ventana reciente protegida → ver _RECENT_WINDOW_MS).
   const _sync = new SyncEngine({
     cacheKey: 'tyflow_work_windows',
     hydrate: (raw) => new WorkWindow(raw),
-    fetchRemote: () => Promise.resolve([]),   // range-based fetch, not used
+    fetchRemote: () => Promise.resolve([]),   // no se usa: el fetch es por rango
     getId: (item) => item.id,
   })
 
   // ---- Windows ----
   const windows = ref(_sync.loadFromCache())
   const loading = ref(false)
+
+  // Ventana de tiempo (ms) en la que un cambio local reciente GANA sobre el
+  // backend en el merge (CRDT Last-Write-Wins). Cubre el lapso entre la mutación
+  // optimista y que el backend la refleje.
+  const _RECENT_WINDOW_MS = 30_000
 
   // ---- Fetched range tracking (accumulative strategy) ----
   const _fetchedRanges = []        // Array of { from, to } ISO date ranges already loaded
@@ -286,12 +302,36 @@ export const useCalendarStore = defineStore('calendar', () => {
   }
 
   function _mergeWindows(fetched, fromDate, toDate) {
-    // Replace all windows in [fromDate, toDate] with fetched data;
-    // keep windows outside that range untouched.
-    windows.value = [
-      ...windows.value.filter(w => w.scheduledDate < fromDate || w.scheduledDate > toDate),
-      ...fetched,
-    ]
+    // Merge CRDT Last-Write-Wins: reemplaza las ventanas del rango [from,to] con
+    // lo del backend, PERO si una ventana local fue modificada hace poco
+    // (_localUpdatedAt reciente, p.ej. recién movida), la versión local gana.
+    // Esto evita que un fetch en background (aún con la posición vieja) pise una
+    // ventana recién arrastrada y la haga "saltar".
+    const now = Date.now()
+    const recentLocal = new Map()
+    for (const w of windows.value) {
+      if (w._localUpdatedAt && now - new Date(w._localUpdatedAt).getTime() < _RECENT_WINDOW_MS) {
+        recentLocal.set(w.id, w)
+      }
+    }
+
+    const merged = []
+    const placed = new Set()
+    for (const fw of fetched) {
+      const local = recentLocal.get(fw.id)
+      merged.push(local || fw)   // local reciente gana sobre el backend stale
+      placed.add(fw.id)
+    }
+    // Conservar lo de fuera de rango (estrategia acumulativa) y los locales
+    // recientes que el fetch aún no trajo (movida pendiente de reflejar).
+    for (const w of windows.value) {
+      if (placed.has(w.id)) continue
+      const inDateRange = w.scheduledDate >= fromDate && w.scheduledDate <= toDate
+      if (!inDateRange) { merged.push(w); continue }
+      if (recentLocal.has(w.id)) merged.push(w)
+    }
+
+    windows.value = merged
   }
 
   /** Compute the 42-cell grid range for a given month offset (same algo as monthDates) */
@@ -401,8 +441,13 @@ export const useCalendarStore = defineStore('calendar', () => {
     _invalidateCache()
   }
 
+  // Seam INTENCIONAL (no-op). Marca los puntos donde, en la estrategia
+  // acumulativa por rango, *podría* persistirse la caché de ventanas. Hoy no se
+  // persiste a propósito: el estado vive en `windows.value` (reactivo) y la
+  // verdad la trae el fetch por rango + `_mergeWindows`. Se conserva como punto
+  // único de cambio por si se decide activar `_sync.writeToCache(windows.value)`.
   function _invalidateCache() {
-    // No-op: with accumulative windows, mutations update windows.value directly
+    // (no-op deliberado — ver comentario arriba)
   }
 
   function _deleteCurrentCache() {
@@ -464,7 +509,7 @@ export const useCalendarStore = defineStore('calendar', () => {
     else if (targetDate) raw.starts_at = WorkWindow.toTimestampTz(startDate, original.startTime)
     if (endTime != null) raw.ends_at = WorkWindow.toTimestampTz(finalEndDate, endTime)
     else if (targetDate || endDate) raw.ends_at = WorkWindow.toTimestampTz(finalEndDate, original.endTime)
-    return new WorkWindow(raw)
+    return new WorkWindow(raw).withLocalUpdate()
   }
 
   function _windowToCreateData(w) {
@@ -859,7 +904,7 @@ export const useCalendarStore = defineStore('calendar', () => {
       const raw = orig._toRaw()
       raw.starts_at = _dateToTimestampTz(new Date(new Date(orig.startsAt).getTime() + deltaMs))
       raw.ends_at = _dateToTimestampTz(new Date(new Date(orig.endsAt).getTime() + deltaMs))
-      optimisticMap.set(id, new WorkWindow(raw))
+      optimisticMap.set(id, new WorkWindow(raw).withLocalUpdate())
     }
 
     // Validar overlap e inheritance contra ventanas externas al batch
@@ -922,7 +967,7 @@ export const useCalendarStore = defineStore('calendar', () => {
       }
       originals.set(id, orig)
       const shifted = _applyDeltaMs(orig, direction, deltaMs)
-      optimisticMap.set(id, shifted.optimistic)
+      optimisticMap.set(id, shifted.optimistic.withLocalUpdate())
     }
 
     // Validate overlap & inheritance
@@ -1274,7 +1319,7 @@ export const useCalendarStore = defineStore('calendar', () => {
         throw { userMessage: 'No se puede cambiar el inicio de una ventana en turno activo. Solo se permite ajustar el fin.' }
       }
       originals.set(gw.id, orig)
-      optimisticMap.set(gw.id, _applyDeltaMs(orig, direction, deltaMs).optimistic)
+      optimisticMap.set(gw.id, _applyDeltaMs(orig, direction, deltaMs).optimistic.withLocalUpdate())
     }
 
     // Validar overlap e inheritance contra ventanas externas al grupo
@@ -1374,7 +1419,7 @@ export const useCalendarStore = defineStore('calendar', () => {
       const raw = orig._toRaw()
       raw.starts_at = _dateToTimestampTz(new Date(new Date(orig.startsAt).getTime() + deltaMs))
       raw.ends_at = _dateToTimestampTz(new Date(new Date(orig.endsAt).getTime() + deltaMs))
-      optimisticMap.set(gw.id, new WorkWindow(raw))
+      optimisticMap.set(gw.id, new WorkWindow(raw).withLocalUpdate())
     }
 
     // Validar overlap e inheritance contra ventanas externas al grupo

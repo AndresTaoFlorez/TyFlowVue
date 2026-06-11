@@ -344,6 +344,7 @@ const selectionLabel = computed(() => {
 const calRootEl = ref(null)
 const selectMarquee = ref(null) // { x0, y0, x1, y1 } | null
 let _marqueeMoved = false
+let _marqueeJustEnded = false // suprime el click de toggle tras un lazo con arrastre
 
 const marqueeStyle = computed(() => {
   const m = selectMarquee.value
@@ -370,16 +371,23 @@ const onMarqueeEnd = () => {
   selectMarquee.value = null
   if (!m || !_marqueeMoved) { _marqueeMoved = false; return }
   _marqueeMoved = false
+  // El lazo arrastró → suprimir el @click de toggle que sigue (si arrancó encima
+  // de una ventana/grupo), para no alternar esa ventana además de lo seleccionado.
+  _marqueeJustEnded = true
   const rx0 = Math.min(m.x0, m.x1), rx1 = Math.max(m.x0, m.x1)
   const ry0 = Math.min(m.y0, m.y1), ry1 = Math.max(m.y0, m.y1)
   const ids = new Set(props.selectedWindowIds)
   const root = calRootEl.value
+  const hits = (r) => r.left < rx1 && r.right > rx0 && r.top < ry1 && r.bottom > ry0
   if (root) {
+    // Ventanas individuales: agarrar por intersección real (toque, no rango).
     for (const el of root.querySelectorAll('[data-window-id]')) {
-      const r = el.getBoundingClientRect()
-      // Intersección de rectángulos (toque real, no solo rango de tiempo).
-      if (r.left < rx1 && r.right > rx0 && r.top < ry1 && r.bottom > ry0) {
-        ids.add(el.dataset.windowId)
+      if (hits(el.getBoundingClientRect())) ids.add(el.dataset.windowId)
+    }
+    // Bloques de GRUPO (ventanas con rango idéntico): agarran TODAS sus ventanas.
+    for (const el of root.querySelectorAll('[data-window-ids]')) {
+      if (hits(el.getBoundingClientRect())) {
+        for (const id of el.dataset.windowIds.split(',')) if (id) ids.add(id)
       }
     }
   }
@@ -427,30 +435,14 @@ const onCellMouseenter = (dayIdx, slot) => {
   dragEndSlot.value = slot
 }
 
+// El arrastre por celdas es SOLO para crear (herramienta normal). La selección
+// usa el marquee 2D por píxeles (startMarquee/onMarqueeEnd), no esta vía.
 const onMouseup = () => {
   if (!dragging.value) return
   const startH = Math.floor(selSlotMin.value / 2)
   const startM = (selSlotMin.value % 2) * 30
   const endH = Math.floor(selSlotMax.value / 2)
   const endM = (selSlotMax.value % 2) * 30
-
-  if (props.activeTool === 'select') {
-    // Rectangle selection: find all windows within the rect
-    const rectStartHour = startH + startM / 60
-    const rectEndHour = endH + endM / 60
-    const ids = new Set(props.selectedWindowIds)
-    for (const w of props.windows) {
-      const dayIdx = props.weekDates.indexOf(w.scheduledDate)
-      if (dayIdx < selDayMin.value || dayIdx > selDayMax.value) continue
-      if (w.endHour <= rectStartHour || w.startHour >= rectEndHour) continue
-      ids.add(w.id)
-    }
-    emit('selection-change', ids)
-    dragging.value = false
-    dragStartDay.value = -1
-    dragEndDay.value = -1
-    return
-  }
 
   const days = []
   for (let d = selDayMin.value; d <= selDayMax.value; d++) {
@@ -622,8 +614,14 @@ const onBlockDragStart = (w, dayIdx, e) => {
   if (props.activeTool === 'eraser') return
   if (props.activeTool === 'select') {
     const id = (w._originalWindow || w).id
-    // Only allow drag if the window is already selected
-    if (!props.selectedWindowIds.has(id)) return
+    // No seleccionada → arrancar el LAZO aquí mismo (poder seleccionar también
+    // empezando encima de ventanas, no solo en celdas vacías). Un click sin
+    // arrastre la alterna (onBlockClick); arrastrar lazo-selecciona por roce.
+    if (!props.selectedWindowIds.has(id)) {
+      if (e && e.clientX != null) startMarquee(e.clientX, e.clientY)
+      return
+    }
+    // Ya seleccionada → arrastrar el lote (mover juntas).
     e.stopPropagation()
     blockDragging.value = true
     batchDragging.value = true
@@ -662,6 +660,15 @@ const onBlockDragStart = (w, dayIdx, e) => {
 
 const onGroupDragStart = (group, dayIdx, e) => {
   if (!props.selectable) return
+  if (props.activeTool === 'select') {
+    // Si ninguna del grupo está seleccionada → arrancar el lazo aquí; si alguna
+    // lo está → permitir arrastrar el lote (cae al flujo normal de abajo).
+    const anySelected = group.windows.some(w => props.selectedWindowIds.has(w.id))
+    if (!anySelected) {
+      if (e && e.clientX != null) startMarquee(e.clientX, e.clientY)
+      return
+    }
+  }
   e.stopPropagation()
   blockDragging.value = true
   blockDragMoved = false
@@ -1364,6 +1371,7 @@ const onBlockClick = (w, e) => {
   if (blockDragMoved) { blockDragMoved = false; return }
   if (hExpandJustEnded) { hExpandJustEnded = false; return }
   if (resizeJustEnded) { resizeJustEnded = false; return }
+  if (_marqueeJustEnded) { _marqueeJustEnded = false; return }
   if (props.activeTool === 'select' || e.shiftKey || e.ctrlKey || e.metaKey) {
     onSelectClick(w, e)
     return
@@ -1440,6 +1448,7 @@ const onGroupLongPress = (group, e) => {
 }
 
 const onGroupClick = (group, e) => {
+  if (_marqueeJustEnded) { _marqueeJustEnded = false; return }
   if (blockDragMoved) { blockDragMoved = false; return }
   if (resizeJustEnded) { resizeJustEnded = false; return }
   // Shift/Ctrl+Click on group → select all windows in group
@@ -1624,8 +1633,13 @@ watch(periodKey, (newKey, oldKey) => {
     @touchstart.passive="showSingleDay && onCalSwipeStart($event)"
   >
 
-    <!-- Marquee de selección 2D (modo select, ratón). Position fixed → coords de cliente. -->
-    <div v-if="selectMarquee" class="cal-marquee" :style="marqueeStyle"></div>
+    <!-- Marquee de selección 2D (modo select, ratón). Teleport a body: el pager
+         aplica transform al track, lo que rompería el position:fixed si quedara
+         dentro (se posicionaría relativo al track, fuera de pantalla). En body,
+         las coordenadas de cliente quedan correctas y el recuadro SÍ se ve. -->
+    <Teleport to="body">
+      <div v-if="selectMarquee" class="cal-marquee" :style="marqueeStyle"></div>
+    </Teleport>
 
     <!-- ── MOBILE: vista de 1 día ── -->
     <template v-if="showSingleDay">
@@ -1709,10 +1723,9 @@ watch(periodKey, (newKey, oldKey) => {
             <div
               v-if="dragging && isDayInSelection(activeMobileDay)"
               class="cal-drag"
-              :class="{ 'cal-drag--select': activeTool === 'select' }"
               :style="selectionStyle"
             >
-              <span v-if="activeTool !== 'select'" class="cal-drag__label">{{ selectionLabel }}</span>
+              <span class="cal-drag__label">{{ selectionLabel }}</span>
             </div>
 
             <!-- Block drag ghost -->
@@ -1882,10 +1895,9 @@ watch(periodKey, (newKey, oldKey) => {
             <div
               v-if="dragging && isDayInSelection(dayIdx)"
               class="cal-drag"
-              :class="{ 'cal-drag--select': activeTool === 'select' }"
               :style="compactSelectionStyle"
             >
-              <span v-if="activeTool !== 'select' && dayIdx === selDayMin" class="cal-drag__label cal-drag__label--compact">{{ selectionLabel }}</span>
+              <span v-if="dayIdx === selDayMin" class="cal-drag__label cal-drag__label--compact">{{ selectionLabel }}</span>
             </div>
 
             <!-- Window blocks (compact) -->
@@ -2095,10 +2107,9 @@ watch(periodKey, (newKey, oldKey) => {
             <div
               v-if="dragging && isDayInSelection(dayIdx)"
               class="cal-drag"
-              :class="{ 'cal-drag--select': activeTool === 'select' }"
               :style="selectionStyle"
             >
-              <span v-if="activeTool !== 'select' && dayIdx === selDayMin" class="cal-drag__label">{{ selectionLabel }}</span>
+              <span v-if="dayIdx === selDayMin" class="cal-drag__label">{{ selectionLabel }}</span>
             </div>
 
             <!-- Horizontal expand highlight -->
@@ -2449,12 +2460,6 @@ watch(periodKey, (newKey, oldKey) => {
 @keyframes drag-in {
   from { opacity: 0; }
   to { opacity: 1; }
-}
-
-/* Select-tool drag — blue lasso, no label */
-.cal-drag--select {
-  background: rgba(96, 165, 250, 0.08);
-  border: 1.5px dashed rgba(96, 165, 250, 0.5);
 }
 
 /* Marquee 2D real del modo select (rectángulo en coords de cliente). */

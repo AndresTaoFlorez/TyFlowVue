@@ -53,6 +53,24 @@
  *   appSync.updateLocal(items, id, updatedItem)          // 3. Mutación local
  *
  * ═══════════════════════════════════════════════════════════════════════
+ *  QUIÉN LO USA (modos de uso)
+ * ═══════════════════════════════════════════════════════════════════════
+ *
+ *   1) USO COMPLETO (dataset entero, cache-first + sync CRDT):
+ *      - useUserStore: roles, support levels, support categories, applications
+ *        (`appSync`, etc.) → loadFromCache + syncInBackground + updateLocal.
+ *      - Casos (realtime): insertLocal / removeLocal / updateLocal sobre eventos.
+ *
+ *   2) USO PARCIAL / SOLO-CACHÉ (useCalendarStore, ventanas de trabajo):
+ *      Las ventanas se piden por RANGO de fechas (estrategia acumulativa), no
+ *      como dataset completo, así que `fetchRemote` va vacío y NO se llama a
+ *      `syncInBackground`. El engine se usa solo para `loadFromCache()` al boot.
+ *      La reconciliación CRDT (LWW) se REIMPLEMENTA en `_mergeWindows` del store
+ *      con la misma semántica (registro local reciente < RECENT_WINDOW gana).
+ *      Si en el futuro se quisiera caché persistente de ventanas, el punto único
+ *      sería `_invalidateCache()` (hoy no-op) → `writeToCache(windows.value)`.
+ *
+ * ═══════════════════════════════════════════════════════════════════════
  */
 
 const DEFAULT_RECENT_WINDOW_MS = 30_000 // 30 segundos

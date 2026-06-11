@@ -16,26 +16,57 @@ import { computed } from 'vue'
  * las columnas (ver abajo). Si no se pasa, cae a specialistId.
  */
 export function groupDayWindows(dayWindows, getName) {
-  // Una ventana por bloque, ordenadas por hora de inicio.
-  const sorted = (dayWindows || [])
-    .map(w => ({ type: 'single', window: w, _col: 0, _totalCols: 1 }))
-    .sort((a, b) => a.window.startHour - b.window.startHour)
+  const list = dayWindows || []
+  if (list.length === 0) return []
 
+  // Agrupar SOLO ventanas con starts_at Y ends_at idénticos (mismo rango exacto):
+  // se muestran como UN solo bloque con varios avatares. Las demás van como
+  // bloques individuales lado a lado.
+  const byRange = new Map()
+  for (const w of list) {
+    const key = `${w.startsAt}|${w.endsAt}`
+    if (!byRange.has(key)) byRange.set(key, [])
+    byRange.get(key).push(w)
+  }
+  const items = []
+  for (const members of byRange.values()) {
+    if (members.length === 1) {
+      items.push({ type: 'single', window: members[0], _col: 0, _totalCols: 1 })
+    } else {
+      const w0 = members[0]
+      items.push({
+        type: 'group',
+        windows: members,
+        startHour: w0.startHour,
+        endHour: w0.endHour,
+        id: `group-${members.map(m => m.id).join('-')}`,
+        _col: 0,
+        _totalCols: 1,
+      })
+    }
+  }
+
+  // Orden por hora de inicio (lo necesita la detección de clusters de solape).
+  const sorted = items.sort((a, b) => blockStart(a) - blockStart(b))
   if (sorted.length <= 1) return sorted
 
-  // Build overlap clusters — blocks that overlap transitively share a cluster
-  // (la detección de clusters necesita orden por hora de inicio).
   const clusters = buildClusters(sorted)
 
   // Orden de COLUMNAS (izquierda→derecha), consistente siempre:
-  //   1º alfabético por nombre del especialista,
+  //   1º alfabético por nombre del especialista (para un grupo: el menor),
   //   2º (desempate) por duración del rango de mayor a menor.
-  const nameOf = (b) => (getName ? getName(b.window) : b.window.specialistId) || ''
-  const durOf = (b) => b.window.endHour - b.window.startHour
+  const nameOf = (b) => {
+    if (b.type === 'group') {
+      return b.windows
+        .map(w => (getName ? getName(w) : w.specialistId) || '')
+        .sort((x, y) => x.localeCompare(y, 'es', { sensitivity: 'base' }))[0] || ''
+    }
+    return (getName ? getName(b.window) : b.window.specialistId) || ''
+  }
   const colOrder = (a, b) => {
     const n = nameOf(a).localeCompare(nameOf(b), 'es', { sensitivity: 'base' })
     if (n !== 0) return n
-    return durOf(b) - durOf(a)
+    return (blockEnd(b) - blockStart(b)) - (blockEnd(a) - blockStart(a))
   }
 
   // Assign columns within each cluster independently, recorriendo los bloques en
@@ -43,8 +74,8 @@ export function groupDayWindows(dayWindows, getName) {
   for (const cluster of clusters) {
     const colEndTimes = []
     for (const block of [...cluster].sort(colOrder)) {
-      const bStart = block.window.startHour
-      const bEnd = block.window.endHour
+      const bStart = blockStart(block)
+      const bEnd = blockEnd(block)
       let assignedCol = colEndTimes.findIndex(endTime => endTime <= bStart)
       if (assignedCol === -1) {
         assignedCol = colEndTimes.length
