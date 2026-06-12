@@ -123,34 +123,30 @@ function toggleDay(i) {
   else days.value.splice(idx, 1)
 }
 
-// ---- Repetición ----
-const FREQ_OPTIONS = [
-  ['none', 'No se repite'],
-  ['daily', 'Cada día'],
-  ['weekly', 'Cada semana'],
-  ['biweekly', 'Cada 2 semanas'],
-  ['monthly', 'Cada mes'],
-]
-const END_OPTIONS = [
-  ['never', 'Nunca'],
-  ['on', 'En fecha'],
-  ['after', 'Tras N'],
-]
-const freq = ref('none')
-const endMode = ref('never')
-const endDate = ref('')
-const endCount = ref(4)
-
-// ---- Expansión de fechas (client-side: el backend aún no tiene recurrencia) ----
-// Semántica: los weekdays elegidos se repiten cada N semanas (weekly=1,
-// biweekly=2, monthly=4). "Cada día" = todos los días del horizonte.
-// "Nunca" se capa a NEVER_HORIZON_WEEKS semanas.
+// ---- Periodo (lo básico: día de inicio y día de fin del rango) ----
 const todayISO = () => fmtDateISO(new Date())
 
 function _addDays(iso, n) {
   const d = new Date(iso + 'T12:00:00')
   d.setDate(d.getDate() + n)
   return fmtDateISO(d)
+}
+
+const fromDate = ref('')
+const toDate = ref('')
+
+// Intervalo: los weekdays elegidos se repiten cada N semanas dentro del periodo
+const INTERVAL_OPTIONS = [
+  [1, 'Cada semana'],
+  [2, 'Cada 2 semanas'],
+  [4, 'Cada 4 semanas'],
+]
+const weekStep = ref(1)
+
+function onFromChange(val) {
+  if (!val || val < todayISO()) return
+  fromDate.value = val
+  if (!toDate.value || toDate.value < val) toDate.value = val
 }
 
 // ¿La fecha+hora de inicio ya pasó? (el store rechaza inicios en el pasado)
@@ -163,77 +159,49 @@ function _startsInPast(iso) {
   return h * 60 + m <= now.getHours() * 60 + now.getMinutes()
 }
 
-// Próxima ocurrencia (>= hoy, con hora futura) del weekday dado (0=L…6=D)
-function _nextForWeekday(wd) {
-  const now = new Date()
-  const jsDay = now.getDay()                  // 0=Dom…6=Sáb
-  const todayWd = jsDay === 0 ? 6 : jsDay - 1 // lunes-first
-  let delta = (wd - todayWd + 7) % 7
-  let iso = _addDays(todayISO(), delta)
-  if (_startsInPast(iso)) iso = _addDays(iso, 7)
-  return iso
+// weekday lunes-first (0=L…6=D) de una fecha ISO
+function _weekdayOf(iso) {
+  const jsDay = new Date(iso + 'T12:00:00').getDay() // 0=Dom…6=Sáb
+  return jsDay === 0 ? 6 : jsDay - 1
 }
 
+// ---- Expansión: recorre [desde, hasta] e incluye los weekdays elegidos ----
+// El intervalo cuenta semanas desde el lunes de la semana de "desde":
+// cada N semanas se incluye la semana completa, las demás se saltan.
 const expandedDates = computed(() => {
-  const horizonEnd = endMode.value === 'on' && endDate.value
-    ? endDate.value
-    : _addDays(todayISO(), NEVER_HORIZON_WEEKS * 7)
-
-  const iterations = endMode.value === 'after' ? Math.max(1, endCount.value || 1) : Infinity
-
-  if (freq.value === 'daily') {
-    // Todos los días desde la primera fecha válida
-    const out = []
-    let iso = _startsInPast(todayISO()) ? _addDays(todayISO(), 1) : todayISO()
-    let i = 0
-    while (iso <= horizonEnd && i < iterations && out.length < MAX_WINDOWS + 1) {
-      out.push(iso)
-      iso = _addDays(iso, 1)
-      i++
-    }
-    return out
-  }
-
+  if (!fromDate.value || !toDate.value || toDate.value < fromDate.value) return []
   if (days.value.length === 0) return []
-  const base = [...days.value].sort().map(_nextForWeekday)
 
-  if (freq.value === 'none') return base
-
-  const stepWeeks = freq.value === 'weekly' ? 1 : freq.value === 'biweekly' ? 2 : 4
+  const startMonday = _addDays(fromDate.value, -_weekdayOf(fromDate.value))
+  const startMs = new Date(startMonday + 'T12:00:00').getTime()
+  const selected = new Set(days.value)
   const out = []
-  for (let iter = 0; iter < iterations; iter++) {
-    let added = false
-    for (const b of base) {
-      const iso = _addDays(b, iter * stepWeeks * 7)
-      if (iso > horizonEnd) continue
-      out.push(iso)
-      added = true
+
+  let iso = fromDate.value
+  while (iso <= toDate.value && out.length <= MAX_WINDOWS) {
+    if (selected.has(_weekdayOf(iso)) && !_startsInPast(iso)) {
+      const weekIdx = Math.floor((new Date(iso + 'T12:00:00').getTime() - startMs) / (7 * 86400000))
+      if (weekIdx % weekStep.value === 0) out.push(iso)
     }
-    if (!added) break
-    if (out.length > MAX_WINDOWS) break
+    iso = _addDays(iso, 1)
   }
-  return out.sort()
+  return out
 })
 
 const count = computed(() => validCombos.value.length * expandedDates.value.length)
 const overLimit = computed(() => count.value > MAX_WINDOWS)
 
 const repText = computed(() => {
-  if (freq.value === 'none') return ''
-  const f = { daily: 'cada día', weekly: 'cada semana', biweekly: 'cada 2 semanas', monthly: 'cada 4 semanas' }[freq.value]
-  let end = ''
-  if (endMode.value === 'on' && endDate.value) end = ' hasta ' + endDate.value
-  else if (endMode.value === 'after') end = ' · ' + (endCount.value || 1) + ' veces'
-  else end = ' · próximas ' + NEVER_HORIZON_WEEKS + ' semanas'
-  return 'se repite ' + f + end
+  if (!fromDate.value || !toDate.value) return ''
+  const step = weekStep.value > 1 ? ` cada ${weekStep.value} semanas` : ''
+  return `del ${fromDate.value} al ${toDate.value}${step}`
 })
 
 const valid = computed(() =>
   validCombos.value.length > 0 &&
   expandedDates.value.length > 0 &&
   durMins.value > 0 &&
-  !overLimit.value &&
-  (endMode.value !== 'on' || (endDate.value && endDate.value >= todayISO()))
+  !overLimit.value
 )
 
 // Emite la serie estructurada: el backend (POST /work-windows/recurring)
@@ -261,10 +229,9 @@ watch(() => props.visible, (v) => {
   startStr.value = '08:00'
   endStr.value = '17:00'
   days.value = []
-  freq.value = 'none'
-  endMode.value = 'never'
-  endDate.value = ''
-  endCount.value = 4
+  fromDate.value = todayISO()
+  toDate.value = _addDays(todayISO(), NEVER_HORIZON_WEEKS * 7 - 1)
+  weekStep.value = 1
 })
 
 const appColorOf = (a) => a.color || a.theme?.color || '#2AC78F'
@@ -361,35 +328,43 @@ const appColorOf = (a) => a.color || a.theme?.color || '#2AC78F'
               </div>
             </div>
 
-            <!-- Días de la semana -->
+            <!-- Periodo: lo básico — día de inicio y día de fin del rango -->
+            <div class="bfield">
+              <label class="bfield__label">Periodo</label>
+              <div class="periodrow">
+                <div class="periodbox">
+                  <span class="periodbox__lbl">Desde</span>
+                  <input type="date" :value="fromDate" :min="todayISO()" class="bdate"
+                    :disabled="creating" @input="onFromChange($event.target.value)" />
+                </div>
+                <span class="periodrow__sep">–</span>
+                <div class="periodbox">
+                  <span class="periodbox__lbl">Hasta</span>
+                  <input type="date" v-model="toDate" :min="fromDate || todayISO()" class="bdate"
+                    :disabled="creating" />
+                </div>
+              </div>
+            </div>
+
+            <!-- Días de la semana dentro del periodo -->
             <div class="bfield">
               <label class="bfield__label">Días de la semana</label>
               <div class="daypick">
                 <button v-for="(d, i) in DAY_LABELS" :key="i"
                   class="daypick__btn"
                   :class="{ 'daypick__btn--on': days.includes(i), 'daypick__btn--weekend': i >= 5 }"
-                  :disabled="freq === 'daily'"
+                  :disabled="creating"
                   @click="toggleDay(i)">{{ d }}</button>
               </div>
             </div>
 
-            <!-- Repetición -->
+            <!-- Intervalo (opcional) -->
             <div class="bfield">
-              <label class="bfield__label">Repetición</label>
+              <label class="bfield__label">Intervalo</label>
               <div class="chiprow">
-                <button type="button" v-for="[v, l] in FREQ_OPTIONS" :key="v"
-                  class="chip" :class="{ 'chip--on': freq === v }" @click="freq = v">{{ l }}</button>
-              </div>
-              <div v-if="freq !== 'none'" class="reprow--end">
-                <span class="reprow__sep">Termina</span>
-                <div class="chiprow">
-                  <button type="button" v-for="[v, l] in END_OPTIONS" :key="v"
-                    class="chip chip--sm" :class="{ 'chip--on': endMode === v }" @click="endMode = v">{{ l }}</button>
-                </div>
-                <input v-if="endMode === 'on'" type="date" v-model="endDate" :min="todayISO()" class="bdate" />
-                <div v-if="endMode === 'after'" class="afterbox">
-                  <input type="number" min="1" max="52" v-model.number="endCount" /><span>veces</span>
-                </div>
+                <button type="button" v-for="[v, l] in INTERVAL_OPTIONS" :key="v"
+                  class="chip chip--sm" :class="{ 'chip--on': weekStep === v }" :disabled="creating"
+                  @click="weekStep = v">{{ l }}</button>
               </div>
             </div>
 
@@ -407,7 +382,7 @@ const appColorOf = (a) => a.color || a.theme?.color || '#2AC78F'
             <div v-else-if="valid" class="bsummary">
               <b>{{ count }}</b> ventana{{ count === 1 ? '' : 's' }} · <b>{{ durLabel }}</b> c/u<span v-if="repText" class="bsummary__rep"> · {{ repText }}</span>
             </div>
-            <div v-else class="bsummary bsummary--empty">Elige especialistas, apps y días</div>
+            <div v-else class="bsummary bsummary--empty">Elige especialistas, apps, periodo y días</div>
             <div class="modal__foot-actions">
               <button class="mbtn" @click="$emit('close')" :disabled="creating">Cancelar</button>
               <button class="mbtn mbtn--primary" :disabled="!valid || creating" @click="submit">
@@ -432,6 +407,33 @@ const appColorOf = (a) => a.color || a.theme?.color || '#2AC78F'
 }
 
 .bam__note i { font-size: 0.9rem; flex-shrink: 0; }
+
+/* ── Periodo (Desde – Hasta) ── */
+.periodrow {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.5rem;
+}
+
+.periodrow__sep {
+  color: var(--muted);
+  font-size: 0.85rem;
+  padding-bottom: 0.55rem;
+}
+
+.periodbox {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.periodbox__lbl {
+  font-size: 0.62rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
 
 /* Transición (gateada bajo las clases del <Transition>) */
 .modal-enter-active { transition: opacity 0.18s ease; }
