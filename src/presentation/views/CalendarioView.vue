@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import { findGroupForWindow } from '@/presentation/composables/useWindowGroups'
@@ -46,7 +46,6 @@ const onDatePicked = (e) => {
 
 // ---- Ephemeral UI state (view-only, not shared) ----
 const selectedWindow = ref(null)
-const openModalInEdit = ref(false)
 const mostrarCrear = ref(false)
 const mostrarBulk = ref(false)
 const creando = ref(false)
@@ -239,10 +238,6 @@ async function handleCtxAction(action) {
     const w = target
     switch (action) {
       case 'edit':
-        selectedWindow.value = null
-        openModalInEdit.value = false
-        await nextTick()
-        openModalInEdit.value = true
         selectedWindow.value = w
         break
       case 'add-specialist':
@@ -571,7 +566,6 @@ const handleUpdate = async (w, payload) => {
   try {
     const updated = await calStore.updateWindow(w, payload)
     selectedWindow.value = updated
-    openModalInEdit.value = false
     showToast('Horario actualizado.')
   } catch (e) {
     showToast(e.userMessage || 'Error al actualizar la ventana.', 'error')
@@ -780,15 +774,11 @@ const returnToGroup = ref(null)
 const onGroupSelect = (w) => {
   returnToGroup.value = selectedGroup.value
   selectedGroup.value = null
-  // El lápiz del grupo abre DIRECTO en edición (un solo paso); finalizadas
-  // se abren en vista (sellado total §4); en turno se puede ajustar el fin.
-  openModalInEdit.value = !w.isEnded
   selectedWindow.value = w
 }
 
 const closeWindowModal = () => {
   selectedWindow.value = null
-  openModalInEdit.value = false
   if (returnToGroup.value) {
     selectedGroup.value = returnToGroup.value
     returnToGroup.value = null
@@ -1116,7 +1106,6 @@ onUnmounted(() => {
         :application-name="calStore.appName(selectedWindow)"
         :app-color="calStore.findApp(selectedWindow.applicationId)?.color || ''"
         :loading="modalLoading"
-        :start-in-edit-mode="openModalInEdit"
         :show-back-button="!!returnToGroup"
         :has-clipboard="!!clipboard"
         @close="closeWindowModal" @back="closeWindowModal"

@@ -5,6 +5,7 @@ import { useRoute, useRouter } from 'vue-router'
 import AppTopbar from '@/presentation/components/layout/AppTopbar.vue'
 import AppSidebar from '@/presentation/components/layout/AppSidebar.vue'
 import ChangePasswordModal from '@/presentation/components/users/ChangePasswordModal.vue'
+import CommandPalette from '@/presentation/components/layout/CommandPalette.vue'
 import { BP_MOBILE } from '@/presentation/utils/breakpoints'
 import { wsStatus } from '@/infrastructure/realtime/wsClient'
 import { usePreferencesStore } from '@/presentation/stores/usePreferencesStore'
@@ -194,5 +195,7 @@ onUnmounted(() => {
       v-if="mostrarCambiarClave"
       @close="mostrarCambiarClave = false"
     />
+
+    <CommandPalette />
   </div>
 </template>

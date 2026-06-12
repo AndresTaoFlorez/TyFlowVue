@@ -1,5 +1,6 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
+import { useRoute } from 'vue-router'
 import { useAuthStore } from '@/presentation/stores/useAuthStore'
 import { useSettingsStore } from '@/presentation/stores/useSettingsStore'
 import { useUserStore } from '@/presentation/stores/useUserStore'
@@ -31,6 +32,20 @@ const sections = computed(() => {
 })
 
 const activeSection = ref('appearance')
+
+// Deep-link: /app/settings?section=roles (lo usa el command palette Ctrl+K).
+// Se valida contra las secciones visibles (filtradas por rol).
+const route = useRoute()
+watch(
+  () => route.query.section,
+  (section) => {
+    if (route.name !== 'settings') return
+    if (section && sections.value.some((s) => s.id === section)) {
+      activeSection.value = section
+    }
+  },
+  { immediate: true },
+)
 
 onMounted(async () => {
   if (authStore.isAdmin) {

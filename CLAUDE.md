@@ -73,6 +73,9 @@ View → Store → UseCase → Repository → HTTP Client → REST API
 - `GET /roles` — List all roles
 - `GET /areas` — List all areas
 
+### Command palette (Ctrl+K)
+`src/presentation/components/layout/CommandPalette.vue` (mounted in MainLayout) is a Ctrl/Cmd+K modal for jumping between menus and settings. Its index is a static computed (`commands`) filtered by `isAdmin` and menu preferences. **When adding a protected route or a settings section, add an entry to that index** (title + Spanish synonym keywords). Settings sections are deep-linkable via `/app/settings?section=<id>` (validated against role-visible sections in SettingsView).
+
 ## Building pages/menus (shell boards contract)
 
 The shell (AppTopbar + AppSidebar) is a fixed chassis with contextual outlets. Views publish content into them via `<TopbarBoard>` / `<SidebarBoard>` (Teleport), and declare main-area treatment via `route.meta.mainMode`/`dense`. **Read `UI_BOARDS.md` before creating or restructuring any page/menu** — it is the manual for the contract (recipe, per-board style rules, gotchas, reference consumers).

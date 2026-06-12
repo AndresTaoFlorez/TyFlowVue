@@ -324,7 +324,7 @@ function toggleAllApps() {
   flex-direction: column;
   gap: 2px;
   padding: 5px;
-  background: var(--nav-hover);
+  background: var(--bg-card);
   border: 1px solid var(--nav-border);
   border-radius: 12px;
   box-shadow: var(--shadow-pop);
@@ -349,6 +349,7 @@ function toggleAllApps() {
   text-align: left;
   font-family: inherit;
   color: var(--nav-text);
+  background-color: var(--bg-main)
 }
 
 .cside__menu-item:hover { background: var(--nav-hover); }
