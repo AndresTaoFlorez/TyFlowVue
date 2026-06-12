@@ -80,8 +80,22 @@ const allInactive = computed(() => props.group.windows.every(w => !w.isActive))
 
 const statusClass = () => (allInactive.value ? 'wgb--inactive' : 'wgb--open')
 
-const showTopHandle = computed(() => props.selectable && props.multiDayPos !== 'last' && props.multiDayPos !== 'middle')
-const showBottomHandle = computed(() => props.selectable && props.multiDayPos !== 'first' && props.multiDayPos !== 'middle')
+// Las ventanas de un grupo comparten el rango exacto: basta inspeccionar una.
+// Inicio sellado (starts_at <= now) → sin handle superior ("solo se permite
+// ajustar el fin"); finalizada (ends_at < now) → tampoco handle inferior.
+const startSealed = computed(() => {
+  const w = props.group?.windows?.[0]
+  if (!w?.startsAt) return false
+  return Date.now() >= new Date(w.startsAt).getTime()
+})
+const ended = computed(() => {
+  const w = props.group?.windows?.[0]
+  if (!w?.endsAt) return false
+  return Date.now() > new Date(w.endsAt).getTime()
+})
+
+const showTopHandle = computed(() => props.selectable && props.multiDayPos !== 'last' && props.multiDayPos !== 'middle' && !startSealed.value)
+const showBottomHandle = computed(() => props.selectable && props.multiDayPos !== 'first' && props.multiDayPos !== 'middle' && !ended.value)
 const showSideHandles = computed(() => props.selectable && props.multiDayPos !== 'middle')
 
 const onHandleDown = (direction, e) => {

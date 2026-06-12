@@ -22,9 +22,12 @@ export function groupDayWindows(dayWindows, getName) {
   // Agrupar SOLO ventanas con starts_at Y ends_at idénticos (mismo rango exacto):
   // se muestran como UN solo bloque con varios avatares. Las demás van como
   // bloques individuales lado a lado.
+  // La clave compara INSTANTES (epoch), no strings: una ventana movida localmente
+  // queda con offset local (-05:00) mientras el backend serializa en otro formato;
+  // mismo instante con strings distintos impedía agrupar hasta recargar.
   const byRange = new Map()
   for (const w of list) {
-    const key = `${w.startsAt}|${w.endsAt}`
+    const key = `${new Date(w.startsAt).getTime()}|${new Date(w.endsAt).getTime()}`
     if (!byRange.has(key)) byRange.set(key, [])
     byRange.get(key).push(w)
   }

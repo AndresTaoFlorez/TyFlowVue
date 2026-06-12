@@ -133,19 +133,24 @@ const canDeleteGroup = computed(() => windows.value.every(w => w.isFuture))
             <span class="mmembers__count">{{ windows.length }}</span>
           </div>
           <div class="mmembers__list">
-            <div v-for="w in windows" :key="w.id" class="mmember"
-              :class="{ 'mmember--inactive': !w.isActive, 'mmember--cut': cutWindowIds.has(w.id) }">
+            <!-- Toda la fila es el affordance de edición: clic, Tab (focus) o
+                 Enter abren el detalle de esa persona — sin botón de lápiz. -->
+            <div v-for="w in windows" :key="w.id" class="mmember mmember--clickable"
+              :class="{ 'mmember--inactive': !w.isActive, 'mmember--cut': cutWindowIds.has(w.id) }"
+              role="button"
+              tabindex="0"
+              :title="`Editar a ${findSpec(w.specialistId).fullName}`"
+              @click="$emit('select', w)"
+              @focus="$emit('select', w)"
+              @keydown.enter.prevent="$emit('select', w)">
               <UserAvatar :preferences="findSpec(w.specialistId).preferences" :name="findSpec(w.specialistId).fullName" size="22px" />
               <span class="mmember__name">{{ findSpec(w.specialistId).fullName }}</span>
               <span v-if="!singleApp" class="mmember__app" :style="{ '--c': appColor(w) }">{{ appName(w) }}</span>
-              <button v-if="w.canToggle" class="mmember__btn" :disabled="loading"
-                :title="w.isActive ? 'Inhabilitar' : 'Habilitar'" @click="$emit('toggle', w)">
+              <button v-if="w.canToggle" class="mmember__btn" :disabled="loading" tabindex="-1"
+                :title="w.isActive ? 'Inhabilitar' : 'Habilitar'" @click.stop="$emit('toggle', w)">
                 <i class='bx' :class="w.isActive ? 'bx-block' : 'bx-check-circle'"></i>
               </button>
-              <button class="mmember__btn" :disabled="loading"
-                title="Editar solo a esta persona" @click="$emit('select', w)">
-                <i class='bx bx-pencil'></i>
-              </button>
+              <i class='bx bx-chevron-right mmember__go'></i>
             </div>
           </div>
         </div>

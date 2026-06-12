@@ -15,10 +15,13 @@ const props = defineProps({
 const emit = defineEmits(['close', 'create'])
 
 // ---- Form state ----
+// Estilo Google Calendar: SIEMPRE inicio (fecha+hora) → fin (fecha+hora).
+// Una sola ventana por persona, que puede cruzar días. La repetición por
+// varios días vive en el módulo de recurrencia, no aquí.
+const startDate = ref('')
 const startTime = ref('08:00')
-const endTime = ref('17:00')
 const endDate = ref('')
-const selectedDates = ref([])
+const endTime = ref('17:00')
 const inheritsOnReopen = ref(false)
 const affinityWeight = ref('1')
 
@@ -99,51 +102,35 @@ const selectApp = (rowIdx, a) => {
 }
 
 // ---- Date helpers ----
-const DAY_NAMES_SHORT = ['dom', 'lun', 'mar', 'mié', 'jue', 'vie', 'sáb']
-const DAY_NAMES = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado']
-const MONTHS = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre']
-
 const todayISO = () => fmtDateISO(new Date())
 
-const isMultiDay = computed(() => selectedDates.value.length > 1)
-
 const onStartDateChange = (val) => {
-  if (isPastDate(val)) return
-  const oldStart = selectedDates.value[0]
-  selectedDates.value = [val]
-  // If endDate was same as old start or before new start, sync it
+  if (!val || isPastDate(val)) return
+  const oldStart = startDate.value
+  startDate.value = val
+  // Si el fin quedó igual al inicio anterior o antes del nuevo inicio, sincronizarlo
   if (!endDate.value || endDate.value === oldStart || endDate.value < val) {
     endDate.value = val
   }
 }
 
-const formatDateChip = (iso) => {
-  const d = new Date(iso + 'T12:00:00')
-  return `${DAY_NAMES_SHORT[d.getDay()]} ${d.getDate()}`
-}
-
-const formatDateFull = (iso) => {
-  const d = new Date(iso + 'T12:00:00')
-  return `${DAY_NAMES[d.getDay()]}, ${d.getDate()} de ${MONTHS[d.getMonth()]}`
-}
-
-const removeDate = (iso) => {
-  if (selectedDates.value.length <= 1) return
-  selectedDates.value = selectedDates.value.filter(d => d !== iso)
-}
-
 // ---- Time display ----
 
+// Duración real entre (startDate, startTime) y (endDate, endTime) — puede cruzar días.
 const durationLabel = computed(() => {
-  const [sh, sm] = (startTime.value || '08:00').split(':').map(Number)
-  const [eh, em] = (endTime.value || '17:00').split(':').map(Number)
-  const mins = (eh * 60 + em) - (sh * 60 + sm)
-  if (mins <= 0) return ''
-  const h = Math.floor(mins / 60)
+  if (!startDate.value || !endDate.value) return ''
+  const start = new Date(`${startDate.value}T${startTime.value || '00:00'}:00`)
+  const end = new Date(`${endDate.value}T${endTime.value || '00:00'}:00`)
+  const mins = Math.round((end.getTime() - start.getTime()) / 60000)
+  if (isNaN(mins) || mins <= 0) return ''
+  const d = Math.floor(mins / 1440)
+  const h = Math.floor((mins % 1440) / 60)
   const m = mins % 60
-  if (h === 0) return `${m} min`
-  if (m === 0) return `${h}h`
-  return `${h}h ${m}m`
+  const parts = []
+  if (d) parts.push(`${d}d`)
+  if (h) parts.push(`${h}h`)
+  if (m) parts.push(`${m}m`)
+  return parts.join(' ') || ''
 })
 
 // ---- Conflict detection ----
@@ -166,18 +153,17 @@ const conflicts = computed(() => {
 })
 
 // ---- Total count ----
-const totalWindows = computed(() => {
-  const validRows = rows.value.filter(r => r.specialistId && r.applicationId).length
-  return selectedDates.value.length * validRows
-})
+const totalWindows = computed(() =>
+  rows.value.filter(r => r.specialistId && r.applicationId).length
+)
 
 // ---- Date/time validation ----
 const isPastDate = (iso) => iso < todayISO()
 
 const endTimeError = computed(() => {
-  // In range mode the end time applies to endDate, not the start date
-  if (!isMultiDay.value && endDate.value && endDate.value > todayISO()) return null
-  if (!selectedDates.value.includes(todayISO())) return null
+  // Si el fin cae en un día futuro, no aplica la regla de "hoy"
+  if (endDate.value && endDate.value > todayISO()) return null
+  if (endDate.value !== todayISO()) return null
   if (!endTime.value) return null
   const [endH, endM] = endTime.value.split(':').map(Number)
   const endMinutes = endH * 60 + endM
@@ -195,9 +181,9 @@ watch(hasCompleteRow, (v) => { if (!v) inheritsOnReopen.value = false })
 
 const timeOrderError = computed(() => {
   if (!startTime.value || !endTime.value) return null
-  // In range mode (endDate is a later calendar day), the datetime span is valid regardless
-  // of time comparison — end could be 02:00 the next day while start is 22:00 tonight.
-  if (!isMultiDay.value && endDate.value && endDate.value > (selectedDates.value[0] ?? '')) return null
+  // Si el fin es un día calendario posterior, el rango es válido sin comparar
+  // horas (p.ej. 22:00 → 02:00 del día siguiente).
+  if (endDate.value && endDate.value > (startDate.value ?? '')) return null
   const [sh, sm] = startTime.value.split(':').map(Number)
   const [eh, em] = endTime.value.split(':').map(Number)
   if (sh * 60 + sm >= eh * 60 + em) return 'La hora de inicio debe ser anterior a la de fin.'
@@ -216,7 +202,8 @@ const affinityWeightError = computed(() => {
 
 // ---- Validation ----
 const canSubmit = computed(() => {
-  if (selectedDates.value.length === 0) return false
+  if (!startDate.value || !endDate.value) return false
+  if (endDate.value < startDate.value) return false
   if (!startTime.value || !endTime.value) return false
   if (timeOrderError.value) return false
   if (endTimeError.value) return false
@@ -229,28 +216,27 @@ watch(() => props.visible, (val) => {
   if (!val) return
   activeDropdown.value = null
   if (props.prefill) {
-    const sh = String(Math.floor(props.prefill.startHour)).padStart(2, '0')
-    const sm = String(Math.round((props.prefill.startHour % 1) * 60)).padStart(2, '0')
-    const eh = String(Math.floor(props.prefill.endHour)).padStart(2, '0')
-    const em = String(Math.round((props.prefill.endHour % 1) * 60)).padStart(2, '0')
-    startTime.value = `${sh}:${sm}`
-    endTime.value = `${eh}:${em}`
-    if (props.prefill.days && props.prefill.days.length > 0) {
-      selectedDates.value = props.prefill.days.map(d => d.date)
-      endDate.value = selectedDates.value[selectedDates.value.length - 1]
-    } else if (props.prefill.dates && props.prefill.dates.length > 0) {
-      selectedDates.value = props.prefill.dates
-      endDate.value = props.prefill.dates[props.prefill.dates.length - 1]
-    } else {
-      selectedDates.value = [props.prefill.date || todayISO()]
-      endDate.value = selectedDates.value[0]
+    if (props.prefill.startHour != null) {
+      const sh = String(Math.floor(props.prefill.startHour)).padStart(2, '0')
+      const sm = String(Math.round((props.prefill.startHour % 1) * 60)).padStart(2, '0')
+      const eh = String(Math.floor(props.prefill.endHour)).padStart(2, '0')
+      const em = String(Math.round((props.prefill.endHour % 1) * 60)).padStart(2, '0')
+      startTime.value = `${sh}:${sm}`
+      endTime.value = `${eh}:${em}`
     }
+    // Estilo Google Calendar: una selección de varios días se traduce a UNA
+    // ventana del primer al último día (la repetición es del módulo recurrente).
+    const days = props.prefill.days?.map(d => d.date)
+      ?? props.prefill.dates
+      ?? [props.prefill.date || todayISO()]
+    startDate.value = days[0]
+    endDate.value = days[days.length - 1]
     if (props.prefill.startTime) startTime.value = props.prefill.startTime
     if (props.prefill.endTime) endTime.value = props.prefill.endTime
   } else {
     startTime.value = '08:00'
     endTime.value = '17:00'
-    selectedDates.value = [todayISO()]
+    startDate.value = todayISO()
     endDate.value = todayISO()
   }
   // Auto-fix: if same-day and endTime <= startTime, advance endTime by 1h
@@ -263,7 +249,7 @@ watch(() => props.visible, (val) => {
 /** Advance endTime to startTime + 1h when they'd be on the same day and out of order. */
 function _fixEndTime() {
   if (!startTime.value || !endTime.value) return
-  const sameDayMode = isMultiDay.value || !endDate.value || endDate.value <= (selectedDates.value[0] ?? '')
+  const sameDayMode = !endDate.value || endDate.value <= (startDate.value ?? '')
   if (!sameDayMode) return
   const [sh, sm] = startTime.value.split(':').map(Number)
   const [eh, em] = endTime.value.split(':').map(Number)
@@ -277,22 +263,17 @@ function _fixEndTime() {
 const handleSubmit = () => {
   if (!canSubmit.value) return
   const validRows = rows.value.filter(r => r.specialistId && r.applicationId)
-  const windows = []
-  const useEndDate = !isMultiDay.value && endDate.value && endDate.value !== selectedDates.value[0]
-  for (const date of selectedDates.value) {
-    for (const row of validRows) {
-      windows.push({
-        specialistId: row.specialistId,
-        applicationId: row.applicationId,
-        startTime: startTime.value,
-        endTime: endTime.value,
-        scheduledDate: date,
-        ...(useEndDate ? { endDate: endDate.value } : {}),
-        inheritsOnReopen: inheritsOnReopen.value,
-        affinityWeight: parseFloat(affinityWeight.value),
-      })
-    }
-  }
+  const useEndDate = endDate.value && endDate.value !== startDate.value
+  const windows = validRows.map(row => ({
+    specialistId: row.specialistId,
+    applicationId: row.applicationId,
+    startTime: startTime.value,
+    endTime: endTime.value,
+    scheduledDate: startDate.value,
+    ...(useEndDate ? { endDate: endDate.value } : {}),
+    inheritsOnReopen: inheritsOnReopen.value,
+    affinityWeight: parseFloat(affinityWeight.value),
+  }))
   emit('create', windows)
 }
 </script>
@@ -314,71 +295,44 @@ const handleSubmit = () => {
 
           <!-- Body -->
           <div class="modal__body">
-            <!-- Multi-day chips -->
-            <div v-if="isMultiDay" class="row" @click.stop="closeDropdowns">
+            <!-- Google Calendar style: inicio (fecha+hora) → fin (fecha+hora) -->
+            <div class="row" @click.stop="closeDropdowns">
               <i class='bx bx-calendar'></i>
-              <div class="chips">
-                <span v-for="date in selectedDates" :key="date" class="chip">
-                  {{ formatDateChip(date) }}
-                  <button class="chip__remove" @click="removeDate(date)" :disabled="creating">
-                    <i class='bx bx-x'></i>
-                  </button>
-                </span>
+              <div class="row__datetime">
+                <label class="row__datetime-label">Inicio</label>
+                <div class="row__datetime-inputs">
+                  <input
+                    :value="startDate"
+                    @input="onStartDateChange($event.target.value)"
+                    type="date"
+                    :min="todayISO()"
+                    class="row__date"
+                    :disabled="creating"
+                  >
+                  <input v-model="startTime" type="time" class="time-input" :disabled="creating">
+                </div>
               </div>
             </div>
-            <div v-if="isMultiDay" class="row" @click.stop="closeDropdowns">
-              <i class='bx bx-time-five'></i>
-              <div class="row__time">
-                <input v-model="startTime" type="time" class="time-input" :disabled="creating">
-                <span class="time-dash">–</span>
-                <input v-model="endTime" type="time" class="time-input" :disabled="creating">
-                <span v-if="durationLabel" class="time-badge">{{ durationLabel }}</span>
+            <div class="row" @click.stop="closeDropdowns">
+              <i class='bx bx-calendar-check'></i>
+              <div class="row__datetime">
+                <label class="row__datetime-label">Fin</label>
+                <div class="row__datetime-inputs">
+                  <input
+                    v-model="endDate"
+                    type="date"
+                    :min="startDate || todayISO()"
+                    class="row__date"
+                    :disabled="creating"
+                  >
+                  <input v-model="endTime" type="time" class="time-input" :disabled="creating">
+                  <span v-if="durationLabel" class="time-badge">{{ durationLabel }}</span>
+                </div>
               </div>
             </div>
             <div v-if="timeOrderError || endTimeError" class="row__error-row">
               <span class="row__error">{{ timeOrderError || endTimeError }}</span>
             </div>
-
-            <!-- Single/range: Google Calendar style (date+time start, date+time end) -->
-            <template v-if="!isMultiDay">
-              <div class="row" @click.stop="closeDropdowns">
-                <i class='bx bx-calendar'></i>
-                <div class="row__datetime">
-                  <label class="row__datetime-label">Inicio</label>
-                  <div class="row__datetime-inputs">
-                    <input
-                      :value="selectedDates[0]"
-                      @input="onStartDateChange($event.target.value)"
-                      type="date"
-                      :min="todayISO()"
-                      class="row__date"
-                      :disabled="creating"
-                    >
-                    <input v-model="startTime" type="time" class="time-input" :disabled="creating">
-                  </div>
-                </div>
-              </div>
-              <div class="row" @click.stop="closeDropdowns">
-                <i class='bx bx-calendar-check'></i>
-                <div class="row__datetime">
-                  <label class="row__datetime-label">Fin</label>
-                  <div class="row__datetime-inputs">
-                    <input
-                      v-model="endDate"
-                      type="date"
-                      :min="selectedDates[0] || todayISO()"
-                      class="row__date"
-                      :disabled="creating"
-                    >
-                    <input v-model="endTime" type="time" class="time-input" :disabled="creating">
-                    <span v-if="durationLabel" class="time-badge">{{ durationLabel }}</span>
-                  </div>
-                </div>
-              </div>
-              <div v-if="timeOrderError || endTimeError" class="row__error-row">
-                <span class="row__error">{{ timeOrderError || endTimeError }}</span>
-              </div>
-            </template>
 
             <!-- Separator -->
             <div class="section-label">Personas</div>
@@ -623,50 +577,6 @@ const handleSubmit = () => {
   color: #ef4444;
 }
 
-/* Chips */
-.chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.3rem;
-  flex: 1;
-}
-
-.chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.2rem;
-  background: rgba(42, 199, 143, 0.08);
-  color: var(--primary-600);
-  font-size: 0.72rem;
-  font-weight: 600;
-  padding: 0.2rem 0.45rem;
-  border-radius: var(--radius-full);
-  white-space: nowrap;
-}
-
-.chip__remove {
-  background: none;
-  border: none;
-  color: var(--primary-500);
-  font-size: 0.8rem;
-  cursor: pointer;
-  padding: 0;
-  display: flex;
-  align-items: center;
-  opacity: 0.6;
-  transition: opacity 0.12s;
-}
-
-.chip__remove:hover { opacity: 1; }
-
-/* Time row */
-.row__time {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-  flex: 1;
-}
-
 .time-input {
   height: 38px;
   border: 1px solid var(--border);
@@ -683,11 +593,6 @@ const handleSubmit = () => {
 
 .time-input:focus {
   border-color: var(--primary-500);
-}
-
-.time-dash {
-  color: var(--muted);
-  font-size: 0.8rem;
 }
 
 .time-badge {

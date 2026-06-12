@@ -81,14 +81,29 @@ const statusClass = () => {
   return 'wb--open'
 }
 
+// Sellado del inicio: starts_at <= now → el backend rechaza cambiar el inicio
+// ("solo se permite ajustar el fin"). Se calcula sobre startsAt directamente
+// porque el proxy multi-día puede no conservar los getters de la entity.
+const startSealed = computed(() => {
+  if (!props.window?.startsAt) return false
+  return Date.now() >= new Date(props.window.startsAt).getTime()
+})
+// Finalizada: ends_at < now → tampoco se puede ajustar el fin.
+const ended = computed(() => {
+  if (!props.window?.endsAt) return false
+  return Date.now() > new Date(props.window.endsAt).getTime()
+})
+
 const showTopHandle = computed(() => {
   if (!props.selectable) return false
   if (props.multiDayPos === 'last' || props.multiDayPos === 'middle') return false
+  if (startSealed.value) return false
   return true
 })
 const showBottomHandle = computed(() => {
   if (!props.selectable) return false
   if (props.multiDayPos === 'first' || props.multiDayPos === 'middle') return false
+  if (ended.value) return false
   return true
 })
 const showSideHandles = computed(() => {

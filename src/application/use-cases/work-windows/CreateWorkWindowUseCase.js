@@ -18,17 +18,26 @@ export async function createWorkWindowUseCase(windowsData) {
 
     const startMins = parseTimeMins(item.startTime)
     const endMins = parseTimeMins(item.endTime)
-    if (startMins >= endMins) {
-      throw new WorkWindowError(`La hora de inicio debe ser anterior a la de fin${label}.`)
-    }
 
     const date = item.scheduledDate || todayISO()
     const today = todayISO()
+    const endDateVal = item.endDate || date
+
+    // La ventana puede cruzar días (estilo Google Calendar): el orden de horas
+    // solo aplica cuando inicio y fin caen el MISMO día calendario.
+    if (endDateVal < date) {
+      throw new WorkWindowError(`La fecha de fin no puede ser anterior a la de inicio${label}.`)
+    }
+    if (endDateVal === date && startMins >= endMins) {
+      throw new WorkWindowError(`La hora de inicio debe ser anterior a la de fin${label}.`)
+    }
 
     if (date < today) {
       throw new WorkWindowError(`No se pueden crear ventanas en fechas pasadas${label}.`)
     }
-    if (date === today) {
+    // El fin no puede quedar detrás de la timeline: si cae HOY, exigir margen
+    // de 30 min sobre la hora actual (si cae en un día futuro, no aplica).
+    if (endDateVal === today) {
       const now = new Date()
       const nowMins = now.getHours() * 60 + now.getMinutes()
       if (endMins < nowMins + 30) {
@@ -37,8 +46,6 @@ export async function createWorkWindowUseCase(windowsData) {
         )
       }
     }
-
-    const endDateVal = item.endDate || date
 
     return {
       specialistId: item.specialistId,

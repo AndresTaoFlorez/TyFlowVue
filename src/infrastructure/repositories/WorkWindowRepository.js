@@ -80,6 +80,12 @@ export const WorkWindowRepository = {
     const item = this._buildPatchItem(id, fields)
     const { data } = await client.patch('/work-windows', { windows: [item] })
     const items = Array.isArray(data) ? data : data.updated ?? data.data ?? data.items ?? []
+    // El batch responde 200 con fallos por ítem: NO tragarlos como no-op —
+    // propagar la razón para que el caller revierta el optimista y la muestre.
+    const failed = (Array.isArray(data) ? [] : data.failed) ?? []
+    if (items.length === 0 && failed.length > 0) {
+      throw new Error(failed[0]?.reason || 'No se pudo actualizar la ventana.')
+    }
     // Superada → null: el caller lo trata como no-op (la ganadora pinta).
     return items.length > 0 ? new WorkWindow(items[0]) : null
   },

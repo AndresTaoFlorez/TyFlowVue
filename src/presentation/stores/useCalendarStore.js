@@ -595,6 +595,29 @@ export const useCalendarStore = defineStore('calendar', () => {
     _invalidateCache()
   }
 
+  /** Procesa el resultado de un batch update: el backend responde 200 con
+   *  fallos POR ÍTEM en `failed[]` — antes se ignoraban en silencio y el
+   *  optimista quedaba pintado aunque el servidor lo hubiera rechazado.
+   *  Revierte solo las fallidas (las exitosas se conservan) y lanza el motivo
+   *  traducido. Llamar FUERA del try/catch del rollback total. */
+  function _assertBatchOk(result, originals, optimisticMap) {
+    const failed = result?.failed ?? []
+    if (failed.length === 0) return
+    for (const f of failed) {
+      const orig = originals.get(f.id)
+      const opt = optimisticMap.get(f.id)
+      if (orig && opt && _findOriginal(f.id) === opt) _replaceWindow(f.id, orig)
+    }
+    _invalidateCache()
+    const reason = _translateMessage(failed[0]?.reason) || 'Error del servidor.'
+    const total = originals.size
+    throw {
+      userMessage: failed.length >= total
+        ? reason
+        : `${failed.length} de ${total} ventanas no se actualizaron: ${reason}`,
+    }
+  }
+
   function _isPlaceholder(id) {
     return typeof id === 'string' && id.startsWith('__new_')
   }
@@ -619,6 +642,8 @@ export const useCalendarStore = defineStore('calendar', () => {
     [/overlaps with an existing/i, 'El horario se solapa con una ventana existente del mismo especialista y aplicación.'],
     [/already ended/i, 'La ventana ya finalizó.'],
     [/starting in the past|starts_at to a past/i, 'No se pueden crear ventanas que inician en el pasado.'],
+    [/Cannot change starts_at.*in shift|starts_at.*sealed/i, 'No se puede cambiar el inicio de una ventana en turno activo. Solo se permite ajustar el fin.'],
+    [/ends_at.*past|past.*ends_at/i, 'No se puede dejar el fin de la ventana en el pasado.'],
   ]
 
   function _translateMessage(msg) {
@@ -1137,6 +1162,7 @@ export const useCalendarStore = defineStore('calendar', () => {
     windows.value = windows.value.map(w => optimisticMap.get(w.id) || w)
     _invalidateCache()
 
+    let result
     try {
       const items = [...originals.entries()].map(([id, orig]) => {
         const opt = optimisticMap.get(id)
@@ -1150,7 +1176,7 @@ export const useCalendarStore = defineStore('calendar', () => {
           },
         }
       })
-      await _enqueueGroupMutation(batchIds, () => batchUpdateWorkWindowsUseCase(items))
+      result = await _enqueueGroupMutation(batchIds, () => batchUpdateWorkWindowsUseCase(items))
       _pushUndo(snapshot, async () => {
         const undoItems = [...originals.values()].map(orig => ({
           window: orig,
@@ -1162,6 +1188,8 @@ export const useCalendarStore = defineStore('calendar', () => {
       _rollbackOptimistic(originals, optimisticMap)
       throw e
     }
+    // Fallos por ítem (200 con failed[]): revertir esas y avisar
+    _assertBatchOk(result, originals, optimisticMap)
   }
 
   async function batchResize(ids, direction, deltaSlots) {
@@ -1188,6 +1216,9 @@ export const useCalendarStore = defineStore('calendar', () => {
     // Validate overlap & inheritance
     for (const [id, orig] of originals.entries()) {
       const opt = optimisticMap.get(id)
+      if (direction === 'bottom' && new Date(opt.endsAt).getTime() <= Date.now()) {
+        throw { userMessage: 'No se puede reducir la ventana a un momento anterior a la línea de tiempo.' }
+      }
       const conflict = _checkOverlapAbs(orig.specialistId, opt.startsAt, opt.endsAt, batchIds, orig.applicationId)
       if (conflict) {
         throw { userMessage: 'El horario se superpone con otra ventana del mismo especialista y aplicación.' }
@@ -1199,6 +1230,7 @@ export const useCalendarStore = defineStore('calendar', () => {
     windows.value = windows.value.map(w => optimisticMap.get(w.id) || w)
     _invalidateCache()
 
+    let result
     try {
       const items = [...originals.entries()].map(([id, orig]) => {
         const opt = optimisticMap.get(id)
@@ -1210,7 +1242,7 @@ export const useCalendarStore = defineStore('calendar', () => {
           },
         }
       })
-      await _enqueueGroupMutation(batchIds, () => batchUpdateWorkWindowsUseCase(items))
+      result = await _enqueueGroupMutation(batchIds, () => batchUpdateWorkWindowsUseCase(items))
       _pushUndo(snapshot, async () => {
         const undoItems = [...originals.values()].map(orig => ({
           window: orig,
@@ -1222,6 +1254,8 @@ export const useCalendarStore = defineStore('calendar', () => {
       _rollbackOptimistic(originals, optimisticMap)
       throw e
     }
+    // Fallos por ítem (200 con failed[]): revertir esas y avisar
+    _assertBatchOk(result, originals, optimisticMap)
   }
 
   async function batchToggle(ids) {
@@ -1480,6 +1514,14 @@ export const useCalendarStore = defineStore('calendar', () => {
     }
     const st = startTime || original.startTime
     const et = endTime || original.endTime
+    // El fin no puede retroceder detrás de la línea de tiempo (now): una
+    // ventana en turno solo puede acortarse hasta el momento actual.
+    if (endTime) {
+      const newEnds = WorkWindow.toTimestampTz(original.endDate || original.scheduledDate, et)
+      if (newEnds && new Date(newEnds).getTime() <= Date.now()) {
+        throw { userMessage: 'No se puede reducir la ventana a un momento anterior a la línea de tiempo.' }
+      }
+    }
     const conflict = _checkOverlap(original.specialistId, original.scheduledDate, st, et, [w.id], original.applicationId)
     if (conflict) {
       throw { userMessage: 'El horario se superpone con otra ventana del mismo especialista y aplicación.' }
@@ -1546,6 +1588,9 @@ export const useCalendarStore = defineStore('calendar', () => {
     // Validar overlap e inheritance contra ventanas externas al grupo
     for (const [id, orig] of originals.entries()) {
       const opt = optimisticMap.get(id)
+      if (direction === 'bottom' && new Date(opt.endsAt).getTime() <= Date.now()) {
+        throw { userMessage: 'No se puede reducir la ventana a un momento anterior a la línea de tiempo.' }
+      }
       const conflict = _checkOverlapAbs(orig.specialistId, opt.startsAt, opt.endsAt, groupIds, orig.applicationId)
       if (conflict) {
         throw { userMessage: 'El horario se superpone con otra ventana del mismo especialista y aplicación.' }
@@ -1557,6 +1602,7 @@ export const useCalendarStore = defineStore('calendar', () => {
     windows.value = windows.value.map(w => optimisticMap.get(w.id) || w)
     _invalidateCache()
 
+    let result
     try {
       const items = [...originals.entries()].map(([id, orig]) => {
         const opt = optimisticMap.get(id)
@@ -1568,7 +1614,7 @@ export const useCalendarStore = defineStore('calendar', () => {
           },
         }
       })
-      await _enqueueGroupMutation(groupIds, () => batchUpdateWorkWindowsUseCase(items))
+      result = await _enqueueGroupMutation(groupIds, () => batchUpdateWorkWindowsUseCase(items))
       _pushUndo(snapshot, async () => {
         const undoItems = [...originals.values()].map(orig => ({
           window: orig,
@@ -1580,6 +1626,8 @@ export const useCalendarStore = defineStore('calendar', () => {
       _rollbackOptimistic(originals, optimisticMap)
       throw e
     }
+    // Fallos por ítem (200 con failed[]): revertir esas y avisar
+    _assertBatchOk(result, originals, optimisticMap)
   }
 
   async function rescheduleWindow({ window: w, targetDate, startTime, endTime }) {
@@ -1663,6 +1711,7 @@ export const useCalendarStore = defineStore('calendar', () => {
     windows.value = windows.value.map(w => optimisticMap.get(w.id) || w)
     _invalidateCache()
 
+    let result
     try {
       const items = [...originals.entries()].map(([id, orig]) => {
         const opt = optimisticMap.get(id)
@@ -1676,7 +1725,7 @@ export const useCalendarStore = defineStore('calendar', () => {
           },
         }
       })
-      await _enqueueGroupMutation(groupIds, () => batchUpdateWorkWindowsUseCase(items))
+      result = await _enqueueGroupMutation(groupIds, () => batchUpdateWorkWindowsUseCase(items))
       _pushUndo(snapshot, async () => {
         const undoItems = [...originals.values()].map(orig => ({
           window: orig,
@@ -1688,6 +1737,8 @@ export const useCalendarStore = defineStore('calendar', () => {
       _rollbackOptimistic(originals, optimisticMap)
       throw e
     }
+    // Fallos por ítem (200 con failed[]): revertir esas y avisar
+    _assertBatchOk(result, originals, optimisticMap)
   }
 
   async function addWindowToSlot(data) {

@@ -222,6 +222,27 @@
 
 .mmember:hover { background: var(--surface-hover); }
 
+/* Fila clickeable/enfocable: toda la fila abre la edición de esa persona */
+.mmember--clickable { cursor: pointer; outline: none; }
+.mmember--clickable:focus-visible {
+  background: var(--surface-hover);
+  box-shadow: inset 0 0 0 2px var(--primary-500);
+}
+
+.mmember__go {
+  flex-shrink: 0;
+  font-size: 1rem;
+  color: var(--muted);
+  opacity: 0.45;
+  transition: opacity .12s, color .12s, transform .12s;
+}
+.mmember--clickable:hover .mmember__go,
+.mmember--clickable:focus-visible .mmember__go {
+  opacity: 1;
+  color: var(--primary-500);
+  transform: translateX(2px);
+}
+
 .mmember__name {
   flex: 1;
   min-width: 0;
