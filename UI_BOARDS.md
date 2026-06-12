@@ -133,7 +133,14 @@ import SidebarBoard from '@/presentation/components/layout/SidebarBoard.vue'
 - La presencia usa **contadores** (no booleanos): tolera el cruce
   montar-nuevo/desmontar-viejo entre rutas.
 - En móvil el sidebar es un drawer: lo que publiques en `SidebarBoard` aparece
-  dentro del drawer (hamburguesa).
+  dentro del drawer (hamburguesa). **Eso entierra la navegación contextual**:
+  en pantallas chicas la topbar debe asumirla. Patrón: publicar en el
+  `TopbarBoard` un switcher compacto de iconos (botones ~38×32 en un segment
+  con borde) que se muestra solo con `@media (max-width: 768px)` (display:none
+  en escritorio, donde el sidebar ya cubre esa navegación). Referencias:
+  `.cv__topnav` (CasesView — Lista/Especialistas/Columnas) y `.sv__topnav`
+  (SettingsView — secciones). No dejar la topbar móvil solo con el título:
+  es el único espacio de navegación siempre visible.
 - Dropdowns dentro del topbar board: `position: absolute` funciona (la topbar
   tiene `z-index: 10` y crea stacking context sobre el main).
 

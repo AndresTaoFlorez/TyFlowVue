@@ -229,6 +229,37 @@ onMounted(async () => {
       <div class="cv__topbar">
         <span class="cv__topbar-title">{{ activeTab === 'lista' ? 'Casos' : 'Especialistas' }}</span>
 
+        <!-- Switcher compacto del módulo: en pantallas chicas el sidebar es un
+             drawer y la navegación contextual quedaría enterrada — la topbar
+             la asume (solo visible en móvil, ver media query). -->
+        <nav class="cv__topnav" aria-label="Secciones de casos">
+          <button
+            class="cv__topnav-btn"
+            :class="{ 'cv__topnav-btn--active': activeTab === 'lista' }"
+            title="Lista"
+            @click="router.push({ name: 'cases-list' })"
+          >
+            <i class="bx bx-list-ul"></i>
+          </button>
+          <button
+            class="cv__topnav-btn"
+            :class="{ 'cv__topnav-btn--active': activeTab === 'especialistas' && !route.name?.startsWith('cases-loads') }"
+            title="Especialistas"
+            @click="router.push({ name: 'cases-specialists' })"
+          >
+            <i class="bx bx-group"></i>
+          </button>
+          <button
+            v-if="authStore.isAdmin"
+            class="cv__topnav-btn"
+            :class="{ 'cv__topnav-btn--active': route.name?.startsWith('cases-loads') }"
+            title="Modo columnas"
+            @click="router.push({ name: 'cases-loads' })"
+          >
+            <i class="bx bx-columns"></i>
+          </button>
+        </nav>
+
         <!-- Search (solo en lista) -->
         <div
           v-if="activeTab === 'lista'"
@@ -439,6 +470,38 @@ onMounted(async () => {
   font-weight: 700;
   color: var(--text-primary);
   white-space: nowrap;
+}
+
+/* Switcher del módulo en la topbar — solo en pantallas chicas, donde el
+   sidebar (drawer) esconde la navegación contextual */
+.cv__topnav {
+  display: none;
+  align-items: center;
+  border: 1px solid var(--border-light);
+  border-radius: 9px;
+  overflow: hidden;
+  background: var(--bg-card);
+  flex-shrink: 0;
+}
+
+.cv__topnav-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 32px;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 1.05rem;
+  cursor: pointer;
+  transition: all 0.12s;
+}
+.cv__topnav-btn + .cv__topnav-btn { border-left: 1px solid var(--border-light); }
+.cv__topnav-btn:hover { color: var(--text-primary); }
+.cv__topnav-btn--active {
+  color: var(--primary-500);
+  background: color-mix(in srgb, var(--primary-500) 12%, transparent);
 }
 
 .cv__topbar-end {
@@ -705,9 +768,13 @@ onMounted(async () => {
   .cv__btn-label { display: none; }
   .cv__create-btn,
   .cv__autopilot-btn { padding: 0 0.5rem; }
-  .cv__search { width: 140px; }
-  .cv__search:focus-within { width: 170px; }
+  .cv__search { width: 130px; }
+  .cv__search:focus-within { width: 160px; }
   .cv__topbar-title { display: none; }
+  /* La topbar asume la navegación del módulo (el sidebar es drawer) */
+  .cv__topnav { display: flex; }
+  .cv__topbar { gap: 0.5rem; }
+  .cv__count { display: none; }
 
   /* En móvil el panel de detalle cubre toda la pantalla (fixed, estilos cdp) */
   .cv__resize-handle { display: none; }

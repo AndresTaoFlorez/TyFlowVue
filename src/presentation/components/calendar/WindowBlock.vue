@@ -1,5 +1,6 @@
 <script setup>
 import { computed, ref } from 'vue'
+import { WorkWindow } from '@/domain/entities/WorkWindow'
 import { useAdaptiveFont } from '@/presentation/composables/useAdaptiveFont'
 import { appTintSurface, readableTextOnTint } from '@/presentation/utils/color'
 import { usePreferencesStore } from '@/presentation/stores/usePreferencesStore'
@@ -81,17 +82,19 @@ const statusClass = () => {
   return 'wb--open'
 }
 
-// Sellado del inicio: starts_at <= now → el backend rechaza cambiar el inicio
-// ("solo se permite ajustar el fin"). Se calcula sobre startsAt directamente
-// porque el proxy multi-día puede no conservar los getters de la entity.
+// Sellado en dos niveles (§4 de las reglas):
+//  - iniciada (starts_at <= Timeline): el INICIO queda congelado → sin handle top;
+//    el fin aún se puede ajustar (el store valida que no quede antes de la Timeline).
+//  - finalizada (ends_at < Timeline): inmutable total → tampoco handle bottom.
+// Se calcula sobre los timestamps directamente porque el proxy multi-día puede
+// no conservar los getters de la entity; usa la Timeline del servidor.
 const startSealed = computed(() => {
   if (!props.window?.startsAt) return false
-  return Date.now() >= new Date(props.window.startsAt).getTime()
+  return WorkWindow.timelineNow() >= new Date(props.window.startsAt).getTime()
 })
-// Finalizada: ends_at < now → tampoco se puede ajustar el fin.
 const ended = computed(() => {
   if (!props.window?.endsAt) return false
-  return Date.now() > new Date(props.window.endsAt).getTime()
+  return WorkWindow.timelineNow() > new Date(props.window.endsAt).getTime()
 })
 
 const showTopHandle = computed(() => {
@@ -109,6 +112,7 @@ const showBottomHandle = computed(() => {
 const showSideHandles = computed(() => {
   if (!props.selectable) return false
   if (props.multiDayPos === 'middle') return false
+  if (startSealed.value) return false
   return true
 })
 

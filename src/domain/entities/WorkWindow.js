@@ -60,43 +60,63 @@ export class WorkWindow {
     return d.getHours() + d.getMinutes() / 60
   }
 
-  // --- Temporal guards (match backend seal rules from API_CONTRACT) ---
-  // A window is **sealed** once starts_at <= Timeline (server now).
-  // Frontend uses Date.now() as an approximation; the backend enforces the real Timeline.
+  // --- Temporal guards (match backend TWO-TIER seal rules) ---
+  // 1. Start seal (starts_at <= Timeline): starts_at/affinity/inheritance
+  //    quedan congelados; ends_at AÚN puede ajustarse (nunca a <= Timeline).
+  // 2. Full seal (ends_at < Timeline): nada se puede modificar.
+  // "Timeline" es el now del SERVIDOR: se sincroniza vía GET /work-windows/timeline
+  // (setTimelineOffset) para no depender del reloj del navegador.
 
-  /** Future: starts_at > now — fully editable, deletable, mergeable */
-  get isFuture() {
-    if (!this.startsAt) return false
-    return Date.now() < new Date(this.startsAt).getTime()
+  /** Offset reloj-servidor − reloj-navegador (ms). 0 hasta sincronizar. */
+  static _timelineOffsetMs = 0
+
+  /** Sincroniza la Timeline del servidor (llamar con el ISO de GET /work-windows/timeline). */
+  static setTimelineOffset(serverNowIso) {
+    const serverMs = new Date(serverNowIso).getTime()
+    if (!isNaN(serverMs)) WorkWindow._timelineOffsetMs = serverMs - Date.now()
   }
 
-  /** Sealed: starts_at <= now — all structural mutations rejected by DB */
+  /** "Now" según la Timeline del servidor. */
+  static timelineNow() {
+    return Date.now() + WorkWindow._timelineOffsetMs
+  }
+
+  /** Future: starts_at > Timeline — fully editable, deletable, mergeable */
+  get isFuture() {
+    if (!this.startsAt) return false
+    return WorkWindow.timelineNow() < new Date(this.startsAt).getTime()
+  }
+
+  /** Start-sealed: starts_at <= Timeline — el inicio quedó congelado */
   get isSealed() {
     if (!this.startsAt) return false
-    return Date.now() >= new Date(this.startsAt).getTime()
+    return WorkWindow.timelineNow() >= new Date(this.startsAt).getTime()
   }
 
   /** Window start has already passed (alias for isSealed for readability) */
   get hasStarted() { return this.isSealed }
 
-  /** In-progress: starts_at <= now <= ends_at — only toggle allowed */
+  /** In-progress: starts_at <= Timeline <= ends_at — fin ajustable + toggle */
   get isInShift() {
     if (!this.startsAt || !this.endsAt) return false
-    const now = Date.now()
+    const now = WorkWindow.timelineNow()
     return now >= new Date(this.startsAt).getTime() && now <= new Date(this.endsAt).getTime()
   }
 
-  /** Ended: ends_at < now — fully read-only, toggle blocked too */
+  /** Ended (full seal): ends_at < Timeline — totalmente inmutable */
   get isEnded() {
     if (!this.endsAt) return false
-    return Date.now() > new Date(this.endsAt).getTime()
+    return WorkWindow.timelineNow() > new Date(this.endsAt).getTime()
   }
 
-  /** Can this window be structurally edited (starts_at, ends_at, delete, merge)? Only if future. */
+  /** Can this window be structurally edited (incl. starts_at, delete, merge)? Only if future. */
   get canEdit() { return this.isFuture }
 
   /** Can starts_at be changed? Only if not yet started */
   get canEditStart() { return this.isFuture }
+
+  /** Can ends_at be changed? Until the window ends (two-tier seal). */
+  get canEditEnd() { return !this.isEnded }
 
   /** Can toggle is_active? Allowed on future and in-progress, NOT on ended */
   get canToggle() { return !this.isEnded }

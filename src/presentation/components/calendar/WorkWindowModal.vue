@@ -30,6 +30,10 @@ async function copyId(text, flagRef) {
 
 const isFuture = computed(() => props.window?.isFuture ?? false)
 const isEnded = computed(() => props.window?.isEnded ?? false)
+// Sellado en dos niveles (§4): en turno (iniciada, no finalizada) el inicio
+// queda congelado pero el FIN aún se puede ajustar.
+const isInShift = computed(() => !isFuture.value && !isEnded.value)
+const canEditWindow = computed(() => !isEnded.value)
 
 const hasInheritance = computed(() => !!(props.window.inheritedFromWindowId || props.window.inheritsOnReopen))
 const canToggleInheritance = computed(() => isFuture.value)
@@ -46,8 +50,8 @@ const editAffinityWeight = ref('')
 const fmtDate = (date) => fmtDateLocale(date)
 
 function enterEdit() {
-  // §4 de las reglas: sellada (ya inició, en turno o finalizada) = inmutable.
-  if (!isFuture.value) return
+  // §4 (dos niveles): finalizada = inmutable; en turno = solo el fin.
+  if (!canEditWindow.value) return
   editStartDate.value = dateFromTimestamp(props.window.startsAt) || props.window.scheduledDate || ''
   editStartTime.value = fmtForInput(props.window.startTime)
   editEndDate.value = dateFromTimestamp(props.window.endsAt) || props.window.scheduledDate || ''
@@ -73,15 +77,18 @@ function saveEdit() {
   const startTimeChanged = editStartTime.value !== origStartTime
   const endTimeChanged = editEndTime.value !== origEndTime
 
-  // Solo se llega aquí con ventanas futuras (§4: selladas no se editan)
-  if (startDateChanged) payload.targetDate = editStartDate.value
-  if (startTimeChanged || startDateChanged) payload.startTime = editStartTime.value
+  // En turno (start seal) solo se permite tocar el fin — los inputs de inicio
+  // y afinidad van deshabilitados, pero por si acaso no se envían cambios suyos.
+  if (isFuture.value) {
+    if (startDateChanged) payload.targetDate = editStartDate.value
+    if (startTimeChanged || startDateChanged) payload.startTime = editStartTime.value
+  }
   if (endDateChanged) payload.endDate = editEndDate.value
   if (endTimeChanged || endDateChanged) payload.endTime = editEndTime.value
   if (editNote.value.trim()) payload.note = editNote.value.trim()
 
   const origWeight = props.window.affinityWeight != null ? String(parseFloat(props.window.affinityWeight.toFixed(2))) : '1'
-  if (editAffinityWeight.value !== origWeight) {
+  if (isFuture.value && editAffinityWeight.value !== origWeight) {
     payload.affinityWeight = editAffinityWeight.value ? parseFloat(editAffinityWeight.value) : null
   }
 
@@ -147,7 +154,8 @@ const statusPillClass = computed(() => {
           </div>
         </div>
         <div class="modal__head-actions">
-          <button v-if="!editing && isFuture" class="modal__icon-btn" title="Editar horario" @click="enterEdit">
+          <button v-if="!editing && canEditWindow" class="modal__icon-btn"
+            :title="isInShift ? 'Ajustar fin del turno' : 'Editar horario'" @click="enterEdit">
             <i class='bx bx-pencil'></i>
           </button>
           <button class="modal__x" @click="$emit('close')" title="Cerrar">&times;</button>
@@ -233,13 +241,17 @@ const statusPillClass = computed(() => {
           </div>
         </template>
 
-        <!-- Edición (solo ventanas futuras — §4: selladas inmutables) -->
+        <!-- Edición — §4 (dos niveles): futura = todo editable; en turno = solo el fin -->
         <template v-else>
+          <p v-if="isInShift" class="wm__shift-hint">
+            <i class='bx bx-info-circle'></i>
+            La ventana está en turno: el inicio quedó sellado, solo puedes ajustar el fin.
+          </p>
           <div class="mfield">
             <label class="mfield__label">Inicio</label>
             <div class="mgrid2">
-              <input type="date" v-model="editStartDate" class="minput">
-              <input type="time" v-model="editStartTime" class="minput">
+              <input type="date" v-model="editStartDate" class="minput" :disabled="!isFuture">
+              <input type="time" v-model="editStartTime" class="minput" :disabled="!isFuture">
             </div>
           </div>
           <div class="mfield">
@@ -256,7 +268,7 @@ const statusPillClass = computed(() => {
           <div class="mfield">
             <label class="mfield__label">Peso de afinidad</label>
             <input v-model="editAffinityWeight" type="number" step="0.01" min="0.01" max="9.99"
-              class="minput wm__weight-input" placeholder="Ej. 1.5">
+              class="minput wm__weight-input" placeholder="Ej. 1.5" :disabled="!isFuture">
           </div>
         </template>
       </div>
@@ -318,6 +330,22 @@ const statusPillClass = computed(() => {
 .wm__pill-x:disabled { opacity: 0.4; cursor: not-allowed; }
 
 .wm__weight-input { max-width: 180px; }
+
+/* Aviso de turno en curso (solo se ajusta el fin) */
+.wm__shift-hint {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0 0 0.2rem;
+  padding: 0.45rem 0.6rem;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--primary-500) 10%, transparent);
+  color: var(--primary-600, #1fa672);
+  font-size: 0.72rem;
+  font-weight: 600;
+  line-height: 1.35;
+}
+.wm__shift-hint i { font-size: 0.95rem; flex-shrink: 0; }
 
 /* Fila de ID copiable (discreta) */
 .wm__id-row {

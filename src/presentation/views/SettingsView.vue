@@ -9,6 +9,7 @@ import SettingsCalendar from '@/presentation/components/settings/SettingsCalenda
 import SettingsRoles from '@/presentation/components/settings/SettingsRoles.vue'
 import SettingsHierarchy from '@/presentation/components/settings/SettingsHierarchy.vue'
 import SidebarBoard from '@/presentation/components/layout/SidebarBoard.vue'
+import TopbarBoard from '@/presentation/components/layout/TopbarBoard.vue'
 
 const authStore = useAuthStore()
 const settingsStore = useSettingsStore()
@@ -40,6 +41,27 @@ onMounted(async () => {
 
 <template>
   <div class="sv">
+    <!-- Topbar board: título + switcher de secciones (el switcher solo es
+         visible en pantallas chicas, donde el sidebar es un drawer y la
+         navegación contextual quedaría enterrada). -->
+    <TopbarBoard>
+      <div class="sv__topbar">
+        <span class="sv__topbar-title">Configuración</span>
+        <nav class="sv__topnav" aria-label="Secciones de configuración">
+          <button
+            v-for="s in sections"
+            :key="s.id"
+            class="sv__topnav-btn"
+            :class="{ 'sv__topnav-btn--active': activeSection === s.id }"
+            :title="s.label"
+            @click="activeSection = s.id"
+          >
+            <i :class="'bx ' + s.icon"></i>
+          </button>
+        </nav>
+      </div>
+    </TopbarBoard>
+
     <!-- Secciones → board del sidebar (contrato de boards del shell) -->
     <SidebarBoard>
       <nav class="sv__nav">
@@ -135,6 +157,58 @@ onMounted(async () => {
   min-height: 0;
   overflow-y: auto;
   padding: 1.5rem 2rem;
+}
+
+/* ── Topbar board ── */
+.sv__topbar {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.sv__topbar-title {
+  font-size: 1.02rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
+/* Switcher de secciones: solo visible en pantallas chicas */
+.sv__topnav {
+  display: none;
+  align-items: center;
+  border: 1px solid var(--border-light);
+  border-radius: 9px;
+  overflow: hidden;
+  background: var(--bg-card);
+  flex-shrink: 0;
+}
+
+.sv__topnav-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 32px;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 1.05rem;
+  cursor: pointer;
+  transition: all 0.12s;
+}
+.sv__topnav-btn + .sv__topnav-btn { border-left: 1px solid var(--border-light); }
+.sv__topnav-btn:hover { color: var(--text-primary); }
+.sv__topnav-btn--active {
+  color: var(--primary-500);
+  background: color-mix(in srgb, var(--primary-500) 12%, transparent);
+}
+
+@media (max-width: 768px) {
+  .sv__topnav { display: flex; }
+  .sv__content { padding: 1rem; }
 }
 
 @media (max-width: 768px) {

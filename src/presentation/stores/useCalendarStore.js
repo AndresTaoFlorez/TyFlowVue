@@ -463,7 +463,20 @@ export const useCalendarStore = defineStore('calendar', () => {
   }
 
   // ---- Load windows (accumulative strategy) ----
+  // Sincroniza la Timeline del servidor (el "now" canónico del sellado) para
+  // que los getters isSealed/isEnded no dependan del reloj del navegador.
+  let _timelineSynced = false
+  async function _syncTimeline() {
+    if (_timelineSynced) return
+    _timelineSynced = true
+    try {
+      const t = await WorkWindowRepository.fetchTimeline()
+      if (t?.timeline) WorkWindow.setTimelineOffset(t.timeline)
+    } catch { _timelineSynced = false /* reintenta en el próximo load */ }
+  }
+
   async function loadWindows() {
+    _syncTimeline()
     const fromDate = weekDates.value[0]
     const toDate = weekDates.value[weekDates.value.length - 1]
     if (!fromDate || !toDate) return
@@ -642,8 +655,10 @@ export const useCalendarStore = defineStore('calendar', () => {
     [/overlaps with an existing/i, 'El horario se solapa con una ventana existente del mismo especialista y aplicación.'],
     [/already ended/i, 'La ventana ya finalizó.'],
     [/starting in the past|starts_at to a past/i, 'No se pueden crear ventanas que inician en el pasado.'],
-    [/Cannot change starts_at.*in shift|starts_at.*sealed/i, 'No se puede cambiar el inicio de una ventana en turno activo. Solo se permite ajustar el fin.'],
-    [/ends_at.*past|past.*ends_at/i, 'No se puede dejar el fin de la ventana en el pasado.'],
+    [/Cannot change starts_at.*in shift/i, 'No se puede cambiar el inicio de una ventana en turno activo. Solo se permite ajustar el fin.'],
+    [/Ended windows cannot be modified|sealed \(ends_at/i, 'La ventana ya finalizó y no se puede modificar.'],
+    [/Only ends_at can be adjusted/i, 'Con el turno iniciado solo se puede ajustar el fin de la ventana.'],
+    [/ends_at must be in the future|ends_at to a past/i, 'No se puede dejar el fin de la ventana en el pasado.'],
   ]
 
   function _translateMessage(msg) {
@@ -1205,7 +1220,9 @@ export const useCalendarStore = defineStore('calendar', () => {
       const orig = _findOriginal(id)
       if (!orig) continue
       if (_isEnded(orig)) throw { userMessage: 'No se pueden modificar ventanas finalizadas.' }
-      if (direction === 'top' && orig.isInShift) {
+      // Sellado en dos niveles (§4): iniciada → el inicio queda congelado;
+      // el fin aún se puede ajustar (validado contra la Timeline más abajo).
+      if (direction === 'top' && orig.isSealed) {
         throw { userMessage: 'No se puede cambiar el inicio de una ventana en turno activo. Solo se permite ajustar el fin.' }
       }
       originals.set(id, orig)
@@ -1319,6 +1336,10 @@ export const useCalendarStore = defineStore('calendar', () => {
   async function batchMerge(ids) {
     const realIds = [...ids].filter(id => !_isPlaceholder(id))
     if (realIds.length < 2) throw { userMessage: 'Las ventanas aún se están creando, intenta de nuevo.' }
+    // §9 de las reglas: el merge exige que TODAS las ventanas sean futuras.
+    if (realIds.some(id => _findOriginal(id)?.isSealed)) {
+      throw { userMessage: 'No se pueden agrupar ventanas que ya iniciaron.' }
+    }
     const snapshot = [...windows.value]
     const result = await mergeWorkWindowsUseCase(realIds)
 
@@ -1359,20 +1380,28 @@ export const useCalendarStore = defineStore('calendar', () => {
     for (const date of dateList) {
       const onDate = windows.value.filter(w => w.scheduledDate === date)
       for (const w of onDate) {
-        if (_isEnded(w)) continue  // skip ended windows — both timestamps sealed
+        if (_isEnded(w)) continue  // sellado total: finalizadas no se tocan
         const wS = _timeToMinutes(w.startTime)
         const wE = _timeToMinutes(w.endTime)
         if (eraseE <= wS || eraseS >= wE) continue
         if (eraseS <= wS && eraseE >= wE) {
-          if (w.isSealed) continue   // selladas no se eliminan (regla de borrado)
+          if (w.isSealed) continue   // iniciadas no se eliminan (regla de borrado)
           allDeletes.push(w)
         } else if (eraseS <= wS) {
-          // This would push starts_at forward — blocked for in-shift windows
-          if (w.isInShift) continue
+          // Recortar el INICIO — bloqueado si el turno ya inició (start seal)
+          if (w.isSealed) continue
           allUpdates.push({ window: w, startTime: eraseEndTime, date })
         } else if (eraseE >= wE) {
+          // Recortar el FIN — permitido en turno, pero nunca a antes de la Timeline
+          if (w.isSealed) {
+            const newEnds = WorkWindow.toTimestampTz(date, eraseStartTime)
+            if (!newEnds || new Date(newEnds).getTime() <= WorkWindow.timelineNow()) continue
+          }
           allUpdates.push({ window: w, endTime: eraseStartTime, date })
         } else {
+          // Partir en dos cambia el fin del tramo original y crea otro tramo —
+          // sobre una ventana iniciada implicaría recrear su inicio: bloqueado.
+          if (w.isSealed) continue
           allSplits.push({ window: w, cutStart: eraseStartTime, cutEnd: eraseEndTime, date })
         }
       }
@@ -1509,13 +1538,14 @@ export const useCalendarStore = defineStore('calendar', () => {
     const original = _findOriginal(w.id)
     if (!original) return
     if (_isEnded(original)) throw { userMessage: 'No se puede modificar una ventana finalizada.' }
-    if (startTime && original.isInShift) {
+    // Sellado en dos niveles (§4): con el turno iniciado el INICIO queda
+    // congelado; el fin aún puede ajustarse (nunca a antes de la Timeline).
+    if (startTime && original.isSealed) {
       throw { userMessage: 'No se puede cambiar el inicio de una ventana en turno activo. Solo se permite ajustar el fin.' }
     }
     const st = startTime || original.startTime
     const et = endTime || original.endTime
-    // El fin no puede retroceder detrás de la línea de tiempo (now): una
-    // ventana en turno solo puede acortarse hasta el momento actual.
+    // El fin no puede quedar detrás de la línea de tiempo (now).
     if (endTime) {
       const newEnds = WorkWindow.toTimestampTz(original.endDate || original.scheduledDate, et)
       if (newEnds && new Date(newEnds).getTime() <= Date.now()) {
@@ -1578,7 +1608,9 @@ export const useCalendarStore = defineStore('calendar', () => {
       const orig = _findOriginal(gw.id)
       if (!orig) continue
       if (_isEnded(orig)) throw { userMessage: 'No se puede modificar un grupo con ventanas finalizadas.' }
-      if (direction === 'top' && orig.isInShift) {
+      // Sellado en dos niveles (§4): iniciada → el inicio queda congelado;
+      // el fin aún se puede ajustar (validado contra la Timeline más abajo).
+      if (direction === 'top' && orig.isSealed) {
         throw { userMessage: 'No se puede cambiar el inicio de una ventana en turno activo. Solo se permite ajustar el fin.' }
       }
       originals.set(gw.id, orig)

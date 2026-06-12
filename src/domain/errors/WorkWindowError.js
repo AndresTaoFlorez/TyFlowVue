@@ -29,7 +29,10 @@ const ERROR_MAP = [
   [/has already ended.*cannot merge/i, 'No se pueden agrupar ventanas que ya finalizaron.'],
   [/has already ended/i, 'Una de las ventanas ya finalizó.'],
   [/not found.*deleted/i, 'Una o más ventanas no fueron encontradas o están eliminadas.'],
-  // Seal — DB-enforced immutability (starts_at <= Timeline)
+  // Seal en dos niveles — inicio congelado al arrancar; todo congelado al terminar
+  [/Ended windows cannot be modified|is sealed \(ends_at/i, 'La ventana ya finalizó y no se puede modificar.'],
+  [/Only ends_at can be adjusted/i, 'Con el turno iniciado solo se puede ajustar el fin de la ventana.'],
+  [/ends_at must be in the future/i, 'El fin de la ventana no puede quedar en el pasado.'],
   [/is sealed/i, 'Esta ventana ya inició y no puede ser modificada.'],
   [/Cannot create a work window starting in the past/i, 'No se puede crear una ventana con inicio en el pasado.'],
   [/Cannot create a work window that has already ended/i, 'No se puede crear una ventana que ya finalizó.'],

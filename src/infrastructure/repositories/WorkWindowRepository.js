@@ -29,6 +29,12 @@ export const WorkWindowRepository = {
     return new WorkWindow(data)
   },
 
+  /** Timeline del servidor — el "now" canónico de las reglas de sellado. */
+  async fetchTimeline() {
+    const { data } = await client.get('/work-windows/timeline')
+    return data // { timeline, timeline_bogota, timezone }
+  },
+
   async create(windowsArray) {
     const list = Array.isArray(windowsArray) ? windowsArray : [windowsArray]
     const { data } = await client.post('/work-windows', {

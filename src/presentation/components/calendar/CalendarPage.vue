@@ -1,5 +1,6 @@
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
+import { WorkWindow } from '@/domain/entities/WorkWindow'
 import WindowBlock from '@/presentation/components/calendar/WindowBlock.vue'
 import WindowGroupBlock from '@/presentation/components/calendar/WindowGroupBlock.vue'
 import { useWindowGroups } from '@/presentation/composables/useWindowGroups'
@@ -609,9 +610,18 @@ let dragGrabOffset = 0 // slots between cursor and block start
 let blockDragMoved = false // true if mouse actually moved during drag
 const batchDragging = ref(false) // true when dragging selected windows together
 
+// §4 de las reglas: con el turno iniciado el inicio queda congelado — mover el
+// bloque cambiaría starts_at, así que el drag ni se inicia. El fin se ajusta
+// con el handle inferior. Usa la Timeline del servidor.
+const _isSealedWindow = (w) => {
+  const src = w?._originalWindow || w
+  return !!src?.startsAt && WorkWindow.timelineNow() >= new Date(src.startsAt).getTime()
+}
+
 const onBlockDragStart = (w, dayIdx, e) => {
   if (!props.selectable) return
   if (props.activeTool === 'eraser') return
+  if (_isSealedWindow(w) && props.activeTool !== 'select') return
   if (props.activeTool === 'select') {
     const id = (w._originalWindow || w).id
     // No seleccionada → arrancar el LAZO aquí mismo (poder seleccionar también
@@ -660,6 +670,8 @@ const onBlockDragStart = (w, dayIdx, e) => {
 
 const onGroupDragStart = (group, dayIdx, e) => {
   if (!props.selectable) return
+  // §4: grupo sellado (todas comparten inicio) = inmutable — el drag ni se inicia.
+  if (_isSealedWindow(group.windows?.[0]) && props.activeTool !== 'select') return
   if (props.activeTool === 'select') {
     // Si ninguna del grupo está seleccionada → arrancar el lazo aquí; si alguna
     // lo está → permitir arrastrar el lote (cae al flujo normal de abajo).

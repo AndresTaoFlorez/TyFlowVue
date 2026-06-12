@@ -1,5 +1,6 @@
 <script setup>
 import { computed, ref } from 'vue'
+import { WorkWindow } from '@/domain/entities/WorkWindow'
 import { useAdaptiveFont } from '@/presentation/composables/useAdaptiveFont'
 import { appTintSurface, readableTextOnTint } from '@/presentation/utils/color'
 import { usePreferencesStore } from '@/presentation/stores/usePreferencesStore'
@@ -81,22 +82,22 @@ const allInactive = computed(() => props.group.windows.every(w => !w.isActive))
 const statusClass = () => (allInactive.value ? 'wgb--inactive' : 'wgb--open')
 
 // Las ventanas de un grupo comparten el rango exacto: basta inspeccionar una.
-// Inicio sellado (starts_at <= now) → sin handle superior ("solo se permite
-// ajustar el fin"); finalizada (ends_at < now) → tampoco handle inferior.
+// Sellado en dos niveles (§4): iniciada → sin handle top (inicio congelado);
+// finalizada → tampoco bottom. Usa la Timeline del servidor.
 const startSealed = computed(() => {
   const w = props.group?.windows?.[0]
   if (!w?.startsAt) return false
-  return Date.now() >= new Date(w.startsAt).getTime()
+  return WorkWindow.timelineNow() >= new Date(w.startsAt).getTime()
 })
 const ended = computed(() => {
   const w = props.group?.windows?.[0]
   if (!w?.endsAt) return false
-  return Date.now() > new Date(w.endsAt).getTime()
+  return WorkWindow.timelineNow() > new Date(w.endsAt).getTime()
 })
 
 const showTopHandle = computed(() => props.selectable && props.multiDayPos !== 'last' && props.multiDayPos !== 'middle' && !startSealed.value)
 const showBottomHandle = computed(() => props.selectable && props.multiDayPos !== 'first' && props.multiDayPos !== 'middle' && !ended.value)
-const showSideHandles = computed(() => props.selectable && props.multiDayPos !== 'middle')
+const showSideHandles = computed(() => props.selectable && props.multiDayPos !== 'middle' && !startSealed.value)
 
 const onHandleDown = (direction, e) => {
   e.stopPropagation()

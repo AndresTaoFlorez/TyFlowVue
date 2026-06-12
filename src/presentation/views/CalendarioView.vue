@@ -184,8 +184,9 @@ function onWindowContext({ window: w, x, y }) {
       : { label: 'Activar herencia', icon: 'bx-link', action: 'reinherit' })
     : null
   const items = [
-    // Edit: only future windows (sealed windows rejected by DB)
+    // Edit: futuras = todo; en turno = solo el fin (sellado en dos niveles §4)
     ...(isFuture ? [{ label: 'Editar', icon: 'bx-pencil', action: 'edit' }] : []),
+    ...(!isFuture && !isEnded ? [{ label: 'Ajustar fin', icon: 'bx-pencil', action: 'edit' }] : []),
     ...(isFuture ? [{ label: 'Agregar especialista', icon: 'bx-user-plus', action: 'add-specialist' }] : []),
     // Toggle: allowed on future and in-progress, NOT ended
     ...(!isEnded ? [{ label: w.isActive ? 'Inhabilitar' : 'Habilitar', icon: w.isActive ? 'bx-block' : 'bx-check-circle', action: 'toggle' }] : []),
@@ -779,9 +780,9 @@ const returnToGroup = ref(null)
 const onGroupSelect = (w) => {
   returnToGroup.value = selectedGroup.value
   selectedGroup.value = null
-  // El lápiz del grupo abre DIRECTO en edición (un solo paso); las ventanas
-  // selladas (ya iniciadas) se abren en vista porque no son editables (§4).
-  openModalInEdit.value = !!w.isFuture
+  // El lápiz del grupo abre DIRECTO en edición (un solo paso); finalizadas
+  // se abren en vista (sellado total §4); en turno se puede ajustar el fin.
+  openModalInEdit.value = !w.isEnded
   selectedWindow.value = w
 }
 
