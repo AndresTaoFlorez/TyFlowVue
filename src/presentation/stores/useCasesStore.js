@@ -10,6 +10,8 @@ import { assignCaseWddUseCase } from '@/application/use-cases/cases/AssignCaseWd
 import { assignCaseManualUseCase } from '@/application/use-cases/cases/AssignCaseManualUseCase'
 import { reassignCaseUseCase } from '@/application/use-cases/cases/ReassignCaseUseCase'
 import { assignCaseWddAutopilotUseCase } from '@/application/use-cases/cases/AssignCaseWddAutopilotUseCase'
+import { stopAutopilotUseCase } from '@/application/use-cases/cases/StopAutopilotUseCase'
+import { fetchAutopilotStatusUseCase } from '@/application/use-cases/cases/FetchAutopilotStatusUseCase'
 import { fetchSpecialistWorkloadsUseCase } from '@/application/use-cases/cases/FetchSpecialistWorkloadsUseCase'
 import { fetchAssignmentTotalUseCase } from '@/application/use-cases/assignments/FetchAssignmentTotalUseCase'
 import { fetchAssignmentsUseCase } from '@/application/use-cases/assignments/FetchAssignmentsUseCase'
@@ -79,7 +81,10 @@ export const useCasesStore = defineStore('cases', () => {
   const actionError = ref(null)
 
   // ── Autopilot state ──
-  const autopilotState = ref({ running: false, jobId: null, processed: 0, total: null })
+  const autopilotState = ref({ running: false, stopping: false, jobId: null, processed: 0, total: null })
+  // Resumen del último job completado (autopilot.completed) — para mostrar
+  // qué pasó realmente: asignados / sin especialista elegible / fallidos.
+  const autopilotResult = ref(null) // { total, assigned, skipped, failed, cancelled, errors }
 
   // ── Cargas view state (SyncEngine is the source of truth) ──
   // allWorkloads: flat list of workload rows for ALL apps — feeds the Cargas panel 1.
@@ -455,12 +460,49 @@ export const useCasesStore = defineStore('cases', () => {
   async function triggerAutopilot(filters = {}) {
     try {
       const result = await assignCaseWddAutopilotUseCase(filters)
-      autopilotState.value = { running: true, jobId: result.job_id, processed: 0, total: null }
+      autopilotResult.value = null
+      autopilotState.value = { running: true, stopping: false, jobId: result.job_id, processed: 0, total: result.queued ?? null }
       return result
     } catch (e) {
       if (e.response?.status === 409) throw new Error('Ya hay un job de autopilot en progreso')
       throw e
     }
+  }
+
+  async function stopAutopilot() {
+    autopilotState.value = { ...autopilotState.value, stopping: true }
+    try {
+      const result = await stopAutopilotUseCase()
+      if (!result.stopped) {
+        // No había job corriendo (estado fantasma tras perder el WS) — resync
+        await syncAutopilotStatus()
+      }
+      return result
+    } catch (e) {
+      autopilotState.value = { ...autopilotState.value, stopping: false }
+      throw e
+    }
+  }
+
+  // Resincroniza el estado del autopilot contra el backend. Evita el spinner
+  // pegado para siempre cuando se pierde el evento autopilot.completed
+  // (recarga de página, WS caído, reinicio del backend).
+  async function syncAutopilotStatus() {
+    try {
+      const s = await fetchAutopilotStatusUseCase()
+      if (s.running) {
+        autopilotState.value = {
+          running: true,
+          stopping: autopilotState.value.stopping && s.running,
+          jobId: s.job_id,
+          processed: s.processed ?? 0,
+          total: s.total ?? null,
+        }
+      } else if (autopilotState.value.running) {
+        autopilotState.value = { running: false, stopping: false, jobId: null, processed: 0, total: null }
+        loadCases()
+      }
+    } catch { /* silent — el estado local se mantiene */ }
   }
 
   // ── Search ──
@@ -734,7 +776,8 @@ export const useCasesStore = defineStore('cases', () => {
   }
 
   function onAutopilotStartedRT(data) {
-    autopilotState.value = { running: true, jobId: data.job_id ?? autopilotState.value.jobId, processed: 0, total: data.total ?? null }
+    autopilotResult.value = null
+    autopilotState.value = { running: true, stopping: false, jobId: data.job_id ?? autopilotState.value.jobId, processed: 0, total: data.total ?? null }
   }
 
   function onAutopilotProgressRT(data) {
@@ -742,7 +785,15 @@ export const useCasesStore = defineStore('cases', () => {
   }
 
   function onAutopilotCompletedRT(data) {
-    autopilotState.value = { running: false, jobId: null, processed: 0, total: null }
+    autopilotState.value = { running: false, stopping: false, jobId: null, processed: 0, total: null }
+    autopilotResult.value = {
+      total: data.total ?? 0,
+      assigned: data.assigned ?? 0,
+      skipped: data.skipped ?? 0,
+      failed: data.failed ?? 0,
+      cancelled: data.cancelled ?? false,
+      errors: data.errors ?? [],
+    }
     loadCases()
   }
 
@@ -782,7 +833,7 @@ export const useCasesStore = defineStore('cases', () => {
     searchMode, searchResults, searchQuery, searchLoading, searchError,
     showDetailModal, showCreateModal,
     caseCount, hasMore, workloadsByLevel, hasPrev, hasNext,
-    autopilotState,
+    autopilotState, autopilotResult,
     // Cargas view state
     allWorkloads, loadingAllWorkloads,
     activeCounts, activeAssignments, loadingActiveCounts,
@@ -791,7 +842,7 @@ export const useCasesStore = defineStore('cases', () => {
     filterCasesLocally, searchCases, clearSearch,
     openDetail, openDetailById, closeDetail, goToPrev, goToNext,
     createCase, updateCase, updateCaseStatus,
-    assignWdd, assignManual, reassign, triggerAutopilot,
+    assignWdd, assignManual, reassign, triggerAutopilot, stopAutopilot, syncAutopilotStatus,
     loadWorkloads, loadAllWorkloads, loadCargasCases,
     onCaseCreatedRT, onCaseAssignedRT, onCaseReassignedRT, onCaseUpdatedRT,
     onAutopilotStartedRT, onAutopilotProgressRT, onAutopilotCompletedRT,

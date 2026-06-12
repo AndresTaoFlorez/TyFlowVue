@@ -113,4 +113,14 @@ export const CaseRepository = {
     const { data } = await client.post('/cases/assign/wdd/autopilot', body)
     return data // { job_id, queued }
   },
+
+  async autopilotStop() {
+    const { data } = await client.post('/cases/assign/wdd/autopilot/stop', {})
+    return data // { stopped, message }
+  },
+
+  async autopilotStatus() {
+    const { data } = await client.get('/cases/assign/wdd/autopilot/status')
+    return data // { running, job_id, processed, total }
+  },
 }

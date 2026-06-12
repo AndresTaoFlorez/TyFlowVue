@@ -6,10 +6,13 @@ export function useCasesRealtime() {
   const store = useCasesStore()
   const unsubs = []
 
-  // After a reconnection, force-sync cases to recover events missed while disconnected
+  // After a reconnection, force-sync cases AND the autopilot status to recover
+  // events missed while disconnected (an autopilot.completed perdido dejaba
+  // el spinner corriendo para siempre).
   watch(wsStatus, (status, prev) => {
     if (status === 'connected' && (prev === 'reconnecting' || prev === 'connecting')) {
       store.loadCases()
+      store.syncAutopilotStatus()
     }
   })
 

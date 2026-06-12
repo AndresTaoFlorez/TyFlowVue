@@ -92,6 +92,39 @@ async function runAutopilot() {
   }
 }
 
+async function stopAutopilot() {
+  autopilotError.value = null
+  try {
+    await store.stopAutopilot()
+  } catch (e) {
+    autopilotError.value = e.message || 'Error deteniendo autopilot'
+    setTimeout(() => { autopilotError.value = null }, 5000)
+  }
+}
+
+// Resumen del último job (autopilot.completed) — banner descartable
+const resultDismissed = ref(false)
+watch(() => store.autopilotResult, (r) => {
+  if (r) resultDismissed.value = false
+})
+
+const autopilotSummary = computed(() => {
+  const r = store.autopilotResult
+  if (!r || resultDismissed.value) return null
+  const parts = []
+  parts.push(`${r.assigned} asignado${r.assigned !== 1 ? 's' : ''}`)
+  if (r.skipped) parts.push(`${r.skipped} sin especialista elegible`)
+  if (r.failed) parts.push(`${r.failed} con error`)
+  return {
+    text: parts.join(' · '),
+    cancelled: r.cancelled,
+    ok: r.failed === 0 && r.skipped === 0,
+    reasons: (r.errors ?? []).slice(0, 5).map(e =>
+      `#${(e.case_id ?? '').slice(0, 6).toUpperCase()}: ${e.reason ?? ''}`.slice(0, 160)
+    ).join('\n'),
+  }
+})
+
 useCasesRealtime()
 
 // ── Search (vive en el topbar board) ─────────────────
@@ -150,6 +183,9 @@ onMounted(async () => {
   }
   // Sin redirects automáticos: la lista respeta los filtros persistidos.
   await store.loadCases()
+  // Resync del autopilot: si hay (o no) un job corriendo en el backend,
+  // el estado local se alinea aunque se hayan perdido los eventos WS.
+  if (authStore.isAdmin) store.syncAutopilotStatus()
 })
 </script>
 
@@ -234,9 +270,19 @@ onMounted(async () => {
           </div>
           <template v-if="authStore.isAdmin">
             <button
+              v-if="store.autopilotState.running"
+              class="cv__autopilot-btn cv__autopilot-btn--stop"
+              :disabled="store.autopilotState.stopping"
+              :title="store.autopilotState.stopping ? 'Deteniendo — termina el caso en curso' : 'Detener el autopilot'"
+              @click="stopAutopilot"
+            >
+              <i class="bx" :class="store.autopilotState.stopping ? 'bx-loader-alt bx-spin' : 'bx-stop-circle'"></i>
+              <span class="cv__btn-label">{{ store.autopilotState.stopping ? 'Deteniendo…' : 'Detener' }}</span>
+            </button>
+            <button
+              v-else
               class="cv__autopilot-btn"
-              :disabled="store.autopilotState.running"
-              :title="store.autopilotState.running ? 'Autopilot en progreso' : 'Lanzar WDD Autopilot'"
+              title="Lanzar WDD Autopilot"
               @click="runAutopilot"
             >
               <i class="bx bx-bot"></i>
@@ -255,6 +301,24 @@ onMounted(async () => {
     <Transition name="cv-err">
       <div v-if="autopilotError" class="cv__error-pill">
         <i class="bx bx-error-circle"></i> {{ autopilotError }}
+      </div>
+    </Transition>
+
+    <!-- Autopilot result summary (dismissible) -->
+    <Transition name="cv-err">
+      <div
+        v-if="autopilotSummary"
+        class="cv__result-pill"
+        :class="{ 'cv__result-pill--warn': !autopilotSummary.ok }"
+        :title="autopilotSummary.reasons || undefined"
+      >
+        <i class="bx" :class="autopilotSummary.ok ? 'bx-check-circle' : 'bx-info-circle'"></i>
+        <span>
+          Autopilot{{ autopilotSummary.cancelled ? ' detenido' : ' finalizado' }}: {{ autopilotSummary.text }}
+        </span>
+        <button class="cv__result-close" aria-label="Descartar" @click="resultDismissed = true">
+          <i class="bx bx-x"></i>
+        </button>
       </div>
     </Transition>
 
@@ -482,6 +546,54 @@ onMounted(async () => {
 .cv__autopilot-btn:hover:not(:disabled) { border-color: var(--primary-500); color: var(--primary-500); }
 .cv__autopilot-btn:disabled { opacity: 0.55; cursor: not-allowed; }
 .cv__autopilot-btn i { font-size: 1rem; }
+
+.cv__autopilot-btn--stop {
+  color: var(--error, #e53e3e);
+  border-color: color-mix(in srgb, var(--error, #e53e3e) 45%, var(--border-light));
+}
+.cv__autopilot-btn--stop:hover:not(:disabled) {
+  color: #fff;
+  background: var(--error, #e53e3e);
+  border-color: var(--error, #e53e3e);
+}
+
+/* ── Autopilot result banner ── */
+.cv__result-pill {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.45rem 1rem;
+  background: color-mix(in srgb, var(--primary-500) 10%, var(--bg-card));
+  color: var(--primary-600);
+  font-size: 0.78rem;
+  font-weight: 600;
+  border-bottom: 1px solid color-mix(in srgb, var(--primary-500) 30%, transparent);
+  flex-shrink: 0;
+}
+.cv__result-pill i { font-size: 0.95rem; }
+
+.cv__result-pill--warn {
+  background: color-mix(in srgb, var(--load-mid, #D97706) 12%, var(--bg-card));
+  color: var(--load-mid, #D97706);
+  border-bottom-color: color-mix(in srgb, var(--load-mid, #D97706) 35%, transparent);
+}
+
+.cv__result-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  margin-left: auto;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font-size: 1rem;
+  cursor: pointer;
+  opacity: 0.7;
+}
+.cv__result-close:hover { opacity: 1; background: rgba(0, 0, 0, 0.08); }
 
 .cv__autopilot-pill {
   display: flex;
