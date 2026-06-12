@@ -1,7 +1,7 @@
 <script setup>
 import { computed, ref } from 'vue'
 import { useAdaptiveFont } from '@/presentation/composables/useAdaptiveFont'
-import { appTintSurface } from '@/presentation/utils/color'
+import { appTintSurface, readableTextOnTint } from '@/presentation/utils/color'
 import { usePreferencesStore } from '@/presentation/stores/usePreferencesStore'
 
 const prefs = usePreferencesStore()
@@ -34,6 +34,15 @@ const resolvedColor = () => props.appColor || '#2AC78F'
 const surface = computed(() => {
   void prefs.theme
   return appTintSurface(resolvedColor())
+})
+
+// Texto del badge __app: su fondo es un tinte mucho más sutil (26% sobre
+// --wb-surface) que el del bloque (--app-bg, ~90% en dark), así que no puede
+// reusar --app-text-color — en dark quedaba texto casi negro sobre un badge
+// casi negro. Se calcula contraste propio para ese 26%.
+const tagText = computed(() => {
+  void prefs.theme
+  return readableTextOnTint(resolvedColor(), { pct: 26 })
 })
 
 const emit = defineEmits(['click', 'resize-start'])
@@ -109,6 +118,7 @@ const { fontSize } = useAdaptiveFont(wbEl, {
     '--app-color': resolvedColor(),
     '--app-bg': surface.bg,
     '--app-text-color': surface.text,
+    '--app-tag-text': tagText,
     '--wb-fs': fontSize + 'px',
   }" @click="$emit('click', window, $event)">
     <!-- Resize handle top -->
@@ -213,11 +223,6 @@ const { fontSize } = useAdaptiveFont(wbEl, {
   opacity: 0.85;
 }
 
-.wb--open .wb__app {
-  color: var(--app-text-color);
-  opacity: 0.9;
-}
-
 /* ── Head (avatar + name row) ── */
 .wb__head {
   display: flex;
@@ -293,6 +298,7 @@ const { fontSize } = useAdaptiveFont(wbEl, {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  color: var(--app-tag-text);
   background: color-mix(in srgb, var(--app-color) 26%, var(--wb-surface));
   padding: 0.05rem 0.4rem 0.25rem;
   border-radius: 3px;

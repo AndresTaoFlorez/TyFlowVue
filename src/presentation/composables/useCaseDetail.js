@@ -5,7 +5,7 @@ import { STATUS_LABELS, STATUS_TRANSITIONS } from '@/domain/entities/Case'
 import { fmtDateTime } from '@/presentation/helpers/formatDate'
 
 /**
- * Shared logic for CaseDetailModal and CaseDetailView.
+ * Shared logic for the case detail panel (CaseDetailModal).
  * Provides status options, computed lookups, changeStatus, and fmtDate.
  *
  * @param {import('vue').ComputedRef<Case|null>} caseRef - computed ref to the selected case

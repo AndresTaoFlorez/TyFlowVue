@@ -100,7 +100,7 @@ const handleLogout = () => {
               <i class='bx bx-calendar navmenu__icon'></i>
               <span>Calendario</span>
             </RouterLink>
-            <RouterLink v-if="prefs.menus.cases" :to="{ name: 'cases-list', params: { status: 'open' } }" class="navmenu__item" active-class="navmenu__item--active" role="menuitem" @click="navigateAndClose">
+            <RouterLink v-if="prefs.menus.cases" :to="{ name: 'cases-list' }" class="navmenu__item" active-class="navmenu__item--active" role="menuitem" @click="navigateAndClose">
               <i class='bx bx-task navmenu__icon'></i>
               <span>Casos</span>
             </RouterLink>
@@ -123,7 +123,7 @@ const handleLogout = () => {
         </Transition>
       </div>
 
-      <button class="sidebar__collapse-btn" @click="$emit('toggle-sidebar')" aria-label="Ocultar menú" title="Ocultar menú">
+      <button class="sidebar__collapse-btn" @click="$emit('toggle-sidebar')" aria-label="Ocultar menú (b)" title="Ocultar menú (b)">
         <i class='bx bx-chevrons-left'></i>
       </button>
     </div>

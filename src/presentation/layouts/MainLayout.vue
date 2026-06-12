@@ -166,7 +166,7 @@ onUnmounted(() => {
     <AppSidebar :collapsed="collapsedDesktop" @navigate="closeMobileSidebar" @toggle-sidebar="toggleSidebar" />
 
     <!-- Rail colapsado a 0 (mockup): pestaña flotante para reabrir -->
-    <button v-if="collapsedDesktop" class="nav-fab" @click="toggleSidebar" title="Mostrar menú">
+    <button v-if="collapsedDesktop" class="nav-fab" @click="toggleSidebar" title="Mostrar menú (b)" aria-label="Mostrar menú (b)">
       <i class='bx bx-chevrons-right'></i>
     </button>
 

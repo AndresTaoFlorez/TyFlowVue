@@ -21,7 +21,7 @@ const features = [
     icon: 'bx-briefcase',
     description:
       'Visualiza, gestiona y da seguimiento a los casos asignados. El sistema registra el estado de cada caso, los tiempos de respuesta y permite la reasignacion cuando sea necesario.',
-    route: { name: 'cases-list', params: { status: 'open' } },
+    route: { name: 'cases-list' },
   },
 ]
 

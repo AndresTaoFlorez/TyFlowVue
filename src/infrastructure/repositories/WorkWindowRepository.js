@@ -9,6 +9,21 @@ export const WorkWindowRepository = {
     return items.map((item) => new WorkWindow(item))
   },
 
+  /**
+   * Paginated variant that preserves the backend envelope (total/page).
+   * Used by the specialist detail panel; fetchAll keeps its legacy shape.
+   */
+  async fetchPage(params = {}) {
+    const { data } = await client.get('/work-windows', { params })
+    const items = Array.isArray(data) ? data : data.data ?? data.items ?? []
+    return {
+      data: items.map((item) => new WorkWindow(item)),
+      total: data.total ?? items.length,
+      page: data.page ?? params.page ?? 1,
+      pageSize: data.page_size ?? params.page_size ?? 100,
+    }
+  },
+
   async fetchById(id) {
     const { data } = await client.get(`/work-windows/${id}`)
     return new WorkWindow(data)

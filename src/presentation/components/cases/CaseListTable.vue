@@ -2,11 +2,50 @@
 import { ref, computed, watch, onUnmounted } from 'vue'
 import { useCasesStore } from '@/presentation/stores/useCasesStore'
 import { useUserStore } from '@/presentation/stores/useUserStore'
-import { STATUS_LABELS } from '@/domain/entities/Case'
+import { STATUS_LABELS, PRIORITY_LABELS } from '@/domain/entities/Case'
+import ColumnFilterMenu from '@/presentation/components/cases/ColumnFilterMenu.vue'
+import AppTag from '@/presentation/components/shared/AppTag.vue'
 
 const store = useCasesStore()
 const userStore = useUserStore()
 const emit = defineEmits(['select'])
+
+// ── Header filters (estado/origen/prioridad/aplicación viven en el header) ──
+const statusOptions = Object.entries(STATUS_LABELS).map(([value, label]) => ({
+  value, label, color: `var(--status-${value.replace('_', '-')})`,
+}))
+
+const originOptions = [
+  { value: 'outlook', label: 'Outlook' },
+  { value: 'judit',   label: 'Judit' },
+  { value: 'tyflow',  label: 'TyFlow' },
+]
+
+const priorityOptions = Object.entries(PRIORITY_LABELS).map(([value, label]) => ({
+  value, label, color: `var(--priority-${value})`,
+}))
+
+const applicationOptions = computed(() =>
+  (userStore.applications ?? []).map(a => ({ value: a.id, label: a.name }))
+)
+
+function setFilter(key, value) {
+  store.clearSearch()
+  store.loadCases({ [key]: value })
+}
+
+const hasActiveFilters = computed(() => {
+  const f = store.filters
+  return !!(f.status || f.originType || f.priority || f.applicationId)
+})
+
+function clearFilters() {
+  store.loadCases({ status: null, originType: null, priority: null, applicationId: null })
+}
+
+function appNameById(id) {
+  return userStore.applications?.find(a => a.id === id)?.name ?? null
+}
 
 // When in search mode, show searchResults; otherwise the normal paginated list.
 const displayCases = computed(() => store.searchMode ? store.searchResults : store.cases)
@@ -89,6 +128,7 @@ onUnmounted(() => observer?.disconnect())
             <th>Origen</th>
             <th>Prioridad</th>
             <th>Estado</th>
+            <th class="ct__col-app">Aplicación</th>
             <th class="ct__col-specialist">Especialista</th>
             <th>Creado</th>
           </tr>
@@ -100,6 +140,7 @@ onUnmounted(() => observer?.disconnect())
             <td><span class="skel skel--badge"></span></td>
             <td><span class="skel skel--badge" style="width:52px"></span></td>
             <td><span class="skel skel--badge" style="width:68px"></span></td>
+            <td class="ct__col-app"><span class="skel skel--badge" style="width:60px"></span></td>
             <td class="ct__col-specialist"><span class="skel skel--specialist"></span></td>
             <td><span class="skel skel--time"></span></td>
           </tr>
@@ -114,7 +155,10 @@ onUnmounted(() => observer?.disconnect())
     </div>
     <div v-else-if="!store.searchMode && store.cases.length === 0 && !store.listError" class="ct__empty">
       <i class="bx bx-inbox"></i>
-      <span>Sin casos para mostrar</span>
+      <span>{{ hasActiveFilters ? 'Sin casos con estos filtros' : 'Sin casos para mostrar' }}</span>
+      <button v-if="hasActiveFilters" class="ct__empty-action" @click="clearFilters">
+        <i class="bx bx-filter-alt"></i> Limpiar filtros
+      </button>
     </div>
 
     <!-- Error state -->
@@ -129,10 +173,49 @@ onUnmounted(() => observer?.disconnect())
         <thead>
           <tr>
             <th>ID</th>
-            <th>Asunto</th>
-            <th>Origen</th>
-            <th>Prioridad</th>
-            <th>Estado</th>
+            <th>
+              Asunto
+              <button
+                v-if="hasActiveFilters"
+                class="ct__clear-filters"
+                title="Limpiar todos los filtros"
+                @click="clearFilters"
+              ><i class="bx bx-x"></i> filtros</button>
+            </th>
+            <th>
+              <ColumnFilterMenu
+                label="Origen"
+                :options="originOptions"
+                :model-value="store.filters.originType"
+                @update:model-value="setFilter('originType', $event)"
+              />
+            </th>
+            <th>
+              <ColumnFilterMenu
+                label="Prioridad"
+                all-label="Todas"
+                :options="priorityOptions"
+                :model-value="store.filters.priority"
+                @update:model-value="setFilter('priority', $event)"
+              />
+            </th>
+            <th>
+              <ColumnFilterMenu
+                label="Estado"
+                :options="statusOptions"
+                :model-value="store.filters.status"
+                @update:model-value="setFilter('status', $event)"
+              />
+            </th>
+            <th class="ct__col-app">
+              <ColumnFilterMenu
+                label="Aplicación"
+                all-label="Todas"
+                :options="applicationOptions"
+                :model-value="store.filters.applicationId"
+                @update:model-value="setFilter('applicationId', $event)"
+              />
+            </th>
             <th class="ct__col-specialist">Especialista</th>
             <th>Creado</th>
           </tr>
@@ -179,6 +262,10 @@ onUnmounted(() => observer?.disconnect())
               <span class="ct__badge" :style="{ background: c.statusBg, color: c.statusColor }">
                 {{ c.statusLabel }}
               </span>
+            </td>
+            <td class="ct__col-app">
+              <AppTag v-if="appNameById(c.applicationId)" :application-id="c.applicationId" :name="appNameById(c.applicationId)" />
+              <span v-else class="ct__specialist-none">—</span>
             </td>
             <td class="ct__col-specialist ct__specialist">
               <div v-if="specialistName(c.specialistId)" class="ct__spec-cell">
@@ -457,16 +544,58 @@ onUnmounted(() => observer?.disconnect())
   letter-spacing: 0.05em;
 }
 
+/* ── Filter affordances ── */
+.ct__clear-filters {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.15rem;
+  margin-left: 0.5rem;
+  padding: 0.1rem 0.45rem;
+  border: 1px solid var(--border-light);
+  border-radius: 999px;
+  background: var(--bg-main);
+  color: var(--text-secondary);
+  font-size: 0.62rem;
+  font-weight: 700;
+  text-transform: lowercase;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  transition: all 0.12s;
+}
+.ct__clear-filters:hover { color: var(--error, #e53e3e); border-color: var(--error, #e53e3e); }
+.ct__clear-filters i { font-size: 0.8rem; }
+
+.ct__empty-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-top: 0.4rem;
+  padding: 0.45rem 0.95rem;
+  border: 1px solid var(--border-light);
+  border-radius: 9px;
+  background: var(--bg-card);
+  color: var(--text-primary);
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.12s;
+}
+.ct__empty-action:hover { border-color: var(--primary-500); color: var(--primary-500); }
+
 /* ── Responsive ── */
+@media (max-width: 1100px) {
+  .ct__col-app { display: none; }
+}
+
 @media (max-width: 960px) {
   /* Hide Especialista column when space is tight */
   .ct__col-specialist { display: none; }
 }
 
 @media (max-width: 768px) {
-  /* Hide Creado (now column 7) */
-  .ct__table th:nth-child(7),
-  .ct__table td:nth-child(7) { display: none; }
+  /* Hide Creado (now column 8) */
+  .ct__table th:nth-child(8),
+  .ct__table td:nth-child(8) { display: none; }
   .ct__subject { max-width: 160px; }
 }
 

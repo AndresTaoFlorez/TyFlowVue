@@ -1,7 +1,7 @@
 <script setup>
 import { computed, ref } from 'vue'
 import { useAdaptiveFont } from '@/presentation/composables/useAdaptiveFont'
-import { appTintSurface } from '@/presentation/utils/color'
+import { appTintSurface, readableTextOnTint } from '@/presentation/utils/color'
 import { usePreferencesStore } from '@/presentation/stores/usePreferencesStore'
 
 const prefs = usePreferencesStore()
@@ -38,6 +38,11 @@ const _initials = (name) => name ? name.split(' ').map(p => p[0]).join('').slice
 const GROUP_COLOR = '#2AC78F'
 const repColor = computed(() => GROUP_COLOR)
 const surface = computed(() => { void prefs.theme; return appTintSurface(repColor.value) })
+
+// Texto del badge __app: su fondo es un tinte mucho más sutil (26% sobre
+// --wb-surface) que el del bloque (--app-bg, ~90% en dark) — no puede reusar
+// --app-text-color o queda texto casi negro sobre un badge casi negro.
+const tagText = computed(() => { void prefs.theme; return readableTextOnTint(repColor.value, { pct: 26 }) })
 
 const avatars = computed(() => props.group.windows.map(w => {
   const spec = props.specialists.find(s => s.specialistId === w.specialistId)
@@ -102,6 +107,7 @@ const { fontSize } = useAdaptiveFont(wgbEl, { min: 11, max: 18, base: 12, refWid
     '--app-color': repColor,
     '--app-bg': surface.bg,
     '--app-text-color': surface.text,
+    '--app-tag-text': tagText,
     '--wb-fs': fontSize + 'px',
   }" @click="$emit('click', group, $event)">
     <!-- Resize handle top -->
@@ -188,8 +194,7 @@ const { fontSize } = useAdaptiveFont(wgbEl, { min: 11, max: 18, base: 12, refWid
 .wgb:active { transform: scale(0.99); }
 
 .wgb--open { background: var(--app-bg); }
-.wgb--open .wgb__time,
-.wgb--open .wgb__app { color: var(--app-text-color); }
+.wgb--open .wgb__time { color: var(--app-text-color); }
 
 /* Inactiva — patrón rayado tenue, como WindowBlock. */
 .wgb--inactive {
@@ -264,6 +269,7 @@ const { fontSize } = useAdaptiveFont(wgbEl, { min: 11, max: 18, base: 12, refWid
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  color: var(--app-tag-text);
   background: color-mix(in srgb, var(--app-color) 26%, var(--wb-surface));
   padding: 0.05rem 0.4rem 0.25rem;
   border-radius: 3px;

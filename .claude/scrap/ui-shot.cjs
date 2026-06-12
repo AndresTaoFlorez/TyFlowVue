@@ -78,6 +78,14 @@ fs.mkdirSync(OUT_DIR, { recursive: true })
 const sleep = (ms) => new Promise(r => setTimeout(r, ms))
 
 function apiLogin() {
+  // Token directo por env (p.ej. sesión minteada vía Supabase admin magiclink
+  // cuando la contraseña del usuario no está disponible). Salta el login API.
+  if (process.env.TYFLOW_ACCESS_TOKEN) {
+    return Promise.resolve({
+      access_token: process.env.TYFLOW_ACCESS_TOKEN,
+      refresh_token: process.env.TYFLOW_REFRESH_TOKEN || '',
+    })
+  }
   return new Promise((resolve, reject) => {
     const body = JSON.stringify({ email: EMAIL, password: PASSWORD })
     const url = new URL(API + '/auth/login')

@@ -12,6 +12,7 @@ import { reassignCaseUseCase } from '@/application/use-cases/cases/ReassignCaseU
 import { assignCaseWddAutopilotUseCase } from '@/application/use-cases/cases/AssignCaseWddAutopilotUseCase'
 import { fetchSpecialistWorkloadsUseCase } from '@/application/use-cases/cases/FetchSpecialistWorkloadsUseCase'
 import { fetchAssignmentTotalUseCase } from '@/application/use-cases/assignments/FetchAssignmentTotalUseCase'
+import { fetchAssignmentsUseCase } from '@/application/use-cases/assignments/FetchAssignmentsUseCase'
 import { Case } from '@/domain/entities/Case'
 import { useUserStore } from '@/presentation/stores/useUserStore'
 
@@ -85,6 +86,11 @@ export const useCasesStore = defineStore('cases', () => {
   // RT events (assign/reassign) update it reactively so counters stay live.
   const allWorkloads            = ref([])
   const loadingAllWorkloads     = ref(false)
+  // Conteo real de asignaciones ACTIVAS por especialista (specialist_id → n).
+  // El endpoint /specialists/workload NO devuelve contadores — esta es la fuente.
+  const activeCounts            = ref({})
+  const activeAssignments       = ref([])   // snapshot de asignaciones activas (para gráficas)
+  const loadingActiveCounts     = ref(false)
   const cargasSpecialistId      = ref(null)   // which specialist is open in Cargas panel 2
   const cargasCases             = ref([])     // cases for that specialist (all statuses)
   const loadingCargasCases      = ref(false)
@@ -539,22 +545,28 @@ export const useCasesStore = defineStore('cases', () => {
 
   let _loadAllWorkloadsInFlight = false
 
-  function _getAppIdForCase(caseId) {
-    return cases.value.find(c => c.id === caseId)?.applicationId
-      ?? (selectedCase.value?.id === caseId ? selectedCase.value.applicationId : null)
-      ?? cargasCases.value.find(c => c.id === caseId)?.applicationId
-      ?? null
+  // Incrementa/decrementa el contador de asignaciones activas de un especialista.
+  function _bumpActiveCount(specialistId, delta) {
+    if (!specialistId) return
+    const next = Math.max(0, (activeCounts.value[specialistId] ?? 0) + delta)
+    activeCounts.value = { ...activeCounts.value, [specialistId]: next }
   }
 
-  // Incrementa/decrementa el contador de una fila de allWorkloads.
-  // Si appId es conocido actualiza la fila exacta; si no, actualiza la primera fila del specialist.
-  function _updateAllWorkloadCounts(specialistId, delta, appId) {
-    const rows = allWorkloads.value.filter(w => w.specialist_id === specialistId)
-    if (!rows.length) return
-    const targetRow = (appId ? rows.find(r => r.application_id === appId) : null) ?? rows[0]
-    allWorkloadsSync.updateLocal(allWorkloads, `${targetRow.specialist_id}|${targetRow.application_id}`, {
-      ...targetRow, current_count: Math.max(0, (targetRow.current_count ?? 0) + delta),
-    })
+  // Carga las asignaciones activas y las agrupa por especialista.
+  // pageSize 500 es el máximo del backend; si hay más, los contadores son
+  // un piso (escenario improbable: >500 casos activos simultáneos).
+  async function loadActiveCounts() {
+    loadingActiveCounts.value = true
+    try {
+      const { data } = await fetchAssignmentsUseCase({ activeOnly: true, pageSize: 500 })
+      const counts = {}
+      for (const a of data) {
+        counts[a.specialistId] = (counts[a.specialistId] ?? 0) + 1
+      }
+      activeCounts.value = counts
+      activeAssignments.value = data
+    } catch { /* silent — counters simply stay stale */ }
+    finally { loadingActiveCounts.value = false }
   }
 
   async function loadAllWorkloads(applicationIds) {
@@ -657,8 +669,8 @@ export const useCasesStore = defineStore('cases', () => {
     if (w) workloadSync.updateLocal(specialistWorkloads, w.specialist_id, {
       ...w, current_count: (w.current_count ?? 0) + 1,
     })
-    // Update allWorkloads counters (for Cargas panel 1)
-    _updateAllWorkloadCounts(data.specialist_id, +1, _getAppIdForCase(data.case_id))
+    // Update active counters (Especialistas dashboard / columnas)
+    _bumpActiveCount(data.specialist_id, +1)
     // Update cargasCases (for Cargas panel 2)
     if (data.specialist_id === cargasSpecialistId.value) {
       const existing = cargasCases.value.find(c => c.id === data.case_id)
@@ -696,10 +708,9 @@ export const useCasesStore = defineStore('cases', () => {
       workloadSync.updateLocal(specialistWorkloads, toW.specialist_id, {
         ...toW, current_count: (toW.current_count ?? 0) + 1,
       })
-    // Update allWorkloads counters (for Cargas panel 1)
-    const appId = _getAppIdForCase(data.case_id)
-    _updateAllWorkloadCounts(data.from_specialist_id, -1, appId)
-    _updateAllWorkloadCounts(data.to_specialist_id, +1, appId)
+    // Update active counters (Especialistas dashboard / columnas)
+    _bumpActiveCount(data.from_specialist_id, -1)
+    _bumpActiveCount(data.to_specialist_id, +1)
     // Update cargasCases (for Cargas panel 2)
     if (data.from_specialist_id === cargasSpecialistId.value) {
       // Case left this specialist
@@ -774,8 +785,9 @@ export const useCasesStore = defineStore('cases', () => {
     autopilotState,
     // Cargas view state
     allWorkloads, loadingAllWorkloads,
+    activeCounts, activeAssignments, loadingActiveCounts,
     cargasSpecialistId, cargasCases, loadingCargasCases, cargasTotalAssignments,
-    loadCases, loadPage, loadCaseById,
+    loadCases, loadPage, loadCaseById, loadActiveCounts,
     filterCasesLocally, searchCases, clearSearch,
     openDetail, openDetailById, closeDetail, goToPrev, goToNext,
     createCase, updateCase, updateCaseStatus,

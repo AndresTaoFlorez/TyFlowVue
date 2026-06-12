@@ -65,19 +65,19 @@ const router = createRouter({
         },
         {
           path: 'cases',
-          redirect: { name: 'cases-list', params: { status: 'open' } },
-        },
-        {
-          path: 'cases/list/:status',
           name: 'cases-list',
           component: CasesView,
           meta: { title: 'Casos', mainMode: 'flush', dense: true },
         },
+        // El estado dejó de vivir en la URL: ahora es un filtro de columna.
+        // Redirects de compatibilidad para deep-links viejos.
+        {
+          path: 'cases/list/:status',
+          redirect: { name: 'cases-list' },
+        },
         {
           path: 'cases/list/:status/:id',
-          name: 'cases-list-detail',
-          component: CasesView,
-          meta: { title: 'Caso', mainMode: 'flush', dense: true },
+          redirect: (to) => ({ name: 'cases-list-detail', params: { id: to.params.id } }),
         },
         {
           path: 'cases/specialists',
@@ -86,22 +86,35 @@ const router = createRouter({
           meta: { title: 'Especialistas', mainMode: 'flush', dense: true },
         },
         {
+          path: 'cases/specialists/:specialistId',
+          name: 'cases-specialist-detail',
+          component: CasesView,
+          meta: { title: 'Especialistas', mainMode: 'flush', dense: true },
+        },
+        // Cargas se fusionó con Especialistas (modo columnas)
+        {
           path: 'cases/loads',
           name: 'cases-loads',
           component: CasesView,
-          meta: { title: 'Cargas', mainMode: 'flush', dense: true },
+          meta: { title: 'Especialistas', mainMode: 'flush', dense: true },
         },
         {
           path: 'cases/loads/:specialistId',
           name: 'cases-loads-specialist',
           component: CasesView,
-          meta: { title: 'Cargas', mainMode: 'flush', dense: true },
+          meta: { title: 'Especialistas', mainMode: 'flush', dense: true },
         },
         {
           path: 'cases/loads/:specialistId/:caseId',
           name: 'cases-loads-case',
           component: CasesView,
-          meta: { title: 'Cargas', mainMode: 'flush', dense: true },
+          meta: { title: 'Especialistas', mainMode: 'flush', dense: true },
+        },
+        {
+          path: 'cases/:id',
+          name: 'cases-list-detail',
+          component: CasesView,
+          meta: { title: 'Caso', mainMode: 'flush', dense: true },
         },
         {
           path: 'settings',
@@ -135,6 +148,7 @@ const MENU_ROUTE_MAP = {
   'cases-list':           'cases',
   'cases-list-detail':    'cases',
   'cases-specialists':    'cases',
+  'cases-specialist-detail': 'cases',
   'cases-loads':          'cases',
   'cases-loads-specialist':'cases',
   'cases-loads-case':     'cases',

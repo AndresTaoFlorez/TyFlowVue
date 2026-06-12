@@ -108,9 +108,24 @@ function _restorePendingCategory() {
 loadPhase1()
 
 // ── Specialist display ──
+// Disponibilidad efectiva primero (con turno vigente), luego por carga ascendente.
 const specialistsForDropdown = computed(() =>
-  [...specialists.value].sort((a, b) => (a.current_count ?? 999) - (b.current_count ?? 999))
+  [...specialists.value].sort((a, b) => {
+    if (!!a.is_available !== !!b.is_available) return a.is_available ? -1 : 1
+    return (a.current_count ?? 999) - (b.current_count ?? 999)
+  })
 )
+
+function initials(name) {
+  if (!name) return '?'
+  return name.split(' ').slice(0, 2).map(n => n[0]).join('').toUpperCase()
+}
+
+function hslColor(name) {
+  let h = 0
+  for (const ch of (name || '')) h = ch.charCodeAt(0) + ((h << 5) - h)
+  return `hsl(${Math.abs(h) % 360}, 50%, 42%)`
+}
 
 const eligibleCount  = computed(() => specialists.value.length)
 const availableCount = computed(() => specialists.value.filter(s => s.is_available).length)
@@ -224,14 +239,37 @@ const canSubmitManual = computed(() => !submitting.value && !!form.value.special
     <template v-if="activeMode === 'manual'">
       <div class="ap__field">
         <label class="ap__label">Especialista *</label>
-        <select v-model="form.specialistId" class="ap__select" :disabled="isLoading || eligibleCount === 0">
-          <option value="">
-            {{ isLoading ? 'Cargando...' : eligibleCount === 0 ? '— Sin especialistas elegibles —' : '— Seleccionar —' }}
-          </option>
-          <option v-for="s in specialistsForDropdown" :key="s.specialist_id" :value="s.specialist_id">
-            {{ s.full_name }}{{ s.current_count !== null ? ` (${s.current_count} caso${s.current_count !== 1 ? 's' : ''})` : '' }}{{ !s.is_available ? ' · sin turno' : '' }}
-          </option>
-        </select>
+        <div v-if="isLoading" class="ap__cands ap__cands--empty">
+          <i class="bx bx-loader-alt bx-spin"></i> Cargando candidatos...
+        </div>
+        <div v-else-if="eligibleCount === 0" class="ap__cands ap__cands--empty">
+          — Sin especialistas elegibles —
+        </div>
+        <div v-else class="ap__cands">
+          <button
+            v-for="s in specialistsForDropdown"
+            :key="s.specialist_id"
+            type="button"
+            class="ap__cand"
+            :class="{
+              'ap__cand--selected': form.specialistId === s.specialist_id,
+              'ap__cand--off': !s.is_available,
+            }"
+            @click="form.specialistId = form.specialistId === s.specialist_id ? '' : s.specialist_id"
+          >
+            <span class="ap__cand-avatar" :style="{ background: hslColor(s.full_name) }">{{ initials(s.full_name) }}</span>
+            <span class="ap__cand-name">{{ s.full_name }}</span>
+            <span class="ap__cand-badges">
+              <span v-if="s.current_count != null" class="ap__cand-load">
+                {{ s.current_count }} caso{{ s.current_count !== 1 ? 's' : '' }}
+              </span>
+              <span :class="['ap__cand-turno', s.is_available ? 'ap__cand-turno--on' : 'ap__cand-turno--off']">
+                {{ s.is_available ? 'Con turno' : 'Sin turno' }}
+              </span>
+            </span>
+            <i v-if="form.specialistId === s.specialist_id" class="bx bx-check-circle ap__cand-check"></i>
+          </button>
+        </div>
         <span v-if="!isLoading && eligibleCount === 0" class="ap__hint">
           <template v-if="!form.supportLevelId">Selecciona un nivel para filtrar.</template>
           <template v-else-if="_pendingCategory">
@@ -324,6 +362,113 @@ const canSubmitManual = computed(() => !submitting.value && !!form.value.special
 
 .ap__select:focus, .ap__input:focus { border-color: var(--primary-500); }
 .ap__select:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* ── Candidate list (disponibilidad efectiva visible) ── */
+.ap__cands {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 210px;
+  overflow-y: auto;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  background: var(--bg-main);
+  padding: 0.25rem;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-light) transparent;
+}
+
+.ap__cands--empty {
+  align-items: center;
+  justify-content: center;
+  flex-direction: row;
+  gap: 0.35rem;
+  padding: 0.8rem;
+  font-size: 0.74rem;
+  color: var(--text-secondary);
+}
+
+.ap__cand {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0.5rem;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: none;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+  transition: all 0.1s;
+}
+.ap__cand:hover { background: var(--bg-card); }
+.ap__cand--selected {
+  background: color-mix(in srgb, var(--primary-500) 10%, transparent);
+  border-color: var(--primary-500);
+}
+.ap__cand--off { opacity: 0.72; }
+
+.ap__cand-avatar {
+  width: 24px;
+  height: 24px;
+  min-width: 24px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  font-size: 0.56rem;
+  color: #fff;
+}
+
+.ap__cand-name {
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ap__cand-badges {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  flex-shrink: 0;
+}
+
+.ap__cand-load {
+  font-size: 0.62rem;
+  font-weight: 700;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.ap__cand-turno {
+  font-size: 0.58rem;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+.ap__cand-turno--on {
+  background: color-mix(in srgb, var(--primary-500) 16%, transparent);
+  color: var(--primary-500);
+}
+.ap__cand-turno--off {
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-light);
+}
+
+.ap__cand-check {
+  font-size: 0.95rem;
+  color: var(--primary-500);
+  flex-shrink: 0;
+}
 
 .ap__hint {
   font-size: 0.67rem;

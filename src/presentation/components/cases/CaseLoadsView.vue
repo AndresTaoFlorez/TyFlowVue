@@ -131,16 +131,19 @@ const bySpecialist = computed(() => {
       })
     }
     const s = specs.get(row.specialist_id)
-    s.totalCases += row.current_count ?? 0
     if (row.is_available) s.anyAvailable = true
     s.apps.push({
       appId:            row.application_id,
       appName:          app?.name ?? row.application_id,
-      current_count:    row.current_count ?? 0,
       is_available:     row.is_available,
       window_starts_at: row.window_starts_at,
       window_ends_at:   row.window_ends_at,
     })
+  }
+  // Contadores reales: asignaciones activas por especialista (no por app —
+  // el backend no expone el desglose por aplicación).
+  for (const s of specs.values()) {
+    s.totalCases = store.activeCounts[s.specialist_id] ?? 0
   }
   return [...specs.values()].sort((a, b) => {
     if (a.anyAvailable !== b.anyAvailable) return a.anyAvailable ? -1 : 1
@@ -321,15 +324,17 @@ function appName(id) {
 onMounted(async () => {
   window.addEventListener('resize', onResize)
   window.addEventListener('keydown', onKeydown)
+  store.loadActiveCounts()
   const appIds = applications.value.map(a => a.id)
   if (appIds.length) {
     await store.loadAllWorkloads(appIds)
   } else {
-    // Wait for applications to load, then fetch
-    const stop = watch(applications, async (apps) => {
-      if (apps.length) {
+    // Wait for applications to load, then fetch (watch length: replaceAll
+    // puede mutar in-place y la referencia no cambiaría)
+    const stop = watch(() => applications.value.length, async (n) => {
+      if (n) {
         stop()
-        await store.loadAllWorkloads(apps.map(a => a.id))
+        await store.loadAllWorkloads(applications.value.map(a => a.id))
       }
     })
   }
@@ -717,9 +722,6 @@ onUnmounted(() => {
                     {{ fmtTime(app.window_starts_at) }}–{{ fmtTime(app.window_ends_at) }}
                   </span>
                   <span v-else-if="!app.is_available" class="cl-detail-no-window">sin turno</span>
-                  <span class="cl-detail-count" :style="{ color: loadColor(app.current_count) }">
-                    {{ app.current_count }} caso{{ app.current_count !== 1 ? 's' : '' }}
-                  </span>
                 </div>
               </div>
             </div>

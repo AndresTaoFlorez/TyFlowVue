@@ -7,6 +7,20 @@ import CaseReassignModal from '@/presentation/components/cases/CaseReassignModal
 import AppTag from '@/presentation/components/shared/AppTag.vue'
 import { useCaseDetail } from '@/presentation/composables/useCaseDetail'
 
+// Modo de presentación (controlado por CaseDetailHost):
+// 'right' | 'left' | 'float' | 'full'
+const props = defineProps({
+  mode: { type: String, default: 'right' },
+})
+const emit = defineEmits(['set-mode', 'drag-start'])
+
+const MODES = [
+  { id: 'left',  icon: 'bx-dock-left',   title: 'Panel a la izquierda' },
+  { id: 'right', icon: 'bx-dock-right',  title: 'Panel a la derecha' },
+  { id: 'float', icon: 'bx-windows',     title: 'Ventana flotante' },
+  { id: 'full',  icon: 'bx-expand-alt',  title: 'Página completa' },
+]
+
 const store = useCasesStore()
 const c = computed(() => store.selectedCase)
 
@@ -58,9 +72,32 @@ function fmtDateTime(iso) {
         </button>
         <span v-if="c" class="cdp__id">{{ c.shortId }}</span>
       </div>
-      <button class="cdp__close" @click="store.closeDetail()" aria-label="Cerrar panel">
-        <i class="bx bx-x"></i>
-      </button>
+      <!-- Zona de arrastre en modo flotante -->
+      <div
+        v-if="mode === 'float'"
+        class="cdp__drag-zone"
+        title="Arrastrar ventana"
+        @mousedown="emit('drag-start', $event)"
+      >
+        <i class="bx bx-grid-horizontal"></i>
+      </div>
+      <div class="cdp__header-right">
+        <div class="cdp__modes">
+          <button
+            v-for="m in MODES"
+            :key="m.id"
+            class="cdp__mode-btn"
+            :class="{ 'cdp__mode-btn--active': mode === m.id }"
+            :title="m.title"
+            @click="emit('set-mode', m.id)"
+          >
+            <i :class="'bx ' + m.icon"></i>
+          </button>
+        </div>
+        <button class="cdp__close" @click="store.closeDetail()" aria-label="Cerrar panel">
+          <i class="bx bx-x"></i>
+        </button>
+      </div>
     </div>
 
     <!-- Loading skeleton (navigation in-flight) -->
@@ -265,6 +302,62 @@ function fmtDateTime(iso) {
   color: var(--text-secondary);
   margin-left: 0.3rem;
   font-variant-numeric: tabular-nums;
+}
+
+.cdp__header-right {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.cdp__drag-zone {
+  flex: 1;
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: grab;
+  color: var(--text-secondary);
+  opacity: 0.55;
+  user-select: none;
+}
+.cdp__drag-zone:active { cursor: grabbing; }
+.cdp__drag-zone:hover { opacity: 1; }
+.cdp__drag-zone i { font-size: 1.3rem; }
+
+.cdp__modes {
+  display: flex;
+  align-items: center;
+  border: 1px solid var(--border-light);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--bg-main);
+}
+
+.cdp__mode-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 0.95rem;
+  cursor: pointer;
+  transition: all 0.12s;
+}
+.cdp__mode-btn + .cdp__mode-btn { border-left: 1px solid var(--border-light); }
+.cdp__mode-btn:hover { color: var(--text-primary); background: var(--bg-card); }
+.cdp__mode-btn--active {
+  color: var(--primary-500);
+  background: color-mix(in srgb, var(--primary-500) 12%, transparent);
+}
+
+/* En móvil los modos no aplican (el panel es fullscreen fijo) */
+@media (max-width: 768px) {
+  .cdp__modes { display: none; }
+  .cdp__drag-zone { display: none; }
 }
 
 

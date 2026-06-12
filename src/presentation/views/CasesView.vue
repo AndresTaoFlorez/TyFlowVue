@@ -5,10 +5,11 @@ import { useCasesStore } from '@/presentation/stores/useCasesStore'
 import { useUserStore } from '@/presentation/stores/useUserStore'
 import { useAuthStore } from '@/presentation/stores/useAuthStore'
 import { useCasesRealtime } from '@/presentation/composables/useCasesRealtime'
-import CaseFiltersBar from '@/presentation/components/cases/CaseFiltersBar.vue'
+import { useCaseDetailMode } from '@/presentation/composables/useCaseDetailMode'
+import TopbarBoard from '@/presentation/components/layout/TopbarBoard.vue'
+import SidebarBoard from '@/presentation/components/layout/SidebarBoard.vue'
 import CaseListTable from '@/presentation/components/cases/CaseListTable.vue'
-import CaseLoadsView from '@/presentation/components/cases/CaseLoadsView.vue'
-import CaseDetailModal from '@/presentation/components/cases/CaseDetailModal.vue'
+import CaseDetailHost from '@/presentation/components/cases/CaseDetailHost.vue'
 import CaseCreateModal from '@/presentation/components/cases/CaseCreateModal.vue'
 import CaseSpecialistsView from '@/presentation/components/cases/CaseSpecialistsView.vue'
 
@@ -18,22 +19,27 @@ const authStore = useAuthStore()
 const route = useRoute()
 const router = useRouter()
 const autopilotError = ref(null)
+const { mode: detailMode } = useCaseDetailMode()
 
-// Derived from route — no local state needed
+// ── Active tab derived from route ─────────────────────
 const activeTab = computed(() => {
-  if (route.name === 'cases-specialists') return 'especialistas'
-  if (route.name?.startsWith('cases-loads')) return 'cargas'
+  const n = route.name ?? ''
+  if (n.startsWith('cases-specialist') || n.startsWith('cases-loads')) return 'especialistas'
   return 'lista'
 })
 
-// ── Resizable detail panel ────────────────────────────
+// ── Resizable docked detail panel ─────────────────────
 const PANEL_MIN = 320
 const PANEL_MAX = 960
 const PANEL_DEFAULT = 520
 const panelWidth = ref(parseInt(localStorage.getItem('tyflow_detail_panel_w')) || PANEL_DEFAULT)
 
+const detailDocked = computed(() =>
+  store.showDetailModal && (detailMode.value === 'right' || detailMode.value === 'left')
+)
+
 const listStyle = computed(() => {
-  if (!store.showDetailModal) return {}
+  if (!detailDocked.value) return {}
   return { width: `calc(100% - ${panelWidth.value}px - 5px)`, flexShrink: '0' }
 })
 
@@ -41,11 +47,12 @@ function onResizeStart(e) {
   e.preventDefault()
   const startX = e.clientX
   const startW = panelWidth.value
+  // En modo derecha, arrastrar a la izquierda agranda el panel; en izquierda, al revés.
+  const sign = detailMode.value === 'left' ? 1 : -1
   document.body.style.cursor = 'col-resize'
   document.body.style.userSelect = 'none'
   const onMove = (ev) => {
-    // Dragging handle leftward grows the panel (panel is on the right)
-    panelWidth.value = Math.max(PANEL_MIN, Math.min(PANEL_MAX, startW + (startX - ev.clientX)))
+    panelWidth.value = Math.max(PANEL_MIN, Math.min(PANEL_MAX, startW + sign * (ev.clientX - startX)))
   }
   const onUp = () => {
     document.body.style.cursor = ''
@@ -58,9 +65,11 @@ function onResizeStart(e) {
   document.addEventListener('mouseup', onUp)
 }
 
-// Keyboard nav (←/→/Escape) when panel is open
+// ── Keyboard nav (←/→/Escape) when panel is open ─────
 function onKeydown(e) {
   if (!store.showDetailModal) return
+  const tag = e.target?.tagName
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return
   if (e.key === 'Escape') store.closeDetail()
   if (e.key === 'ArrowLeft')  { e.preventDefault(); store.goToPrev() }
   if (e.key === 'ArrowRight') { e.preventDefault(); store.goToNext() }
@@ -83,103 +92,139 @@ async function runAutopilot() {
   }
 }
 
-const tabs = [
-  { id: 'lista', label: 'Lista', icon: 'bx-list-ul' },
-  { id: 'especialistas', label: 'Especialistas', icon: 'bx-group' },
-  { id: 'cargas', label: 'Cargas', icon: 'bx-bar-chart-alt-2' },
-]
-
 useCasesRealtime()
 
-// ── Status → filter mapping ───────────────────────────
-const STATUS_TO_FILTER = {
-  todos: null,
-  open: 'open',
-  assigned: 'assigned',
-  in_progress: 'in_progress',
-  resolved: 'resolved',
-  closed: 'closed',
+// ── Search (vive en el topbar board) ─────────────────
+let _searchTimer = null
+
+function onSearchInput(val) {
+  store.searchQuery = val
+  store.searchError = null
+  clearTimeout(_searchTimer)
+  _searchTimer = setTimeout(() => {
+    store.filterCasesLocally(val)
+  }, 220)
+}
+
+function doSearch() {
+  clearTimeout(_searchTimer)
+  store.searchCases(store.searchQuery)
+}
+
+function clearSearch() {
+  clearTimeout(_searchTimer)
+  store.clearSearch()
 }
 
 // ── Routing bridge ────────────────────────────────────
 
-// Detail panel: id param is the source of truth
+// Detail deep-link: /app/cases/:id
 watch(() => route.params.id, (id) => {
+  if (route.name !== 'cases-list-detail') return
   if (id) store.openDetailById(id)
-  else store.closeDetail()
 }, { immediate: true })
 
-// Close detail → navigate back to list (keep status param)
+// Close detail → navigate back to the clean list URL
 watch(() => store.showDetailModal, (open) => {
   if (!open && route.name === 'cases-list-detail') {
-    router.replace({ name: 'cases-list', params: { status: route.params.status } })
+    router.replace({ name: 'cases-list' })
   }
 })
 
 // Prev/Next navigation → replace URL without extra history entry
 watch(() => store.selectedCase?.id, (id) => {
-  if (store.showDetailModal && id && route.params.id !== id) {
-    router.replace({ name: 'cases-list-detail', params: { status: route.params.status ?? 'open', id } })
+  if (store.showDetailModal && id && route.name === 'cases-list-detail' && route.params.id !== id) {
+    router.replace({ name: 'cases-list-detail', params: { id } })
   }
 })
 
-// Status tab navigation (fires only when status param changes after mount)
-watch(() => route.params.status, (newStatus, oldStatus) => {
-  if (oldStatus === undefined) return  // initial load handled in onMounted
-  store.loadCases({ status: STATUS_TO_FILTER[newStatus ?? 'open'] ?? null })
-})
-
 function openCase(id) {
-  router.push({ name: 'cases-list-detail', params: { status: route.params.status ?? 'open', id } })
+  router.push({ name: 'cases-list-detail', params: { id } })
 }
 
 // ── Init ─────────────────────────────────────────────
 onMounted(async () => {
   await Promise.all([userStore.loadSelects(), userStore.loadUsers()])
-  // Only load cases when on the lista tab
-  if (activeTab.value === 'lista') {
-    const routeStatus = route.params.status ?? 'open'
-    // Set filters directly + loadCases() (no args) so it always refetches —
-    // passing newFilters short-circuits when the key is unchanged, leaving total stale.
-    store.filters.status = STATUS_TO_FILTER[routeStatus] ?? 'open'
-    if (!authStore.isAdmin && authStore.profile?.specialistId) {
-      store.filters.specialistId = authStore.profile.specialistId
-    }
-    await store.loadCases()
-
-    // Al entrar a "abiertos" sin casos, redirigir a "todos"
-    if (routeStatus === 'open' && store.pagination.total === 0) {
-      router.replace({ name: 'cases-list', params: { status: 'todos' } })
-    }
+  if (!authStore.isAdmin && authStore.profile?.specialistId) {
+    store.filters.specialistId = authStore.profile.specialistId
   }
+  // Sin redirects automáticos: la lista respeta los filtros persistidos.
+  await store.loadCases()
 })
 </script>
 
 <template>
   <div class="cv">
-    <!-- Tabs + actions -->
-    <nav class="cv__tabs">
-      <button
-        v-for="tab in tabs"
-        v-show="tab.id !== 'cargas' || authStore.isAdmin"
-        :key="tab.id"
-        class="cv__tab"
-        :class="{ 'cv__tab--active': activeTab === tab.id }"
-        @click="tab.id === 'cargas'
-          ? router.push({ name: 'cases-loads' })
-          : tab.id === 'especialistas'
-            ? router.push({ name: 'cases-specialists' })
-            : router.push({ name: 'cases-list', params: { status: route.params.status ?? 'open' } })"
-      >
-        <i :class="'bx ' + tab.icon + ' cv__tab-icon'"></i>
-        {{ tab.label }}
-        <span v-if="tab.id === 'lista' && store.caseCount" class="cv__tab-badge">
-          {{ store.caseCount }}
-        </span>
-      </button>
+    <!-- ══ Sidebar board: navegación contextual del módulo ══ -->
+    <SidebarBoard>
+      <nav class="cv__nav">
+        <span class="cv__nav-title">Casos</span>
+        <button
+          class="cv__nav-item"
+          :class="{ 'cv__nav-item--active': activeTab === 'lista' }"
+          @click="router.push({ name: 'cases-list' })"
+        >
+          <i class="bx bx-list-ul"></i>
+          <span>Lista</span>
+          <span v-if="store.caseCount" class="cv__nav-badge">{{ store.caseCount }}</span>
+        </button>
+        <button
+          class="cv__nav-item"
+          :class="{ 'cv__nav-item--active': activeTab === 'especialistas' && !route.name?.startsWith('cases-loads') }"
+          @click="router.push({ name: 'cases-specialists' })"
+        >
+          <i class="bx bx-group"></i>
+          <span>Especialistas</span>
+        </button>
+        <button
+          v-if="authStore.isAdmin"
+          class="cv__nav-item cv__nav-item--sub"
+          :class="{ 'cv__nav-item--active': route.name?.startsWith('cases-loads') }"
+          @click="router.push({ name: 'cases-loads' })"
+        >
+          <i class="bx bx-columns"></i>
+          <span>Modo columnas</span>
+        </button>
+      </nav>
+    </SidebarBoard>
 
-      <div class="cv__tabs-end">
-        <template v-if="authStore.isAdmin">
+    <!-- ══ Topbar board: búsqueda + estado + acciones ══ -->
+    <TopbarBoard>
+      <div class="cv__topbar">
+        <span class="cv__topbar-title">{{ activeTab === 'lista' ? 'Casos' : 'Especialistas' }}</span>
+
+        <!-- Search (solo en lista) -->
+        <div
+          v-if="activeTab === 'lista'"
+          class="cv__search"
+          :class="{ 'cv__search--active': store.searchMode, 'cv__search--error': store.searchError && !store.searchLoading }"
+        >
+          <i class="bx bx-search cv__search-icon"></i>
+          <input
+            :value="store.searchQuery"
+            class="cv__search-input"
+            type="text"
+            placeholder="Buscar por ID..."
+            maxlength="36"
+            @input="onSearchInput($event.target.value)"
+            @keydown.enter.prevent="doSearch"
+            @keydown.escape="clearSearch"
+          />
+          <i v-if="store.searchLoading" class="bx bx-loader-alt bx-spin cv__search-spinner"></i>
+          <button v-else-if="store.searchQuery" class="cv__search-clear" tabindex="-1" @click="clearSearch">
+            <i class="bx bx-x"></i>
+          </button>
+          <span v-if="store.searchError" class="cv__search-tip">{{ store.searchError }}</span>
+        </div>
+
+        <span v-if="activeTab === 'lista' && store.searchMode" class="cv__count cv__count--search">
+          {{ store.searchResults.length }} resultado{{ store.searchResults.length !== 1 ? 's' : '' }}
+        </span>
+        <span v-else-if="activeTab === 'lista' && store.caseCount > 0" class="cv__count">
+          {{ store.caseCount }} caso{{ store.caseCount !== 1 ? 's' : '' }}
+        </span>
+
+        <div class="cv__topbar-end">
           <div v-if="store.autopilotState.running" class="cv__autopilot-pill">
             <i class="bx bx-loader-alt bx-spin"></i>
             <span v-if="store.autopilotState.total">
@@ -187,22 +232,24 @@ onMounted(async () => {
             </span>
             <span v-else>Autopilot...</span>
           </div>
-          <button
-            class="cv__autopilot-btn"
-            :disabled="store.autopilotState.running"
-            :title="store.autopilotState.running ? 'Autopilot en progreso' : 'Lanzar WDD Autopilot'"
-            @click="runAutopilot"
-          >
-            <i class="bx bx-bot"></i>
-            <span class="cv__btn-label">Autopilot</span>
-          </button>
-          <button class="cv__create-btn" @click="store.showCreateModal = true">
-            <i class="bx bx-plus"></i>
-            <span class="cv__btn-label">Nuevo caso</span>
-          </button>
-        </template>
+          <template v-if="authStore.isAdmin">
+            <button
+              class="cv__autopilot-btn"
+              :disabled="store.autopilotState.running"
+              :title="store.autopilotState.running ? 'Autopilot en progreso' : 'Lanzar WDD Autopilot'"
+              @click="runAutopilot"
+            >
+              <i class="bx bx-bot"></i>
+              <span class="cv__btn-label">Autopilot</span>
+            </button>
+            <button class="cv__create-btn" @click="store.showCreateModal = true">
+              <i class="bx bx-plus"></i>
+              <span class="cv__btn-label">Nuevo caso</span>
+            </button>
+          </template>
+        </div>
       </div>
-    </nav>
+    </TopbarBoard>
 
     <!-- Autopilot error -->
     <Transition name="cv-err">
@@ -211,41 +258,37 @@ onMounted(async () => {
       </div>
     </Transition>
 
-    <!-- Lista tab: list + resizable detail panel -->
+    <!-- ══ Lista: tabla + detalle multi-modo ══ -->
     <div v-show="activeTab === 'lista'" class="cv__split">
-      <!-- Left: filters + table -->
+      <!-- Panel a la izquierda -->
+      <template v-if="detailDocked && detailMode === 'left'">
+        <CaseDetailHost class="cv__detail-pane" :style="{ width: panelWidth + 'px' }" />
+        <div class="cv__resize-handle" @mousedown="onResizeStart" title="Arrastrar para redimensionar"></div>
+      </template>
+
+      <!-- Lista -->
       <div class="cv__list-pane" :style="listStyle">
-        <CaseFiltersBar />
         <CaseListTable @select="openCase" />
       </div>
 
-      <!-- Resize handle (only when panel open, desktop only) -->
-      <div
-        v-if="store.showDetailModal"
-        class="cv__resize-handle"
-        @mousedown="onResizeStart"
-        title="Arrastrar para redimensionar"
-      ></div>
+      <!-- Panel a la derecha -->
+      <template v-if="detailDocked && detailMode === 'right'">
+        <div class="cv__resize-handle" @mousedown="onResizeStart" title="Arrastrar para redimensionar"></div>
+        <CaseDetailHost class="cv__detail-pane" :style="{ width: panelWidth + 'px' }" />
+      </template>
 
-      <!-- Right: detail panel -->
-      <CaseDetailModal
-        v-if="store.showDetailModal"
-        class="cv__detail-pane"
-        :style="{ width: panelWidth + 'px' }"
-      />
+      <!-- Flotante / página completa dentro del área de lista -->
+      <CaseDetailHost v-if="activeTab === 'lista' && store.showDetailModal && !detailDocked" />
     </div>
 
-    <!-- Especialistas tab -->
-    <div v-show="activeTab === 'especialistas'" class="cv__cargas">
-      <CaseSpecialistsView />
+    <!-- ══ Especialistas (dashboard + columnas fusionados) ══ -->
+    <div v-show="activeTab === 'especialistas'" class="cv__especialistas">
+      <CaseSpecialistsView v-if="activeTab === 'especialistas'" />
+      <!-- Detalle abierto desde Especialistas: siempre flotante/full -->
+      <CaseDetailHost v-if="activeTab === 'especialistas' && store.showDetailModal" :allow-docked="false" />
     </div>
 
-    <!-- Cargas tab (admin only) -->
-    <div v-show="activeTab === 'cargas' && authStore.isAdmin" class="cv__cargas">
-      <CaseLoadsView />
-    </div>
-
-    <!-- Create modal (stays as overlay) -->
+    <!-- Create modal (overlay) -->
     <CaseCreateModal v-if="store.showCreateModal" />
   </div>
 </template>
@@ -257,44 +300,59 @@ onMounted(async () => {
   height: 100%;
   overflow: hidden;
   background: var(--bg-main);
+  position: relative;
 }
 
-/* ── Tabs ────────────────────────────────────────────── */
-.cv__tabs {
+/* ── Sidebar board nav (tokens --nav-* theme-aware) ──── */
+.cv__nav {
   display: flex;
-  align-items: center;
-  border-bottom: 1px solid var(--border-light);
-  padding: 0 1.25rem;
-  background: var(--bg-card);
-  flex-shrink: 0;
+  flex-direction: column;
+  gap: 0.15rem;
+  border-top: 1px solid var(--nav-border);
+  margin-top: 0.85rem;
+  padding: 0.85rem 0.65rem 1.1rem;
 }
 
-.cv__tab {
+.cv__nav-title {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--nav-text);
+  opacity: 0.75;
+  padding: 0.15rem;
+  margin-bottom: 0.35rem;
+}
+
+.cv__nav-item {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  padding: 0.85rem 0.4rem;
-  margin: 0 0.7rem 0 0.2rem;
-  font-size: 0.92rem;
-  font-weight: 600;
-  color: var(--text-secondary);
+  gap: 0.55rem;
+  padding: 0.5rem 0.6rem;
+  border-radius: 8px;
+  font-size: 0.84rem;
+  font-weight: 500;
+  font-family: inherit;
+  color: var(--nav-text);
   background: none;
   border: none;
-  border-bottom: 2px solid transparent;
-  margin-bottom: -1px;
   cursor: pointer;
-  transition: color 0.15s;
-  white-space: nowrap;
+  transition: background 0.12s, color 0.12s;
+  text-align: left;
 }
-.cv__tab:hover { color: var(--text-primary); }
-.cv__tab--active { color: var(--primary-500); border-bottom-color: var(--primary-500); }
-.cv__tab-icon { font-size: 1.1rem; }
+.cv__nav-item:hover { background: var(--nav-hover); color: var(--nav-text-strong); }
+.cv__nav-item--active { background: var(--nav-hover); color: var(--primary-500); font-weight: 600; }
+.cv__nav-item i { font-size: 1.1rem; }
 
-.cv__tab-badge {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 0.66rem;
+.cv__nav-item--sub {
+  margin-left: 1.2rem;
+  font-size: 0.78rem;
+}
+.cv__nav-item--sub i { font-size: 0.95rem; }
+
+.cv__nav-badge {
+  margin-left: auto;
+  font-size: 0.64rem;
   font-weight: 700;
   padding: 1px 7px;
   border-radius: 999px;
@@ -302,29 +360,120 @@ onMounted(async () => {
   color: white;
   line-height: 1.5;
 }
-.cv__tab:not(.cv__tab--active) .cv__tab-badge {
-  background: var(--bg-card);
-  color: var(--text-secondary);
-  border: 1px solid var(--border-light);
+
+/* ── Topbar board (una fila ~36px, fondo transparente) ── */
+.cv__topbar {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex: 1;
+  min-width: 0;
 }
 
-.cv__tabs-end {
+.cv__topbar-title {
+  font-size: 1.02rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
+.cv__topbar-end {
   display: flex;
   align-items: center;
   gap: 0.4rem;
   margin-left: auto;
 }
 
+.cv__search {
+  position: relative;
+  display: flex;
+  align-items: center;
+  height: 34px;
+  width: 200px;
+  border: 1px solid var(--border-light);
+  border-radius: 9px;
+  background: var(--bg-card);
+  transition: border-color 0.15s, width 0.2s;
+}
+.cv__search:focus-within { border-color: var(--primary-500); width: 250px; }
+.cv__search--active { border-color: var(--primary-500); }
+.cv__search--error { border-color: var(--error, #e53e3e); }
+
+.cv__search-icon {
+  font-size: 0.95rem;
+  color: var(--text-secondary);
+  margin: 0 0.35rem 0 0.6rem;
+  flex-shrink: 0;
+}
+
+.cv__search-input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 0.8rem;
+  font-family: inherit;
+}
+.cv__search-input::placeholder { color: var(--text-secondary); opacity: 0.7; }
+
+.cv__search-spinner {
+  font-size: 0.85rem;
+  color: var(--primary-500);
+  margin-right: 0.5rem;
+}
+
+.cv__search-clear {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  margin-right: 0.3rem;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 1rem;
+  cursor: pointer;
+}
+.cv__search-clear:hover { color: var(--text-primary); background: var(--bg-main); }
+
+.cv__search-tip {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  padding: 0.3rem 0.6rem;
+  background: var(--error, #e53e3e);
+  color: white;
+  font-size: 0.68rem;
+  font-weight: 600;
+  border-radius: 6px;
+  white-space: nowrap;
+  z-index: 60;
+}
+
+.cv__count {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+.cv__count--search { color: var(--primary-500); }
+
 .cv__autopilot-btn {
   display: flex;
   align-items: center;
   gap: 0.45rem;
-  padding: 0.55rem 0.95rem;
+  height: 34px;
+  padding: 0 0.85rem;
   background: var(--bg-card);
   color: var(--text-primary);
   border: 1px solid var(--border-light);
-  border-radius: 10px;
-  font-size: 0.84rem;
+  border-radius: 9px;
+  font-size: 0.8rem;
   font-weight: 600;
   cursor: pointer;
   transition: all 0.15s;
@@ -332,7 +481,7 @@ onMounted(async () => {
 }
 .cv__autopilot-btn:hover:not(:disabled) { border-color: var(--primary-500); color: var(--primary-500); }
 .cv__autopilot-btn:disabled { opacity: 0.55; cursor: not-allowed; }
-.cv__autopilot-btn i { font-size: 1.05rem; }
+.cv__autopilot-btn i { font-size: 1rem; }
 
 .cv__autopilot-pill {
   display: flex;
@@ -353,21 +502,22 @@ onMounted(async () => {
   display: flex;
   align-items: center;
   gap: 0.45rem;
-  padding: 0.6rem 1.05rem;
+  height: 34px;
+  padding: 0 0.95rem;
   background: var(--primary-500);
   color: white;
   border: none;
-  border-radius: 10px;
-  font-size: 0.88rem;
+  border-radius: 9px;
+  font-size: 0.82rem;
   font-weight: 600;
   cursor: pointer;
   box-shadow: 0 2px 8px rgba(42,199,143,0.3);
   transition: all 0.15s;
   white-space: nowrap;
 }
-.cv__create-btn:hover { background: var(--primary-600); box-shadow: 0 4px 14px rgba(42,199,143,0.4); transform: translateY(-1px); }
-.cv__create-btn:active { transform: translateY(0) scale(0.98); }
-.cv__create-btn i { font-size: 1.15rem; }
+.cv__create-btn:hover { background: var(--primary-600); box-shadow: 0 4px 14px rgba(42,199,143,0.4); }
+.cv__create-btn:active { transform: scale(0.98); }
+.cv__create-btn i { font-size: 1.1rem; }
 
 /* ── Split layout ────────────────────────────────────── */
 .cv__split {
@@ -375,6 +525,7 @@ onMounted(async () => {
   min-height: 0;
   display: flex;
   overflow: hidden;
+  position: relative;
 }
 
 .cv__list-pane {
@@ -384,10 +535,8 @@ onMounted(async () => {
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  /* width set via :style when detail panel is open */
 }
 
-/* Resize handle between list and detail panel */
 .cv__resize-handle {
   width: 5px;
   flex-shrink: 0;
@@ -403,7 +552,6 @@ onMounted(async () => {
   background: rgba(42, 199, 143, 0.35);
 }
 
-/* Detail panel */
 .cv__detail-pane {
   flex-shrink: 0;
   min-width: 320px;
@@ -411,16 +559,17 @@ onMounted(async () => {
   height: 100%;
 }
 
-/* Cargas tab */
-.cv__cargas {
+/* ── Especialistas ── */
+.cv__especialistas {
   flex: 1;
   min-height: 0;
   overflow: hidden;
   display: flex;
   flex-direction: column;
+  position: relative;
 }
 
-/* Error pill */
+/* ── Error pill ── */
 .cv__error-pill {
   display: flex;
   align-items: center;
@@ -441,15 +590,15 @@ onMounted(async () => {
 
 /* ── Responsive ──────────────────────────────────────── */
 @media (max-width: 768px) {
-  .cv__tabs { overflow-x: auto; }
-  .cv__tab { padding: 0.6rem 0.75rem; font-size: 0.78rem; }
   .cv__btn-label { display: none; }
   .cv__create-btn,
-  .cv__autopilot-btn { padding: 0.4rem; }
+  .cv__autopilot-btn { padding: 0 0.5rem; }
+  .cv__search { width: 140px; }
+  .cv__search:focus-within { width: 170px; }
+  .cv__topbar-title { display: none; }
 
-  /* On mobile the detail panel covers the entire screen (fixed, in cdp styles) */
+  /* En móvil el panel de detalle cubre toda la pantalla (fixed, estilos cdp) */
   .cv__resize-handle { display: none; }
-  /* List pane goes back to full width on mobile (detail is fixed overlay) */
   .cv__list-pane { width: 100% !important; flex: 1 !important; }
 }
 </style>

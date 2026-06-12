@@ -125,8 +125,12 @@ const isDifferentLevel = computed(() =>
   form.value.supportLevelId !== (props.caseData.supportLevelId ?? '')
 )
 
+// Disponibilidad efectiva primero (con turno vigente), luego por carga ascendente.
 const specialistsForDropdown = computed(() =>
-  [...specialists.value].sort((a, b) => (a.current_count ?? 999) - (b.current_count ?? 999))
+  [...specialists.value].sort((a, b) => {
+    if (!!a.is_available !== !!b.is_available) return a.is_available ? -1 : 1
+    return (a.current_count ?? 999) - (b.current_count ?? 999)
+  })
 )
 
 const currentSpecialistName = computed(() => {
