@@ -1,0 +1,198 @@
+/* Estilos de WorkWindowModal.vue (extraídos del SFC — CSS puro, sin scoped). */
+/* ---- Header ---- */
+.wm__head {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 1.2rem 1.3rem 0.9rem;
+}
+
+.wm__back {
+  width: 30px; height: 30px; flex-shrink: 0;
+  display: grid; place-items: center;
+  border: none; background: none; border-radius: 8px;
+  color: var(--muted); font-size: 1.1rem; cursor: pointer;
+  transition: background .12s, color .12s;
+}
+.wm__back:hover { background: var(--surface-2); color: var(--text); }
+
+.wm__avatar {
+  width: 40px; height: 40px; flex-shrink: 0;
+  display: grid; place-items: center;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--primary-500) 16%, transparent);
+  color: var(--primary-600, var(--primary-500));
+  font-size: 0.92rem; font-weight: 800; letter-spacing: 0.02em;
+}
+
+.wm__head-text {
+  flex: 1; min-width: 0;
+  display: flex; flex-direction: column; align-items: flex-start; gap: 4px;
+}
+.wm__title {
+  font-size: 1.04rem; font-weight: 700; color: var(--text);
+  letter-spacing: -0.01em;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+.wm__head-actions { display: flex; align-items: center; gap: 0.35rem; flex-shrink: 0; }
+
+.wm__close {
+  width: 30px; height: 30px;
+  display: grid; place-items: center;
+  border: none; background: none; border-radius: 8px;
+  color: var(--muted); font-size: 1.25rem; cursor: pointer;
+  transition: background .12s, color .12s;
+}
+.wm__close:hover { background: var(--surface-2); color: var(--text); }
+
+/* Chip de ID en el header: clic = copiar */
+.wm__id-chip {
+  display: inline-flex; align-items: center; gap: 4px;
+  height: 26px; padding: 0 9px;
+  border: 1px solid transparent; border-radius: 999px;
+  background: var(--surface-2); color: var(--muted);
+  font-size: 0.66rem; cursor: pointer; transition: all .15s;
+}
+.wm__id-chip code { font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace; font-size: 0.66rem; }
+.wm__id-chip i { font-size: 0.8rem; }
+.wm__id-chip:hover { border-color: var(--border); color: var(--text); }
+.wm__id-chip--copied {
+  border-color: color-mix(in srgb, var(--primary-500) 45%, transparent);
+  background: color-mix(in srgb, var(--primary-500) 12%, transparent);
+  color: var(--primary-500);
+}
+
+.wm__body { gap: 0.6rem; padding-top: 0.25rem; }
+
+/* Fila genérica icono + contenido */
+.wm__row {
+  display: flex; align-items: center; gap: 0.6rem;
+  min-width: 0; min-height: 36px;
+}
+.wm__row > i { color: var(--muted); font-size: 1.1rem; width: 1.3rem; text-align: center; flex-shrink: 0; }
+.wm__row-label { font-size: 0.84rem; color: var(--muted); flex-shrink: 0; }
+
+/* Inputs "invisibles" estilo Google Calendar: texto plano hasta hover/focus */
+.wm__input {
+  height: 34px; padding: 0 0.55rem;
+  border: 1px solid transparent; border-radius: 9px;
+  background: transparent; color: var(--text);
+  font-family: inherit; font-size: 0.86rem; font-weight: 600;
+  min-width: 0; transition: background .12s, border-color .12s, box-shadow .12s;
+}
+.wm__input:hover:not(:disabled) { background: var(--surface-2); }
+.wm__input:focus {
+  outline: none; background: var(--surface);
+  border-color: var(--primary-500);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary-500) 14%, transparent);
+}
+.wm__input:disabled { color: var(--muted); cursor: not-allowed; opacity: .7; }
+.wm__input--note { flex: 1; font-weight: 500; }
+.wm__input--note::placeholder { color: var(--faint); font-weight: 500; }
+
+/* Campos de fecha/hora: anchos fijos para que alineen en cuadrícula y un
+   fondo de reposo sutil para que se lean como campos ordenados (no texto suelto). */
+.wm__input--date, .wm__input--time {
+  background: var(--surface-2);
+  border-color: var(--border);
+  text-align: center;
+}
+.wm__input--date { width: 8.6rem; flex-shrink: 0; }
+.wm__input--time { width: 5.6rem; flex-shrink: 0; }
+
+/* Bloque de horario */
+.wm__schedule { display: flex; flex-direction: column; gap: 5px; min-width: 0; flex: 1; }
+.wm__sched-line { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+/* Inicio (fecha+hora) y fin (hora+fecha) son unidades que no se parten al envolver. */
+.wm__sched-group { display: flex; align-items: center; gap: 4px; min-width: 0; }
+.wm__sched-sep { color: var(--faint); font-weight: 600; }
+.wm__sched-meta { display: flex; align-items: center; gap: 0.6rem; padding-left: 0.1rem; min-height: 1rem; }
+.wm__sched-dur { font-size: 0.7rem; font-weight: 700; color: var(--primary-500); }
+.wm__sched-error { display: inline-flex; align-items: center; gap: 0.25rem; font-size: 0.7rem; font-weight: 600; color: var(--error-500); }
+.wm__sched-link {
+  border: none; background: none; padding: 0; font-family: inherit;
+  font-size: 0.7rem; font-weight: 600; color: var(--primary-500);
+  cursor: pointer; opacity: 0; transition: opacity .15s;
+}
+.wm__row:hover .wm__sched-link, .wm__sched-link:focus-visible { opacity: 1; }
+.wm__sched-link:hover { text-decoration: underline; }
+
+/* Switch de estado */
+.wm__switch {
+  position: relative; width: 38px; height: 21px;
+  border-radius: 999px; border: 1px solid var(--border);
+  background: var(--surface-2); cursor: pointer; padding: 0; flex-shrink: 0;
+  transition: background .18s, border-color .18s;
+}
+.wm__switch-knob {
+  position: absolute; top: 2px; left: 2px;
+  width: 15px; height: 15px; border-radius: 50%;
+  background: var(--muted);
+  transition: transform .18s cubic-bezier(0.2,0.9,0.3,1.2), background .18s;
+}
+.wm__switch--on { background: var(--primary-500); border-color: var(--primary-500); }
+.wm__switch--on .wm__switch-knob { transform: translateX(17px); background: #fff; }
+.wm__switch:disabled { opacity: .5; cursor: not-allowed; }
+
+/* X pequeña dentro del pill de herencia */
+.wm__pill-x {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 15px; height: 15px; padding: 0; border: none; border-radius: 50%;
+  background: rgba(0,0,0,.12); color: inherit; font-size: 11px; cursor: pointer; margin-left: 2px;
+}
+.wm__pill-x:hover:not(:disabled) { background: rgba(0,0,0,.25); }
+.wm__pill-x:disabled { opacity: .4; cursor: not-allowed; }
+
+/* Aviso de sellado */
+.wm__hint {
+  display: flex; align-items: center; gap: 0.4rem;
+  margin: 0 0 0.2rem; padding: 0.5rem 0.65rem; border-radius: 10px;
+  background: color-mix(in srgb, var(--primary-500) 10%, transparent);
+  color: var(--primary-600, #1fa672);
+  font-size: 0.72rem; font-weight: 600; line-height: 1.35;
+}
+.wm__hint i { font-size: 0.95rem; flex-shrink: 0; }
+.wm__hint--muted { background: var(--surface-2); color: var(--muted); }
+
+/* Fila de ID copiable (herencia, discreta) */
+.wm__id-row {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 0.7rem; color: var(--muted); cursor: pointer; min-width: 0;
+  transition: color .15s;
+}
+.wm__id-row:hover { color: var(--text); }
+.wm__id-row > i:first-child { font-size: 0.95rem; width: 1.3rem; text-align: center; flex-shrink: 0; }
+.wm__id-row > i:last-child { font-size: 0.85rem; margin-left: auto; flex-shrink: 0; }
+.wm__id-label { font-weight: 600; flex-shrink: 0; }
+.wm__id-code {
+  font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+  font-size: 0.66rem; background: var(--surface-2);
+  padding: 2px 6px; border-radius: 4px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0;
+}
+
+/* Transiciones del padre <Transition name="ww-modal"> */
+.ww-modal-enter-active { transition: opacity .18s ease; }
+.ww-modal-enter-active .wm { animation: wm-pop-in .18s cubic-bezier(0.2,0.9,0.3,1.2); }
+.ww-modal-leave-active { transition: opacity .15s ease; }
+.ww-modal-leave-active .wm { animation: wm-pop-out .15s ease forwards; }
+.ww-modal-enter-from, .ww-modal-leave-to { opacity: 0; }
+
+@keyframes wm-pop-in {
+  from { transform: scale(0.93) translateY(8px); opacity: 0; }
+  to   { transform: scale(1) translateY(0); opacity: 1; }
+}
+@keyframes wm-pop-out {
+  from { transform: scale(1) translateY(0); opacity: 1; }
+  to   { transform: scale(0.93) translateY(8px); opacity: 0; }
+}
+
+/* Móvil: hoja a pantalla completa */
+@media (max-width: 480px) {
+  .ww-modal-enter-active .wm { animation: wm-sheet-up .22s cubic-bezier(0.2,0.8,0.2,1); }
+  .ww-modal-leave-active .wm { animation: wm-sheet-down .18s ease forwards; }
+}
+@keyframes wm-sheet-up { from { transform: translateY(100%); } to { transform: translateY(0); } }
+@keyframes wm-sheet-down { from { transform: translateY(0); } to { transform: translateY(100%); } }

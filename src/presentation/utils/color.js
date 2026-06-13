@@ -124,7 +124,9 @@ export function resolveCssColor(value) {
   if (typeof document === 'undefined' || !document.body) return parseColor(value)
   if (!_probe) {
     _probe = document.createElement('span')
-    _probe.style.cssText = 'position:absolute;width:0;height:0;visibility:hidden;pointer-events:none'
+    // Estructura en CSS (.css-color-probe en reset.css); aquí solo se asigna el
+    // `color` a medir, que es inherente a la sonda.
+    _probe.className = 'css-color-probe'
     document.body.appendChild(_probe)
   }
   _probe.style.color = ''

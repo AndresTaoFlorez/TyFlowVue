@@ -134,31 +134,61 @@ export const useCalendarStore = defineStore('calendar', () => {
   let _initialLoadDone = false
   const _prefetchInFlight = new Set()
 
-  // ---- Undo stack ----
+  // ---- Undo / Redo stacks ----
   const _undoStack = ref([])
+  const _redoStack = ref([])
   const MAX_UNDO = 30
   const canUndo = computed(() => _undoStack.value.length > 0)
+  const canRedo = computed(() => _redoStack.value.length > 0)
 
-  function _pushUndo(snapshot, undoFn) {
-    _undoStack.value.push({ snapshot, undo: undoFn })
+  // `before` = snapshot previo a la acción; `undoFn` revierte el backend a ese
+  // estado. `redoFn` (opcional) RE-APLICA la acción (lleva el backend al estado
+  // `after`). Las acciones estructurales (crear/borrar/merge/erase) no pasan
+  // redoFn: al recrear, el backend asigna IDs nuevos y el snapshot quedaría
+  // desincronizado (causa típica de "ventanas que desaparecen").
+  function _pushUndo(before, undoFn, redoFn = null) {
+    _undoStack.value.push({ before, after: [...windows.value], undo: undoFn, redo: redoFn })
     if (_undoStack.value.length > MAX_UNDO) _undoStack.value.shift()
+    // Una acción nueva del usuario invalida la pila de rehacer.
+    _redoStack.value = []
+  }
+
+  // Aplica un estado de historial: pinta el optimista, ejecuta la mutación de
+  // backend y refresca. Si el backend falla, revierte al estado opuesto y
+  // RE-LANZA para que la vista avise (nunca se traga el error en silencio).
+  async function _applyHistory(entry, targetWindows, backendFn) {
+    const fallback = targetWindows === entry.before ? entry.after : entry.before
+    windows.value = targetWindows
+    _fetchedRanges.length = 0
+    try {
+      if (backendFn) await backendFn()
+    } catch (e) {
+      windows.value = fallback
+      _fetchedRanges.length = 0
+      await loadWindows()
+      throw e
+    }
+    await loadWindows()
   }
 
   async function undo() {
     if (_undoStack.value.length === 0) return
-    const entry = _undoStack.value.pop()
-    // Optimistic: restore snapshot immediately
-    windows.value = entry.snapshot
-    // Clear all fetched ranges so next navigation re-fetches fresh data
-    _fetchedRanges.length = 0
-    // Backend: reverse the operation
-    try {
-      await entry.undo()
-    } catch {
-      // errors handled silently
-    }
-    // Re-fetch current view (silent — windows.value has snapshot data)
-    await loadWindows()
+    const entry = _undoStack.value[_undoStack.value.length - 1]
+    // Si falla, _applyHistory re-lanza y la entrada queda en la pila (reintentar).
+    await _applyHistory(entry, entry.before, entry.undo)
+    _undoStack.value.pop()
+    _redoStack.value.push(entry)
+    if (_redoStack.value.length > MAX_UNDO) _redoStack.value.shift()
+  }
+
+  async function redo() {
+    if (_redoStack.value.length === 0) return
+    const entry = _redoStack.value[_redoStack.value.length - 1]
+    if (!entry.redo) throw { userMessage: 'Esta acción no se puede rehacer.' }
+    await _applyHistory(entry, entry.after, entry.redo)
+    _redoStack.value.pop()
+    _undoStack.value.push(entry)
+    if (_undoStack.value.length > MAX_UNDO) _undoStack.value.shift()
   }
 
   // ---- Density ----
@@ -888,17 +918,19 @@ export const useCalendarStore = defineStore('calendar', () => {
   }
 
   /**
-   * Crea series RECURRENTES vía POST /work-windows/recurring (una llamada por
-   * combo especialista+app). El backend encadena la herencia automáticamente
-   * (1ª ocurrencia hereda solo si hay ventana previa; 2..N entre sí) y cada
-   * serie es atómica. Si un combo falla, los anteriores quedan creados y el
-   * error reporta el progreso.
+   * Crea series de ventanas como ventanas estándar vía POST /work-windows (el
+   * endpoint /recurring fue eliminado, API_CONTRACT §15). Una llamada por combo;
+   * el backend valida pasado/solape por ítem. Si un combo falla, los anteriores
+   * quedan creados y el error reporta el progreso.
    *
-   * @param {Array<{specialistId, applicationId}>} combos
+   * Nota: las ventanas ya no llevan aplicación ni afinidad — `applicationId` en
+   * los combos y `affinityWeight` se ignoran (se conservan en la firma para no
+   * romper a los llamadores mientras el modal se actualiza).
+   *
+   * @param {Array<{specialistId, applicationId?}>} combos
    * @param {string[]} dates  fechas YYYY-MM-DD (ya expandidas por el modal)
    * @param {string} startTime HH:MM
    * @param {string} endTime HH:MM
-   * @param {number} [affinityWeight=1]
    */
   async function createRecurringWindows(combos, dates, startTime, endTime, affinityWeight = 1) {
     if (!combos.length || !dates.length) throw { userMessage: 'Nada que crear.' }
@@ -929,9 +961,7 @@ export const useCalendarStore = defineStore('calendar', () => {
       for (const combo of combos) {
         const created = await createRecurringWorkWindowsUseCase({
           specialistId: combo.specialistId,
-          applicationId: combo.applicationId,
           slots,
-          affinityWeight,
         })
         // Sellar como cambio local reciente (CRDT LWW) para que un fetch en
         // background no las pise mientras el backend propaga.
@@ -986,9 +1016,12 @@ export const useCalendarStore = defineStore('calendar', () => {
     try {
       const updated = await toggleWorkWindowUseCase(w)
       _replaceWindow(w.id, updated)
-      // Undo = toggle again
+      // Undo = toggle the (now-flipped) window back via PATCH is_active.
+      // Redo = volver a aplicar el toggle original.
       _pushUndo(snapshot, async () => {
-        await WorkWindowRepository.toggleWindows([w.id])
+        await toggleWorkWindowUseCase(updated)
+      }, async () => {
+        await toggleWorkWindowUseCase(w)
       })
       return updated
     } catch (e) {
@@ -998,31 +1031,27 @@ export const useCalendarStore = defineStore('calendar', () => {
 
   async function disinheritWindow(w) {
     if (_isPlaceholder(w.id)) throw { userMessage: 'La ventana aún se está creando, intenta de nuevo.' }
-    const results = await disinheritWorkWindowUseCase([w.id])
-    const result = results[0]
-    if (!result?.success) {
-      throw { userMessage: _translateMessage(result?.message) || 'No se pudo desactivar la herencia.' }
+    // PATCH inherits_on_reopen:false (batch). Returns { updated, failed }.
+    const { updated, failed } = await disinheritWorkWindowUseCase([w.id])
+    if (!updated.length) {
+      throw { userMessage: _translateMessage(failed[0]?.reason) || 'No se pudo desactivar la herencia.' }
     }
-    // Fetch fresh window from backend
-    const fresh = await WorkWindowRepository.fetchById(w.id)
-    _replaceWindow(w.id, fresh)
-    return fresh
+    _replaceWindow(w.id, updated[0])
+    return updated[0]
   }
 
   /**
-   * Activates inheritance on a future window via batch endpoint.
+   * Activates inheritance on a future window via PATCH inherits_on_reopen:true.
    * The DB auto-resolves inherited_from_window_id.
    */
   async function reinheritWindow(w) {
     if (_isPlaceholder(w.id)) throw { userMessage: 'La ventana aún se está creando, intenta de nuevo.' }
-    const results = await inheritWorkWindowUseCase([w.id])
-    const result = results[0]
-    if (!result?.success) {
-      throw { userMessage: _translateMessage(result?.message) || 'No se pudo activar la herencia.' }
+    const { updated, failed } = await inheritWorkWindowUseCase([w.id])
+    if (!updated.length) {
+      throw { userMessage: _translateMessage(failed[0]?.reason) || 'No se pudo activar la herencia.' }
     }
-    const fresh = await WorkWindowRepository.fetchById(w.id)
-    _replaceWindow(w.id, fresh)
-    return fresh
+    _replaceWindow(w.id, updated[0])
+    return updated[0]
   }
 
   async function horizontalExpand(w, direction, dates) {
@@ -1198,6 +1227,8 @@ export const useCalendarStore = defineStore('calendar', () => {
           data: { startTime: orig.startTime, endTime: orig.endTime, targetDate: orig.scheduledDate, endDate: orig.endDate },
         }))
         await batchUpdateWorkWindowsUseCase(undoItems)
+      }, async () => {
+        await batchUpdateWorkWindowsUseCase(items)
       })
     } catch (e) {
       _rollbackOptimistic(originals, optimisticMap)
@@ -1266,6 +1297,8 @@ export const useCalendarStore = defineStore('calendar', () => {
           data: { startTime: orig.startTime, endTime: orig.endTime, targetDate: orig.scheduledDate, endDate: orig.endDate },
         }))
         await batchUpdateWorkWindowsUseCase(undoItems)
+      }, async () => {
+        await batchUpdateWorkWindowsUseCase(items)
       })
     } catch (e) {
       _rollbackOptimistic(originals, optimisticMap)
@@ -1279,35 +1312,38 @@ export const useCalendarStore = defineStore('calendar', () => {
     ids = [...ids].filter(id => !_isPlaceholder(id))
     if (ids.length === 0) throw { userMessage: 'Las ventanas aún se están creando, intenta de nuevo.' }
     const snapshot = [...windows.value]
-    const results = await WorkWindowRepository.toggleWindows(ids)
-    for (const r of results) {
-      const orig = _findOriginal(r.id)
-      if (orig) _replaceWindow(r.id, orig.withToggled(r.is_active))
+    // POST /toggle removed (API_CONTRACT §15): flip is_active per window via PATCH.
+    const items = ids.map(id => _findOriginal(id)).filter(Boolean)
+      .map(orig => ({ window: orig, data: { isActive: !orig.isActive } }))
+    const { updated, failed } = await batchUpdateWorkWindowsUseCase(items)
+    for (const w of updated) _replaceWindow(w.id, w)
+    if (!updated.length && failed.length) {
+      throw { userMessage: _translateMessage(failed[0]?.reason) || 'No se pudo cambiar el estado.' }
     }
-    // Undo = toggle again
+    // Undo = flip the (now-updated) windows back. Redo = volver a aplicar.
     _pushUndo(snapshot, async () => {
-      await WorkWindowRepository.toggleWindows([...ids])
+      await batchUpdateWorkWindowsUseCase(updated.map(w => ({ window: w, data: { isActive: !w.isActive } })))
+    }, async () => {
+      await batchUpdateWorkWindowsUseCase(updated.map(w => ({ window: w, data: { isActive: w.isActive } })))
     })
-    return results
+    return updated
   }
 
   async function batchInherit(ids) {
     ids = ids.filter(id => !_isPlaceholder(id))
     if (ids.length === 0) throw { userMessage: 'Las ventanas aún se están creando, intenta de nuevo.' }
     const snapshot = [...windows.value]
-    const results = await inheritWorkWindowUseCase(ids)
-    const failed = results.filter(r => !r.success)
-    if (failed.length === results.length) {
-      throw { userMessage: _translateMessage(failed[0]?.message) || 'No se pudo activar la herencia.' }
+    // PATCH inherits_on_reopen:true (batch). Returns { updated, failed }.
+    const { updated, failed } = await inheritWorkWindowUseCase(ids)
+    if (!updated.length) {
+      throw { userMessage: _translateMessage(failed[0]?.reason) || 'No se pudo activar la herencia.' }
     }
-    // Refresh affected windows from backend
-    const successIds = results.filter(r => r.success).map(r => r.id)
-    for (const id of successIds) {
-      const fresh = await WorkWindowRepository.fetchById(id)
-      _replaceWindow(id, fresh)
-    }
+    for (const w of updated) _replaceWindow(w.id, w)
+    const successIds = updated.map(w => w.id)
     _pushUndo(snapshot, async () => {
       await disinheritWorkWindowUseCase(successIds)
+    }, async () => {
+      await inheritWorkWindowUseCase(successIds)
     })
     return { successCount: successIds.length, failedCount: failed.length }
   }
@@ -1316,19 +1352,17 @@ export const useCalendarStore = defineStore('calendar', () => {
     ids = ids.filter(id => !_isPlaceholder(id))
     if (ids.length === 0) throw { userMessage: 'Las ventanas aún se están creando, intenta de nuevo.' }
     const snapshot = [...windows.value]
-    const results = await disinheritWorkWindowUseCase(ids)
-    const failed = results.filter(r => !r.success)
-    if (failed.length === results.length) {
-      throw { userMessage: _translateMessage(failed[0]?.message) || 'No se pudo desactivar la herencia.' }
+    // PATCH inherits_on_reopen:false (batch). Returns { updated, failed }.
+    const { updated, failed } = await disinheritWorkWindowUseCase(ids)
+    if (!updated.length) {
+      throw { userMessage: _translateMessage(failed[0]?.reason) || 'No se pudo desactivar la herencia.' }
     }
-    // Refresh affected windows from backend
-    const successIds = results.filter(r => r.success).map(r => r.id)
-    for (const id of successIds) {
-      const fresh = await WorkWindowRepository.fetchById(id)
-      _replaceWindow(id, fresh)
-    }
+    for (const w of updated) _replaceWindow(w.id, w)
+    const successIds = updated.map(w => w.id)
     _pushUndo(snapshot, async () => {
       await inheritWorkWindowUseCase(successIds)
+    }, async () => {
+      await disinheritWorkWindowUseCase(successIds)
     })
     return { successCount: successIds.length, failedCount: failed.length }
   }
@@ -1524,11 +1558,13 @@ export const useCalendarStore = defineStore('calendar', () => {
     } else {
       _replaceWindow(w.id, updated)
     }
-    // Undo = update back to original values
+    // Undo = update back to original values. Redo = re-aplicar el payload.
     _pushUndo(snapshot, async () => {
       const undoPayload = { startTime: w.startTime, endTime: w.endTime }
       if (payload.targetDate) undoPayload.targetDate = w.scheduledDate
       await updateWorkWindowUseCase(w, undoPayload)
+    }, async () => {
+      await updateWorkWindowUseCase(w, payload)
     })
     return updated
   }
@@ -1563,12 +1599,14 @@ export const useCalendarStore = defineStore('calendar', () => {
     _replaceWindow(w.id, optimistic)
     try {
       await _enqueueMutation(w.id, () => updateWorkWindowUseCase(original, { startTime, endTime }))
-      // Undo = resize back
+      // Undo = resize back. Redo = re-aplicar el nuevo tamaño.
       _pushUndo(snapshot, async () => {
         await updateWorkWindowUseCase(original, {
           startTime: original.startTime,
           endTime: original.endTime,
         })
+      }, async () => {
+        await updateWorkWindowUseCase(original, { startTime, endTime })
       })
     } catch (e) {
       // Revertir SOLO si nuestro optimista sigue siendo el vigente; si hay un
@@ -1653,6 +1691,8 @@ export const useCalendarStore = defineStore('calendar', () => {
           data: { startTime: orig.startTime, endTime: orig.endTime, targetDate: orig.scheduledDate, endDate: orig.endDate },
         }))
         await batchUpdateWorkWindowsUseCase(undoItems)
+      }, async () => {
+        await batchUpdateWorkWindowsUseCase(items)
       })
     } catch (e) {
       _rollbackOptimistic(originals, optimisticMap)
@@ -1764,6 +1804,8 @@ export const useCalendarStore = defineStore('calendar', () => {
           data: { startTime: orig.startTime, endTime: orig.endTime, targetDate: orig.scheduledDate, endDate: orig.endDate },
         }))
         await batchUpdateWorkWindowsUseCase(undoItems)
+      }, async () => {
+        await batchUpdateWorkWindowsUseCase(items)
       })
     } catch (e) {
       _rollbackOptimistic(originals, optimisticMap)
@@ -1955,9 +1997,11 @@ export const useCalendarStore = defineStore('calendar', () => {
     loadWindows,
     forceReload,
 
-    // Undo
+    // Undo / Redo
     canUndo,
     undo,
+    canRedo,
+    redo,
 
     // Filters
     hiddenSpecs,

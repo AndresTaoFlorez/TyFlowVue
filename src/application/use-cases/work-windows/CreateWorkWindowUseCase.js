@@ -12,7 +12,6 @@ export async function createWorkWindowUseCase(windowsData) {
   const normalized = items.map((item, i) => {
     const label = items.length > 1 ? ` (ventana ${i + 1})` : ''
     if (!item.specialistId) throw new WorkWindowError(`Especialista requerido${label}.`)
-    if (!item.applicationId) throw new WorkWindowError(`Aplicación requerida${label}.`)
     if (!item.startTime) throw new WorkWindowError(`Hora de inicio requerida${label}.`)
     if (!item.endTime) throw new WorkWindowError(`Hora de fin requerida${label}.`)
 
@@ -47,13 +46,12 @@ export async function createWorkWindowUseCase(windowsData) {
       }
     }
 
+    // Work windows are availability only — no application / affinity / inherit on
+    // create (API_CONTRACT §15).
     return {
       specialistId: item.specialistId,
-      applicationId: item.applicationId,
       startsAt: WorkWindow.toTimestampTz(date, item.startTime),
       endsAt: WorkWindow.toTimestampTz(endDateVal, item.endTime),
-      inheritsOnReopen: item.inheritsOnReopen ?? false,
-      affinityWeight: item.affinityWeight ?? null,
     }
   })
 

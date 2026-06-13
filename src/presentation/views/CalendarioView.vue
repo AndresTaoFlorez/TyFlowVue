@@ -33,7 +33,7 @@ const {
   calView, weekDates, monthDates, currentMonth, weekLabel,
   loading, windowsFiltradas, monthOffset,
   specialistsConVentana,
-  isMobile, canUndo, density,
+  isMobile, canUndo, canRedo, density,
 } = storeToRefs(calStore)
 
 // ---- Date picker ----
@@ -275,24 +275,9 @@ async function handleCtxAction(action) {
     const group = target
     switch (action) {
       case 'view-group': selectedGroup.value = group; break
-      case 'add-to-group': {
-        const firstW = group.windows[0]
-        const startMins = Math.floor(group.startHour) * 60 + Math.round((group.startHour % 1) * 60)
-        const endMins = Math.floor(group.endHour) * 60 + Math.round((group.endHour % 1) * 60)
-        const dur = endMins - startMins
-        let adjustedStart = startMins
-        if (firstW.scheduledDate === todayISOLocal() && startMins < nextGridSlotMins()) {
-          adjustedStart = nextGridSlotMins()
-        }
-        const adjustedEnd = Math.min(adjustedStart + dur, 1440)
-        prefillData.value = {
-          dates: [firstW.scheduledDate],
-          startTime: fmtTimeFromMins(adjustedStart),
-          endTime: fmtTimeFromMins(adjustedEnd),
-        }
-        mostrarCrear.value = true
+      case 'add-to-group':
+        addSpecialistToGroup(group)
         break
-      }
       case 'copy-group':
         clipboard.value = { type: 'group', data: group.windows, cut: false }
         cutWindowIds.value = new Set()
@@ -442,11 +427,11 @@ const handleCreate = async (data) => {
 }
 
 // ---- Crear series recurrentes (asignación masiva) ----
-const handleCreateRecurring = async ({ combos, dates, startTime, endTime, affinityWeight }) => {
+const handleCreateRecurring = async ({ combos, dates, startTime, endTime }) => {
   creando.value = true
   errorCrear.value = ''
   try {
-    const created = await calStore.createRecurringWindows(combos, dates, startTime, endTime, affinityWeight)
+    const created = await calStore.createRecurringWindows(combos, dates, startTime, endTime)
     mostrarBulk.value = false
     showToast(created.length === 1 ? 'Ventana de trabajo creada.' : `${created.length} ventanas de trabajo creadas.`)
   } catch (e) {
@@ -797,9 +782,25 @@ const handleModalCut = (w) => {
   cutWindowIds.value = new Set([w.id])
   showToast('Ventana cortada.')
 }
-const handleModalAddSpecialist = (w) => {
-  prefillData.value = { dates: [w.scheduledDate], startTime: w.startTime, endTime: w.endTime, applicationId: w.applicationId }
-  closeWindowModal()
+// Sumar un especialista a un turno compartido (grupo). Vive en el panel de
+// grupo y en su menú contextual — una ventana individual ya no ofrece esto.
+const addSpecialistToGroup = (group) => {
+  const firstW = group.windows[0]
+  const startMins = Math.floor(group.startHour) * 60 + Math.round((group.startHour % 1) * 60)
+  const endMins = Math.floor(group.endHour) * 60 + Math.round((group.endHour % 1) * 60)
+  const dur = endMins - startMins
+  let adjustedStart = startMins
+  if (firstW.scheduledDate === todayISOLocal() && startMins < nextGridSlotMins()) {
+    adjustedStart = nextGridSlotMins()
+  }
+  const adjustedEnd = Math.min(adjustedStart + dur, 1440)
+  prefillData.value = {
+    dates: [firstW.scheduledDate],
+    startTime: fmtTimeFromMins(adjustedStart),
+    endTime: fmtTimeFromMins(adjustedEnd),
+  }
+  selectedGroup.value = null
+  returnToGroup.value = null
   mostrarCrear.value = true
 }
 const handleModalPaste = async (w) => {
@@ -813,12 +814,22 @@ function onResize() { calStore.updateMobile(window.innerWidth < BP_MOBILE) }
 // ---- Keyboard shortcuts ----
 const onKeydown = (e) => {
   // Ctrl+Z: undo
-  if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && !e.shiftKey) {
     e.preventDefault()
     if (calStore.canUndo) {
       calStore.undo()
         .then(() => showToast('Acción deshecha.'))
-        .catch(() => showToast('Error al deshacer.', 'error'))
+        .catch((err) => showToast(err?.userMessage || 'Error al deshacer.', 'error'))
+    }
+    return
+  }
+  // Ctrl+Shift+Z o Ctrl+Y: redo
+  if ((e.ctrlKey || e.metaKey) && ((e.key.toLowerCase() === 'z' && e.shiftKey) || e.key.toLowerCase() === 'y')) {
+    e.preventDefault()
+    if (calStore.canRedo) {
+      calStore.redo()
+        .then(() => showToast('Acción rehecha.'))
+        .catch((err) => showToast(err?.userMessage || 'Error al rehacer.', 'error'))
     }
     return
   }
@@ -1033,9 +1044,16 @@ onUnmounted(() => {
 
         <!-- Undo button (hidden on mobile via CSS) -->
         <button v-if="authStore.isAdmin" class="tb-icon toolbar__undo-btn" :disabled="!canUndo"
-          @click="calStore.undo().then(() => showToast('Acción deshecha.')).catch(() => showToast('Error al deshacer.', 'error'))"
+          @click="calStore.undo().then(() => showToast('Acción deshecha.')).catch((err) => showToast(err?.userMessage || 'Error al deshacer.', 'error'))"
           title="Deshacer (Ctrl+Z)">
           <i class='bx bx-undo'></i>
+        </button>
+
+        <!-- Redo button (hidden on mobile via CSS) -->
+        <button v-if="authStore.isAdmin" class="tb-icon toolbar__undo-btn" :disabled="!canRedo"
+          @click="calStore.redo().then(() => showToast('Acción rehecha.')).catch((err) => showToast(err?.userMessage || 'Error al rehacer.', 'error'))"
+          title="Rehacer (Ctrl+Shift+Z)">
+          <i class='bx bx-redo'></i>
         </button>
 
         <!-- Toggle de herramientas (móvil; los filtros viven en CalSidebar) -->
@@ -1103,8 +1121,6 @@ onUnmounted(() => {
     <!-- Modal detalle -->
     <Transition name="ww-modal">
       <WorkWindowModal v-if="selectedWindow" :window="selectedWindow" :specialist-name="calStore.specName(selectedWindow)"
-        :application-name="calStore.appName(selectedWindow)"
-        :app-color="calStore.findApp(selectedWindow.applicationId)?.color || ''"
         :loading="modalLoading"
         :show-back-button="!!returnToGroup"
         :has-clipboard="!!clipboard"
@@ -1112,27 +1128,29 @@ onUnmounted(() => {
         @delete="handleDelete" @update="handleUpdate" @toggle="handleToggle"
         @disinherit="handleDisinherit" @reinherit="handleReinherit"
         @copy="handleModalCopy" @cut="handleModalCut"
-        @add-specialist="handleModalAddSpecialist" @paste="handleModalPaste" />
+        @paste="handleModalPaste" />
     </Transition>
 
     <!-- Panel grupo -->
     <WindowGroupPanel v-if="selectedGroup" :group="selectedGroup" :specialists="userStore.users"
-      :applications="userStore.applications" :all-windows="calStore.windows" :loading="modalLoading" :cut-window-ids="cutWindowIds"
+      :all-windows="calStore.windows" :loading="modalLoading" :cut-window-ids="cutWindowIds"
       @close="selectedGroup = null"
       @select="onGroupSelect" @delete="handleDelete"
       @delete-group="handleDeleteGroup" @toggle="handleToggle" @toggle-group="handleToggleGroup"
       @copy="(w) => { clipboard = { type: 'window', data: w, cut: false }; showToast('Ventana copiada.') }"
       @cut="(w) => { clipboard = { type: 'window', data: w, cut: true }; cutWindowIds = new Set([w.id]); showToast('Ventana cortada.') }"
-      @disinherit="handleDisinherit" @reinherit="handleReinherit" />
+      @add-specialist="addSpecialistToGroup"
+      @disinherit="handleDisinherit" @reinherit="handleReinherit"
+      @context="onWindowContext" />
 
     <!-- Modal crear -->
     <CreateWorkWindowModal :visible="mostrarCrear" :creating="creando" :error="errorCrear"
-      :specialists="specialistsConVentana" :applications="userStore.applications" :prefill="prefillData"
+      :specialists="specialistsConVentana" :prefill="prefillData"
       @close="mostrarCrear = false; errorCrear = ''; prefillData = null" @create="handleCreate" />
 
-    <!-- Modal asignación masiva (series recurrentes vía POST /work-windows/recurring) -->
+    <!-- Modal asignación masiva (series por especialista vía POST /work-windows) -->
     <BulkAssignModal :visible="mostrarBulk" :creating="creando" :error="errorCrear"
-      :specialists="specialistsConVentana" :applications="userStore.applications"
+      :specialists="specialistsConVentana"
       @close="mostrarBulk = false; errorCrear = ''" @create="handleCreateRecurring" />
 
     <!-- Mobile FAB -->

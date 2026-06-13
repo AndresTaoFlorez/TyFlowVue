@@ -1,0 +1,302 @@
+/* Estilos de WindowBlock.vue (extraídos del SFC — CSS puro, sin scoped). */
+
+.wb {
+  position: absolute;
+  /* Rounded suave estilo Google Calendar. */
+  border-radius: var(--wb-radius, 7px);
+  /* Gutter derecho responsive (ver media query al final). */
+  --wb-gap: 6px;
+  padding: 0.3rem 0.5rem;
+  cursor: pointer;
+  overflow: hidden;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  transition: transform 0.1s ease, box-shadow 0.15s ease, filter 0.15s ease;
+  container-type: size;
+}
+
+/* Pantallas pequeñas: gutter mínimo + sombra sutil a la derecha (borde
+   superpuesto) para que las columnas finas sigan distinguiéndose. */
+@media (max-width: 768px) {
+  .wb { --wb-gap: 2px; }
+  .wb::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: 3px;
+    background: linear-gradient(to right, transparent, rgba(15, 23, 42, 0.14));
+    border-top-right-radius: inherit;
+    border-bottom-right-radius: inherit;
+    pointer-events: none;
+  }
+}
+
+.wb:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+  filter: brightness(1.15);
+  z-index: 10;
+}
+
+.wb:active {
+  transform: scale(0.99);
+}
+
+/* ── Open — app-color surface computed by utils/color.js (theme-aware) ── */
+.wb--open {
+  background: var(--app-bg);
+}
+
+.wb--open .wb__name {
+  color: var(--app-text-color);
+}
+
+.wb--open .wb__time {
+  color: var(--app-text-color);
+  opacity: 0.85;
+}
+
+/* ── Head (avatar + name row) ── */
+.wb__head {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.wb__avatar {
+  width: calc(var(--wb-fs, 0.8rem) * 1.35);
+  height: calc(var(--wb-fs, 0.8rem) * 1.35);
+  min-width: calc(var(--wb-fs, 0.8rem) * 1.35);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: calc(var(--wb-fs, 0.54rem) * 0.6);
+  font-weight: 600;
+  color: white;
+  background: var(--app-color);
+  flex-shrink: 0;
+  line-height: 1;
+  overflow: hidden;
+}
+
+/* Foto del especialista (cacheada por el navegador; URL estable). */
+.wb__avatar-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 50%;
+}
+
+.wb__avatar-emoji {
+  font-size: 0.85em;
+  line-height: 1;
+  display: block;
+}
+
+/* ── Name ── */
+.wb__name {
+  font-size: var(--wb-fs, clamp(0.5rem, 22cqh, 0.85rem));
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.3;
+  display: flex;
+  align-items: center;
+  gap: 0.15rem;
+  min-width: 0;
+  flex: 1;
+}
+
+.wb__inherit-icon {
+  font-size: var(--wb-fs, clamp(0.5rem, 22cqh, 0.85rem));
+  opacity: 0.85;
+  flex-shrink: 0;
+}
+
+/* ── Time ── */
+.wb__time {
+  font-size: calc(var(--wb-fs, 0.7rem) * 0.82);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+/* ── App ── */
+.wb__app {
+  font-size: calc(var(--wb-fs, 0.62rem) * 0.74);
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--app-tag-text);
+  background: color-mix(in srgb, var(--app-color) 26%, var(--wb-surface));
+  padding: 0.05rem 0.4rem 0.25rem;
+  border-radius: 3px;
+  width: fit-content;
+  max-width: 100%;
+}
+
+/* ── Inherit label ── */
+.wb__inherit-label {
+  font-size: calc(var(--wb-fs, 0.6rem) * 0.72);
+  font-weight: 500;
+  color: var(--app-text-color);
+  opacity: 0.55;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: auto;
+  line-height: 1;
+  letter-spacing: 0.01em;
+}
+
+/* ── Resize handles ── */
+.wb__handle {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 8px;
+  cursor: ns-resize;
+  z-index: 3;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.wb:hover .wb__handle {
+  opacity: 1;
+}
+
+.wb__handle::after {
+  content: '';
+  width: 24px;
+  height: 3px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.5);
+}
+
+.wb__handle--top {
+  top: 0;
+}
+
+.wb__handle--bottom {
+  bottom: 0;
+}
+
+.wb__handle--left,
+.wb__handle--right {
+  top: 0;
+  bottom: 0;
+  left: auto;
+  right: auto;
+  width: 8px;
+  height: auto;
+  cursor: ew-resize;
+  flex-direction: column;
+}
+
+.wb__handle--left {
+  left: 0;
+}
+
+.wb__handle--right {
+  right: 0;
+}
+
+.wb__handle--left::after,
+.wb__handle--right::after {
+  width: 3px;
+  height: 24px;
+}
+
+/* ── Selected ── */
+/* Doble anillo (blanco + azul fuerte) dibujado POR DENTRO para que resalte sobre
+   cualquier color de ventana y no lo recorten las columnas. En light mode el
+   azul claro anterior + brightness se perdía; ahora usa azul saturado + anillo
+   blanco de separación. */
+.wb--selected {
+  outline: 3px solid #1d4ed8;
+  outline-offset: -3px;
+  box-shadow: inset 0 0 0 2px #ffffff;
+  filter: saturate(1.2);
+  z-index: 5;
+}
+
+/* ── Cut ── */
+.wb--cut {
+  opacity: 0.4;
+  filter: grayscale(0.5);
+}
+
+/* ── Inactive — muted, hatched ── */
+.wb--inactive {
+  background: repeating-linear-gradient(-45deg,
+      color-mix(in srgb, var(--app-color) 12%, var(--wb-surface)),
+      color-mix(in srgb, var(--app-color) 12%, var(--wb-surface)) 3px,
+      color-mix(in srgb, var(--app-color) 6%, var(--wb-surface)) 3px,
+      color-mix(in srgb, var(--app-color) 6%, var(--wb-surface)) 6px);
+  opacity: 0.6;
+}
+
+.wb--inactive .wb__name {
+  color: var(--text-secondary);
+  opacity: 0.8;
+}
+
+.wb--inactive .wb__avatar {
+  opacity: 0.6;
+}
+
+/* ── Compact (mobile week) ── */
+.wb--compact .wb__handle {
+  display: none;
+}
+
+.wb--compact {
+  padding: 2px 1px;
+  border-radius: 0;
+  gap: 0;
+  align-items: center;
+  justify-content: center;
+}
+
+.wb__compact-initials {
+  font-size: clamp(0.4rem, min(55cqh, 70cqw), 0.8rem);
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.9);
+  text-align: center;
+  line-height: 1;
+  overflow: hidden;
+}
+
+.wb__compact-time {
+  font-size: clamp(0.35rem, min(35cqh, 60cqw), 0.65rem);
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.7);
+  text-align: center;
+  line-height: 1;
+  overflow: hidden;
+}
+
+.wb--compact.wb--open {
+  background: color-mix(in srgb, var(--app-color) 50%, var(--wb-surface));
+}
+
+.wb--compact:hover {
+  transform: none;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.wb--compact.wb--inactive {
+  background: color-mix(in srgb, var(--app-color) 15%, var(--wb-surface));
+  opacity: 0.5;
+}

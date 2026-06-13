@@ -23,7 +23,7 @@ export async function batchUpdateWorkWindowsUseCase(items) {
     if (data.endTime != null || data.targetDate != null || data.endDate != null) fields.endsAt = WorkWindow.toTimestampTz(endDate, endTime)
     if (data.note != null) fields.note = data.note
     if (data.inheritsOnReopen != null) fields.inheritsOnReopen = data.inheritsOnReopen
-    if (data.affinityWeight !== undefined) fields.affinityWeight = data.affinityWeight
+    if (data.isActive !== undefined) fields.isActive = data.isActive
     return fields
   })
 

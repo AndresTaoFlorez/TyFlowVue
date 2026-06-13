@@ -41,22 +41,53 @@ export class User {
     const rawAssignments = sp?.application_assignments
       ?? (Array.isArray(application_assignments) ? application_assignments : [])
 
-    // Normalize each assignment so downstream code can read flat fields
-    // (support_level_id / support_level_name) regardless of nesting, and so the
-    // embedded support_categories (with their is_assigned flag) travel with the
-    // user — no separate fetch of categories/exclusions is needed.
-    this.applicationAssignments = rawAssignments.map(a => {
-      const lvl = a.support_level || {}
-      return {
-        ...a,
-        application_id: a.application_id,
-        application_name: a.application_name ?? null,
-        application_theme: a.application_theme ?? null,
-        support_level_id: a.support_level_id ?? lvl.support_levels_id ?? null,
-        support_level_name: a.support_level_name ?? lvl.support_level_name ?? null,
-        support_categories: Array.isArray(a.support_categories) ? a.support_categories : [],
+    // Normalize assignments into FLAT (application, support_level) rows so
+    // downstream code can read flat fields (support_level_id / support_level_name)
+    // and the whitelisted categories travel with the user — no separate fetch.
+    //
+    // Two input shapes are handled:
+    //  - New API (2026-06-12): each application carries `support_levels[]`, and a
+    //    specialist may attend MULTIPLE levels per app. Each level lists the
+    //    `categories[]` the specialist is whitelisted for, with `affinity_weight`.
+    //    A category present in the tree is attended → flagged `is_assigned: true`.
+    //    There is no `is_assigned: false` / exclusion entry anymore.
+    //  - Legacy / cached shape: flat `support_level` + `support_categories` (kept
+    //    so the withLocalUpdate round-trip and old caches still hydrate).
+    const flat = []
+    for (const a of rawAssignments) {
+      if (Array.isArray(a.support_levels)) {
+        for (const lvl of a.support_levels) {
+          flat.push({
+            application_id: a.application_id,
+            application_name: a.application_name ?? null,
+            application_theme: a.application_theme ?? null,
+            support_level_id: lvl.support_level_id ?? null,
+            support_level_name: lvl.support_level_name ?? null,
+            support_level_description: lvl.support_level_description ?? null,
+            support_categories: (Array.isArray(lvl.categories) ? lvl.categories : []).map(c => ({
+              ...c,
+              id: c.id,
+              name: c.name ?? null,
+              description: c.description ?? null,
+              affinity_weight: c.affinity_weight ?? 1.0,
+              is_assigned: true, // whitelist: present === attended
+            })),
+          })
+        }
+      } else {
+        const lvl = a.support_level || {}
+        flat.push({
+          ...a,
+          application_id: a.application_id,
+          application_name: a.application_name ?? null,
+          application_theme: a.application_theme ?? null,
+          support_level_id: a.support_level_id ?? lvl.support_levels_id ?? null,
+          support_level_name: a.support_level_name ?? lvl.support_level_name ?? null,
+          support_categories: Array.isArray(a.support_categories) ? a.support_categories : [],
+        })
       }
-    })
+    }
+    this.applicationAssignments = flat
 
     // Derive supportLevelNames from assignments (replaces the old flat array)
     if (sp) {

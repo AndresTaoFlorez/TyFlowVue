@@ -1,7 +1,7 @@
 import { ref, watch } from 'vue'
 import { useUserStore } from '@/presentation/stores/useUserStore'
 import { fetchApplicationSupportLevelsUseCase } from '@/application/use-cases/applications/FetchApplicationSupportLevelsUseCase'
-import { fetchAppLevelCategoriesUseCase } from '@/application/use-cases/applications/FetchAppLevelCategoriesUseCase'
+import { fetchAppSupportLevelCategoriesUseCase } from '@/application/use-cases/applications/FetchAppSupportLevelCategoriesUseCase'
 
 // Module-level caches — survive composable unmount, shared across all instances
 const _levelsCache = new Map()     // appId → Level[]
@@ -62,7 +62,7 @@ export function useCascadingSelects(applicationIdRef, supportLevelIdRef, support
 
     loadingCategories.value = true
     try {
-      const pivots = await fetchAppLevelCategoriesUseCase(appId, levelId)
+      const pivots = await fetchAppSupportLevelCategoriesUseCase(appId, levelId)
       const ids = pivots.map(p => p.support_category_id)
       const cats = (userStore.supportCategories ?? []).filter(c => ids.includes(c.id))
       _catsCache.set(cacheKey, cats)

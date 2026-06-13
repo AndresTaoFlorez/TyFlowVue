@@ -2,6 +2,17 @@
    Reset global
    ========================================= */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+/* Sonda oculta para resolver colores CSS (var()/color-mix()) vía
+   getComputedStyle — ver utils/color.js. La estructura vive aquí; solo el
+   `color` a medir se asigna inline (es inherente a la medición). */
+.css-color-probe {
+  position: absolute;
+  width: 0;
+  height: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
 html, body { height: 100%; }
 ul, ol { list-style: none; }
 a { text-decoration: none; color: inherit; }

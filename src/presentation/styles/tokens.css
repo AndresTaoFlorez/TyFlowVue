@@ -136,11 +136,13 @@
   --cal-slot-h: 24px;
   --cal-gutter-w: 4rem;
 
-  /* Calendar color system (light defaults) — rejilla de un solo fondo */
-  --cal-shell: #ffffff;
-  --cal-header: #ffffff;
+  /* Calendar color system (light defaults) — rejilla de un solo fondo.
+     --cal-col es la ÚNICA fuente del tono base; shell/header/alt lo heredan
+     para poder cambiarlos todos con una sola variable. */
   --cal-col: #ffffff;
-  --cal-col-alt: #ffffff;
+  --cal-shell: var(--cal-col);
+  --cal-header: var(--cal-col);
+  --cal-col-alt: var(--cal-col);
   --cal-col-other: #f4f5f7;
   --cal-border: #e6e8ee;
   --cal-grid: #eceef3;
@@ -151,7 +153,7 @@
   --cal-today-tint: rgba(42,199,143,0.045);
   --cal-hover: rgba(0,0,0,0.03);
   --cal-overlay: rgba(0,0,0,0.06);
-  --block-mix-bg: #ffffff;
+  --block-mix-bg: var(--cal-col);
   --block-text-light: 0%;
   --block-name: 0.82rem;
   --block-meta: 0.68rem;
@@ -279,11 +281,12 @@
   --priority-urgent-bg: #7F1D1D;
 
   /* Calendar color system (dark) — cuadrilla de UN solo tono profundo,
-     el MISMO del shell (--app-bg) para un fondo continuo */
-  --cal-shell: #0e1119;
-  --cal-header: #0e1119;
+     el MISMO del shell (--app-bg) para un fondo continuo. --cal-col es la
+     única fuente; shell/header/alt lo heredan (cambio en un solo lugar). */
   --cal-col: #0e1119;
-  --cal-col-alt: #0e1119;
+  --cal-shell: var(--cal-col);
+  --cal-header: var(--cal-col);
+  --cal-col-alt: var(--cal-col);
   --cal-col-other: #0a0d14;
   --cal-border: #1b2233;
   --cal-grid: #161d2b;
@@ -294,7 +297,7 @@
   --cal-today-tint: rgba(42,199,143,0.05);
   --cal-hover: rgba(255,255,255,0.035);
   --cal-overlay: rgba(255,255,255,0.08);
-  --block-mix-bg: #0e1119;
+  --block-mix-bg: var(--cal-col);
   --block-text-light: 78%;
   --inactive-fill: rgba(120, 128, 150, 0.10);
   --inactive-stripe: rgba(120, 128, 150, 0.16);

@@ -1,4 +1,5 @@
 <script setup>
+import '@/presentation/styles/calendar/WeekCalendar.css'
 import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import CalendarPage from '@/presentation/components/calendar/CalendarPage.vue'
 import { useCalendarStore } from '@/presentation/stores/useCalendarStore'
@@ -134,34 +135,3 @@ watch(activeOffset, (n, o) => {
     </div>
   </div>
 </template>
-
-<style scoped>
-.cal-pager {
-  flex: 1;
-  min-height: 0;
-  position: relative;
-  overflow: hidden;
-}
-
-.cal-pager__track {
-  display: flex;
-  height: 100%;
-  width: 300%;
-  /* GSAP owns the transform (xPercent). No CSS transform here — it would be
-     read as a baseline and compound with GSAP's xPercent (double offset). */
-  will-change: transform;
-}
-
-.cal-pager__page {
-  flex: 0 0 33.3333%;
-  min-width: 0;
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-}
-
-/* Adjacent (prev/next) pages are display-only during the slide. */
-.cal-pager__page--side {
-  pointer-events: none;
-}
-</style>

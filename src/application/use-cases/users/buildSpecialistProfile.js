@@ -1,14 +1,15 @@
 /**
- * Build the nested `specialist_profile` payload the /users endpoints expect.
+ * Build the nested `specialist_profile` payload the /users endpoints expect
+ * (API_CONTRACT.md §3 "Write requests").
  *
- * The backend replaces a specialist's app-levels AND category exclusions from
- * this single structure: every (application, level) assignment carries its
- * `support_categories` with an `is_assigned` flag — categories flagged
- * `is_assigned: false` become exclusions. This replaces the old separate
- * `application_levels` array + per-specialist exclusion endpoints.
+ * The backend replaces a specialist's whole competency WHITELIST from this single
+ * structure: every (application, level) assignment carries its `support_categories`
+ * with an `is_assigned` flag (`true` = whitelisted) and an `affinity_weight`
+ * (default `1.0`). Categories flagged `is_assigned: false` are simply omitted from
+ * the whitelist — there is no separate exclusion/blacklist concept anymore.
  *
  * @param {Array<{application_id?, applicationId?, support_level_id?, supportLevelId?}>} applicationLevels
- * @param {Object<string, Array<{id, is_assigned}>>} categoryAssignments — keyed by `${app}_${level}`
+ * @param {Object<string, Array<{id, is_assigned, affinity_weight?}>>} categoryAssignments — keyed by `${app}_${level}`
  * @returns {{application_assignments: Array}|null} null when there are no assignments (section left untouched)
  */
 export function buildSpecialistProfile(applicationLevels, categoryAssignments = {}) {
@@ -21,7 +22,11 @@ export function buildSpecialistProfile(applicationLevels, categoryAssignments = 
     return {
       application_id: applicationId,
       support_level: { support_levels_id: supportLevelId },
-      support_categories: cats.map(c => ({ id: c.id, is_assigned: c.is_assigned !== false })),
+      support_categories: cats.map(c => ({
+        id: c.id,
+        is_assigned: c.is_assigned !== false,
+        affinity_weight: c.affinity_weight ?? 1.0,
+      })),
     }
   })
 

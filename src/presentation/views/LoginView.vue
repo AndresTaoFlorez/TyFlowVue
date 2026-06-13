@@ -174,4 +174,4 @@ const handleSubmit = async () => {
   </main>
 </template>
 
-<style scoped src="@/styles/views/LoginView.css"></style>
+<style scoped src="@/presentation/styles/views/LoginView.css"></style>

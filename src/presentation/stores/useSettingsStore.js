@@ -3,7 +3,7 @@ import { ref, computed } from 'vue'
 import { SupportLevelRepository } from '@/infrastructure/repositories/SupportLevelRepository'
 import { SupportCategoryRepository } from '@/infrastructure/repositories/SupportCategoryRepository'
 import { ApplicationRepository } from '@/infrastructure/repositories/ApplicationRepository'
-import { AppLevelCategoryRepository } from '@/infrastructure/repositories/AppLevelCategoryRepository'
+import { AppSupportLevelCategoryRepository } from '@/infrastructure/repositories/AppSupportLevelCategoryRepository'
 import { useUserStore } from '@/presentation/stores/useUserStore'
 
 export const useSettingsStore = defineStore('settings', () => {
@@ -102,7 +102,7 @@ export const useSettingsStore = defineStore('settings', () => {
     if (!levelId || !selectedAppId.value) { levelCategoryPivots.value = []; return }
     loadingPivots.value = true
     try {
-      levelCategoryPivots.value = await AppLevelCategoryRepository.fetchAll(selectedAppId.value, levelId)
+      levelCategoryPivots.value = await AppSupportLevelCategoryRepository.fetchAll(selectedAppId.value, levelId)
     } catch (e) {
       error.value = e.message || 'Error cargando categorías del nivel'
       levelCategoryPivots.value = []
@@ -114,7 +114,7 @@ export const useSettingsStore = defineStore('settings', () => {
   async function syncLevelCategories(levelId, categoryIds) {
     error.value = null
     try {
-      levelCategoryPivots.value = await AppLevelCategoryRepository.sync(selectedAppId.value, levelId, categoryIds)
+      levelCategoryPivots.value = await AppSupportLevelCategoryRepository.sync(selectedAppId.value, levelId, categoryIds)
     } catch (e) {
       error.value = e.message || 'Error sincronizando categorías'
       throw e

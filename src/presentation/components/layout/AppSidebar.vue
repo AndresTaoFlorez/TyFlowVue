@@ -1,5 +1,5 @@
 <script setup>
-import '@/styles/components/layout/sidebar.css'
+import '@/presentation/styles/components/layout/sidebar.css'
 import { ref, onMounted, onUnmounted } from 'vue'
 import { useAuthStore } from '@/presentation/stores/useAuthStore'
 import { usePreferencesStore } from '@/presentation/stores/usePreferencesStore'

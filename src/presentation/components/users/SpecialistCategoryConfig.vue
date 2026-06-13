@@ -1,6 +1,6 @@
 <script setup>
 import { ref, watch, computed, onMounted, onUnmounted } from 'vue'
-import { AppLevelCategoryRepository } from '@/infrastructure/repositories/AppLevelCategoryRepository'
+import { AppSupportLevelCategoryRepository } from '@/infrastructure/repositories/AppSupportLevelCategoryRepository'
 import { useUserStore } from '@/presentation/stores/useUserStore'
 
 const props = defineProps({
@@ -57,6 +57,7 @@ watch(() => props.applicationLevels, async (pairs) => {
         name: c.name,
         description: c.description ?? null,
         is_assigned: c.is_assigned !== false,
+        affinity_weight: c.affinity_weight ?? 1.0,
       }))
       snapshotInitial(k)
       continue
@@ -65,11 +66,11 @@ watch(() => props.applicationLevels, async (pairs) => {
     // Newly added pair: fetch the available categories (all enabled by default).
     loadingPair.value[k] = true
     try {
-      const pivots = await AppLevelCategoryRepository.fetchAll(application_id, support_level_id)
+      const pivots = await AppSupportLevelCategoryRepository.fetchAll(application_id, support_level_id)
       const catIds = pivots.map(p => p.support_category_id)
       catsByPair.value[k] = (userStore.supportCategories ?? [])
         .filter(c => catIds.includes(c.id))
-        .map(c => ({ id: c.id, name: c.name, description: c.description ?? null, is_assigned: true }))
+        .map(c => ({ id: c.id, name: c.name, description: c.description ?? null, is_assigned: true, affinity_weight: 1.0 }))
     } catch {
       catsByPair.value[k] = []
     } finally {
@@ -163,7 +164,7 @@ function getCategoryAssignments() {
   const out = {}
   for (const { application_id, support_level_id } of props.applicationLevels) {
     const k = pairKey(application_id, support_level_id)
-    out[k] = (catsByPair.value[k] ?? []).map(c => ({ id: c.id, is_assigned: c.is_assigned }))
+    out[k] = (catsByPair.value[k] ?? []).map(c => ({ id: c.id, is_assigned: c.is_assigned, affinity_weight: c.affinity_weight ?? 1.0 }))
   }
   return out
 }

@@ -1,0 +1,81 @@
+/* Estilos de BulkAssignModal.vue (extraídos del SFC — CSS puro, sin scoped). */
+/* ---- Header (icon-badge, cohesivo con los otros modales) ---- */
+.bam__head {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  padding: 1.3rem 1.4rem 1rem;
+}
+.bam__head-icon {
+  width: 38px; height: 38px; flex-shrink: 0;
+  display: grid; place-items: center; border-radius: 12px;
+  background: color-mix(in srgb, var(--primary-500) 14%, transparent);
+  color: var(--primary-500); font-size: 1.25rem;
+}
+.bam__head-text { flex: 1; min-width: 0; }
+.bam__title { font-size: 1.06rem; font-weight: 700; color: var(--text); letter-spacing: -0.01em; }
+.bam__sub { font-size: 0.76rem; color: var(--muted); margin-top: 1px; }
+.bam__close {
+  width: 32px; height: 32px; flex-shrink: 0;
+  display: grid; place-items: center; border: none; background: transparent;
+  border-radius: 9px; color: var(--muted); font-size: 1.3rem; cursor: pointer;
+  transition: background .12s, color .12s;
+}
+.bam__close:hover { background: var(--surface-2); color: var(--text); }
+
+/* ── Periodo (Desde – Hasta) ── */
+.periodrow {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.5rem;
+}
+
+.periodrow__sep {
+  color: var(--muted);
+  font-size: 0.85rem;
+  padding-bottom: 0.55rem;
+}
+
+.periodbox {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.periodbox__lbl {
+  font-size: 0.62rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+/* Transición (gateada bajo las clases del <Transition>) */
+.bam-modal-enter-active { transition: opacity 0.18s ease; }
+.bam-modal-enter-active .bam { animation: bam-pop-in 0.18s cubic-bezier(0.2, 0.9, 0.3, 1.2); }
+.bam-modal-leave-active { transition: opacity 0.15s ease; }
+.bam-modal-leave-active .bam { animation: bam-pop-out 0.15s ease forwards; }
+.bam-modal-enter-from, .bam-modal-leave-to { opacity: 0; }
+
+@keyframes bam-pop-in {
+  from { transform: scale(0.93) translateY(6px); opacity: 0; }
+  to   { transform: scale(1)    translateY(0);   opacity: 1; }
+}
+@keyframes bam-pop-out {
+  from { transform: scale(1)    translateY(0);   opacity: 1; }
+  to   { transform: scale(0.93) translateY(6px); opacity: 0; }
+}
+
+@media (max-width: 480px) {
+  .bam-modal-enter-active .bam { animation: bam-sheet-up 0.22s cubic-bezier(0.2, 0.8, 0.2, 1); }
+  .bam-modal-leave-active .bam { animation: bam-sheet-down 0.18s ease forwards; }
+}
+
+@keyframes bam-sheet-up {
+  from { transform: translateY(100%); }
+  to   { transform: translateY(0); }
+}
+@keyframes bam-sheet-down {
+  from { transform: translateY(0); }
+  to   { transform: translateY(100%); }
+}

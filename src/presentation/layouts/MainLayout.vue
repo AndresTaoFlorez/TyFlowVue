@@ -1,5 +1,5 @@
 <script setup>
-import '@/styles/components/layout/main-layout.css'
+import '@/presentation/styles/components/layout/main-layout.css'
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import AppTopbar from '@/presentation/components/layout/AppTopbar.vue'

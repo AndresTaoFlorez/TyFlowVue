@@ -3,23 +3,19 @@ import { WorkWindow } from '@/domain/entities/WorkWindow'
 import { WorkWindowError } from '@/domain/errors/WorkWindowError'
 
 /**
- * Crea una serie recurrente de ventanas para UN par especialista+aplicación
- * vía POST /work-windows/recurring. La expansión de fechas ocurre en el
- * cliente; el backend valida (pasado/solape), genera la cadena de herencia
- * (1ª ocurrencia hereda solo si existe ventana previa; 2..N encadenan entre
- * sí) y es atómico por serie.
+ * Crea una serie de ventanas para UN especialista. La expansión de fechas
+ * ocurre en el cliente y las ocurrencias se crean como ventanas estándar en un
+ * solo POST /work-windows (el endpoint /recurring fue eliminado, API_CONTRACT
+ * §15). El backend valida pasado/solape por ítem.
  *
  * @param {object} params
  * @param {string} params.specialistId
- * @param {string} params.applicationId
  * @param {Array<{date: string, startTime: string, endTime: string}>} params.slots
  *        Fechas YYYY-MM-DD + horas HH:MM locales; se convierten a timestamptz.
- * @param {number} [params.affinityWeight=1]
  * @returns {Promise<WorkWindow[]>} ventanas creadas (objetos completos)
  */
-export async function createRecurringWorkWindowsUseCase({ specialistId, applicationId, slots, affinityWeight = 1 }) {
+export async function createRecurringWorkWindowsUseCase({ specialistId, slots }) {
   if (!specialistId) throw new WorkWindowError('Especialista requerido.')
-  if (!applicationId) throw new WorkWindowError('Aplicación requerida.')
   if (!Array.isArray(slots) || slots.length === 0) {
     throw new WorkWindowError('Debe incluir al menos una ocurrencia.')
   }
@@ -38,12 +34,7 @@ export async function createRecurringWorkWindowsUseCase({ specialistId, applicat
   })
 
   try {
-    return await WorkWindowRepository.createRecurring({
-      specialistId,
-      applicationId,
-      occurrences,
-      affinityWeight,
-    })
+    return await WorkWindowRepository.createRecurring({ specialistId, occurrences })
   } catch (e) {
     throw WorkWindowError.fromHttp(e, 'Error al crear la serie de ventanas.')
   }

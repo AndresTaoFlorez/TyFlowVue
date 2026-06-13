@@ -1,0 +1,200 @@
+/* Estilos de WindowGroupBlock.vue (extraídos del SFC — CSS puro, sin scoped). */
+/* Mismo look que WindowBlock (.wb): un solo bloque con el color de la app. */
+.wgb {
+  position: absolute;
+  /* Mismo radio que WindowBlock. */
+  border-radius: var(--wb-radius, 7px);
+  --wb-gap: 6px;
+  padding: 0.3rem 0.5rem;
+  cursor: pointer;
+  overflow: hidden;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  transition: transform 0.1s ease, box-shadow 0.15s ease, filter 0.15s ease;
+  container-type: size;
+}
+
+/* Pantallas pequeñas: gutter mínimo + sombra sutil a la derecha. */
+@media (max-width: 768px) {
+  .wgb { --wb-gap: 2px; }
+  .wgb::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: 3px;
+    background: linear-gradient(to right, transparent, rgba(15, 23, 42, 0.14));
+    border-top-right-radius: inherit;
+    border-bottom-right-radius: inherit;
+    pointer-events: none;
+  }
+}
+
+.wgb:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+  filter: brightness(1.15);
+  z-index: 10;
+}
+.wgb:active { transform: scale(0.99); }
+
+.wgb--open { background: var(--app-bg); }
+.wgb--open .wgb__time { color: var(--app-text-color); }
+
+/* Inactiva — patrón rayado tenue, como WindowBlock. */
+.wgb--inactive {
+  background: repeating-linear-gradient(-45deg,
+      color-mix(in srgb, var(--app-color) 12%, var(--wb-surface)),
+      color-mix(in srgb, var(--app-color) 12%, var(--wb-surface)) 4px,
+      color-mix(in srgb, var(--app-color) 6%, var(--wb-surface)) 4px,
+      color-mix(in srgb, var(--app-color) 6%, var(--wb-surface)) 8px);
+  opacity: 0.7;
+}
+
+/* ── Fila de avatares (uno por especialista) ── */
+.wgb__head {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  flex-wrap: nowrap;
+}
+
+.wgb__avatar {
+  /* Tamaño guiado SOLO por el ancho del bloque (--wb-av), no por su alto. */
+  width: calc(var(--wb-av, 0.8rem) * 1.35);
+  height: calc(var(--wb-av, 0.8rem) * 1.35);
+  min-width: calc(var(--wb-av, 0.8rem) * 1.35);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: calc(var(--wb-av, 0.54rem) * 0.6);
+  font-weight: 600;
+  color: white;
+  background: var(--app-color);
+  flex-shrink: 0;
+  line-height: 1;
+  /* Anillo del color del bloque para separar avatares solapados. */
+  box-shadow: 0 0 0 1.5px var(--app-bg);
+  margin-left: calc(var(--wb-av, 0.8rem) * -0.32);
+  overflow: hidden;
+}
+.wgb__head > .wgb__avatar:first-child { margin-left: 0; }
+
+/* Foto del especialista dentro del avatar del grupo. */
+.wgb__avatar-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 50%;
+  display: block;
+}
+
+.wgb__avatar-emoji {
+  font-size: 0.85em;
+  line-height: 1;
+  display: block;
+}
+
+.wgb__avatar--more {
+  background: color-mix(in srgb, var(--app-color) 55%, #334155);
+  font-size: calc(var(--wb-av, 0.5rem) * 0.55);
+}
+
+/* ── Time ── */
+.wgb__time {
+  font-size: calc(var(--wb-fs, 0.7rem) * 0.82);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+/* ── App / resumen ── */
+.wgb__app {
+  font-size: calc(var(--wb-fs, 0.62rem) * 0.74);
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--app-tag-text);
+  background: color-mix(in srgb, var(--app-color) 26%, var(--wb-surface));
+  padding: 0.05rem 0.4rem 0.25rem;
+  border-radius: 3px;
+  width: fit-content;
+  max-width: 100%;
+}
+
+/* ── Selección (mismo doble anillo fuerte que WindowBlock) ── */
+.wgb--selected {
+  outline: 3px solid #1d4ed8;
+  outline-offset: -3px;
+  box-shadow: inset 0 0 0 2px #ffffff;
+  filter: saturate(1.2);
+  z-index: 5;
+}
+.wgb--some-selected {
+  outline: 2px dashed #1d4ed8;
+  outline-offset: -2px;
+  z-index: 5;
+}
+
+/* ── Cut ── */
+.wgb--cut {
+  opacity: 0.4;
+  filter: grayscale(0.5);
+}
+
+/* ── Compact ── */
+.wgb--compact {
+  padding: 2px 3px;
+  align-items: center;
+}
+.wgb__head--compact { justify-content: center; }
+.wgb__avatar--compact {
+  width: calc(var(--wb-av, 0.7rem) * 1.1);
+  height: calc(var(--wb-av, 0.7rem) * 1.1);
+  min-width: calc(var(--wb-av, 0.7rem) * 1.1);
+  font-size: calc(var(--wb-av, 0.5rem) * 0.5);
+}
+
+/* ── Resize handles (igual que WindowBlock) ── */
+.wgb__handle {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 8px;
+  cursor: ns-resize;
+  z-index: 3;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.wgb:hover .wgb__handle { opacity: 1; }
+.wgb__handle::after {
+  content: '';
+  width: 24px;
+  height: 3px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.5);
+}
+.wgb__handle--top { top: 0; }
+.wgb__handle--bottom { bottom: 0; }
+.wgb__handle--left,
+.wgb__handle--right {
+  top: 0;
+  bottom: 0;
+  left: auto;
+  right: auto;
+  width: 8px;
+  height: auto;
+  cursor: ew-resize;
+  flex-direction: column;
+}
+.wgb__handle--left { left: 0; }
+.wgb__handle--right { right: 0; }
+.wgb__handle--left::after,
+.wgb__handle--right::after { width: 3px; height: 24px; }

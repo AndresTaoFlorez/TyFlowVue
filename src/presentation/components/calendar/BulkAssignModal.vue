@@ -1,5 +1,6 @@
 <script setup>
-import '@/styles/components/calendar/cal-modal.css'
+import '@/presentation/styles/calendar/BulkAssignModal.css'
+import '@/presentation/styles/components/calendar/cal-modal.css'
 import { ref, computed, watch, nextTick } from 'vue'
 import UserAvatar from '@/presentation/components/shared/UserAvatar.vue'
 import { fmtDateISO } from '@/presentation/helpers/formatDate'
@@ -9,7 +10,6 @@ const props = defineProps({
   creating: { type: Boolean, default: false },
   error: { type: String, default: '' },
   specialists: { type: Array, default: () => [] },
-  applications: { type: Array, default: () => [] },
 })
 
 const emit = defineEmits(['close', 'create'])
@@ -17,31 +17,16 @@ const emit = defineEmits(['close', 'create'])
 const MAX_WINDOWS = 200
 const NEVER_HORIZON_WEEKS = 12
 
-// ---- Selección de especialistas / apps ----
+// ---- Selección de especialistas ----
 const pickedSpecs = ref([])
-const pickedApps = ref([])
 const specSearchOpen = ref(false)
-const appSearchOpen = ref(false)
 const specQuery = ref('')
-const appQuery = ref('')
 const specS = ref(null)
-const appS = ref(null)
-
-// Solo especialistas con apps asignadas (igual que el modal de creación)
-const assignableSpecs = computed(() =>
-  props.specialists.filter(s => s.applicationAssignments?.length > 0)
-)
 
 const filteredSpecs = computed(() => {
   const q = specQuery.value.trim().toLowerCase()
-  if (!q) return assignableSpecs.value
-  return assignableSpecs.value.filter(s => s.fullName.toLowerCase().includes(q))
-})
-
-const filteredApps = computed(() => {
-  const q = appQuery.value.trim().toLowerCase()
-  if (!q) return props.applications
-  return props.applications.filter(a => a.name.toLowerCase().includes(q))
+  if (!q) return props.specialists
+  return props.specialists.filter(s => s.fullName.toLowerCase().includes(q))
 })
 
 function toggleSpec(id) {
@@ -50,20 +35,9 @@ function toggleSpec(id) {
   else pickedSpecs.value.splice(i, 1)
 }
 
-function toggleApp(id) {
-  const i = pickedApps.value.indexOf(id)
-  if (i === -1) pickedApps.value.push(id)
-  else pickedApps.value.splice(i, 1)
-}
-
 function allSpecs() {
-  pickedSpecs.value = pickedSpecs.value.length === assignableSpecs.value.length
-    ? [] : assignableSpecs.value.map(s => s.specialistId)
-}
-
-function allApps() {
-  pickedApps.value = pickedApps.value.length === props.applications.length
-    ? [] : props.applications.map(a => a.id)
+  pickedSpecs.value = pickedSpecs.value.length === props.specialists.length
+    ? [] : props.specialists.map(s => s.specialistId)
 }
 
 function toggleSpecSearch() {
@@ -72,29 +46,9 @@ function toggleSpecSearch() {
   else specQuery.value = ''
 }
 
-function toggleAppSearch() {
-  appSearchOpen.value = !appSearchOpen.value
-  if (appSearchOpen.value) nextTick(() => appS.value?.focus())
-  else appQuery.value = ''
-}
-
-// Combos válidos: el especialista debe tener la app asignada (el backend lo exige)
-const validCombos = computed(() => {
-  const combos = []
-  for (const sid of pickedSpecs.value) {
-    const spec = assignableSpecs.value.find(s => s.specialistId === sid)
-    if (!spec) continue
-    const allowed = new Set(spec.applicationAssignments.map(a => a.application_id || a.id || a))
-    for (const appId of pickedApps.value) {
-      if (allowed.has(appId)) combos.push({ specialistId: sid, applicationId: appId })
-    }
-  }
-  return combos
-})
-
-const skippedCombos = computed(() =>
-  pickedSpecs.value.length * pickedApps.value.length - validCombos.value.length
-)
+// Cada especialista elegido = una serie (las ventanas son disponibilidad pura,
+// sin aplicación). El backend ya no exige app asignada.
+const combos = computed(() => pickedSpecs.value.map(sid => ({ specialistId: sid })))
 
 // ---- Horario ----
 const startStr = ref('08:00')
@@ -123,7 +77,7 @@ function toggleDay(i) {
   else days.value.splice(idx, 1)
 }
 
-// ---- Periodo (lo básico: día de inicio y día de fin del rango) ----
+// ---- Periodo ----
 const todayISO = () => fmtDateISO(new Date())
 
 function _addDays(iso, n) {
@@ -135,7 +89,6 @@ function _addDays(iso, n) {
 const fromDate = ref('')
 const toDate = ref('')
 
-// Intervalo: los weekdays elegidos se repiten cada N semanas dentro del periodo
 const INTERVAL_OPTIONS = [
   [1, 'Cada semana'],
   [2, 'Cada 2 semanas'],
@@ -149,7 +102,6 @@ function onFromChange(val) {
   if (!toDate.value || toDate.value < val) toDate.value = val
 }
 
-// ¿La fecha+hora de inicio ya pasó? (el store rechaza inicios en el pasado)
 function _startsInPast(iso) {
   const today = todayISO()
   if (iso < today) return true
@@ -159,15 +111,11 @@ function _startsInPast(iso) {
   return h * 60 + m <= now.getHours() * 60 + now.getMinutes()
 }
 
-// weekday lunes-first (0=L…6=D) de una fecha ISO
 function _weekdayOf(iso) {
-  const jsDay = new Date(iso + 'T12:00:00').getDay() // 0=Dom…6=Sáb
+  const jsDay = new Date(iso + 'T12:00:00').getDay()
   return jsDay === 0 ? 6 : jsDay - 1
 }
 
-// ---- Expansión: recorre [desde, hasta] e incluye los weekdays elegidos ----
-// El intervalo cuenta semanas desde el lunes de la semana de "desde":
-// cada N semanas se incluye la semana completa, las demás se saltan.
 const expandedDates = computed(() => {
   if (!fromDate.value || !toDate.value || toDate.value < fromDate.value) return []
   if (days.value.length === 0) return []
@@ -188,7 +136,7 @@ const expandedDates = computed(() => {
   return out
 })
 
-const count = computed(() => validCombos.value.length * expandedDates.value.length)
+const count = computed(() => combos.value.length * expandedDates.value.length)
 const overLimit = computed(() => count.value > MAX_WINDOWS)
 
 const repText = computed(() => {
@@ -198,22 +146,21 @@ const repText = computed(() => {
 })
 
 const valid = computed(() =>
-  validCombos.value.length > 0 &&
+  combos.value.length > 0 &&
   expandedDates.value.length > 0 &&
   durMins.value > 0 &&
   !overLimit.value
 )
 
-// Emite la serie estructurada: el backend (POST /work-windows/recurring)
-// crea cada serie por combo de forma atómica y encadena la herencia solo.
+// Emite la serie estructurada: el store crea una serie por especialista vía
+// POST /work-windows (las ocurrencias ya van expandidas).
 function submit() {
   if (!valid.value || props.creating) return
   emit('create', {
-    combos: validCombos.value,
+    combos: combos.value,
     dates: expandedDates.value,
     startTime: startStr.value,
     endTime: endStr.value,
-    affinityWeight: 1,
   })
 }
 
@@ -221,11 +168,8 @@ function submit() {
 watch(() => props.visible, (v) => {
   if (!v) return
   pickedSpecs.value = []
-  pickedApps.value = []
   specQuery.value = ''
-  appQuery.value = ''
   specSearchOpen.value = false
-  appSearchOpen.value = false
   startStr.value = '08:00'
   endStr.value = '17:00'
   days.value = []
@@ -233,23 +177,24 @@ watch(() => props.visible, (v) => {
   toDate.value = _addDays(todayISO(), NEVER_HORIZON_WEEKS * 7 - 1)
   weekStep.value = 1
 })
-
-const appColorOf = (a) => a.color || a.theme?.color || '#2AC78F'
 </script>
 
 <template>
   <Teleport to="body">
-    <Transition name="modal">
+    <Transition name="bam-modal">
       <div v-if="visible" class="modal-backdrop" @click.self="$emit('close')">
         <div class="modal modal--bulk bam">
           <!-- Header -->
-          <div class="modal__head">
-            <div>
-              <div class="modal__title">Asignación masiva</div>
-              <div class="modal__sub">Disponibilidad para varios especialistas a la vez</div>
+          <header class="bam__head">
+            <div class="bam__head-icon"><i class='bx bx-calendar-week'></i></div>
+            <div class="bam__head-text">
+              <h2 class="bam__title">Asignación masiva</h2>
+              <p class="bam__sub">Disponibilidad para varios especialistas a la vez</p>
             </div>
-            <button class="modal__x" @click="$emit('close')" :disabled="creating">&times;</button>
-          </div>
+            <button class="bam__close" @click="$emit('close')" :disabled="creating" aria-label="Cerrar">
+              <i class='bx bx-x'></i>
+            </button>
+          </header>
 
           <!-- Body -->
           <div class="modal__body">
@@ -259,7 +204,7 @@ const appColorOf = (a) => a.color || a.theme?.color || '#2AC78F'
                 <label class="bfield__label">Especialistas <span class="bfield__n">{{ pickedSpecs.length }}</span></label>
                 <div class="bfield__tools">
                   <button class="bfield__link" @click="allSpecs">
-                    {{ assignableSpecs.length && pickedSpecs.length === assignableSpecs.length ? 'Quitar todos' : 'Todos' }}
+                    {{ specialists.length && pickedSpecs.length === specialists.length ? 'Quitar todos' : 'Todos' }}
                   </button>
                   <button class="bfield__lupa" :class="{ 'bfield__lupa--on': specSearchOpen }" @click="toggleSpecSearch" title="Buscar">
                     <i class="bx bx-search"></i>
@@ -282,39 +227,6 @@ const appColorOf = (a) => a.color || a.theme?.color || '#2AC78F'
               </div>
             </div>
 
-            <!-- Aplicaciones -->
-            <div class="bfield">
-              <div class="bfield__head">
-                <label class="bfield__label">Aplicaciones <span class="bfield__n">{{ pickedApps.length }}</span></label>
-                <div class="bfield__tools">
-                  <button class="bfield__link" @click="allApps">
-                    {{ applications.length && pickedApps.length === applications.length ? 'Quitar todas' : 'Todas' }}
-                  </button>
-                  <button class="bfield__lupa" :class="{ 'bfield__lupa--on': appSearchOpen }" @click="toggleAppSearch" title="Buscar">
-                    <i class="bx bx-search"></i>
-                  </button>
-                </div>
-              </div>
-              <div v-show="appSearchOpen" class="bsearch">
-                <i class="bx bx-search"></i>
-                <input ref="appS" v-model="appQuery" type="text" placeholder="Buscar aplicación…" />
-              </div>
-              <div class="pillwrap">
-                <button v-for="a in filteredApps" :key="a.id"
-                  class="pill" :class="{ 'pill--on': pickedApps.includes(a.id) }"
-                  @click="toggleApp(a.id)">
-                  <span class="pill__dot" :style="{ background: appColorOf(a) }"></span>
-                  <span class="pill__txt">{{ a.name }}</span>
-                  <i class="bx bx-x pill__x"></i>
-                </button>
-                <div v-if="!filteredApps.length" class="bempty">Sin resultados</div>
-              </div>
-              <div v-if="skippedCombos > 0" class="bam__note">
-                <i class='bx bx-info-circle'></i>
-                {{ skippedCombos }} combinación(es) se omiten: especialista sin esa app asignada.
-              </div>
-            </div>
-
             <!-- Horario -->
             <div class="bfield">
               <label class="bfield__label">Horario</label>
@@ -328,7 +240,7 @@ const appColorOf = (a) => a.color || a.theme?.color || '#2AC78F'
               </div>
             </div>
 
-            <!-- Periodo: lo básico — día de inicio y día de fin del rango -->
+            <!-- Periodo: día de inicio y día de fin del rango -->
             <div class="bfield">
               <label class="bfield__label">Periodo</label>
               <div class="periodrow">
@@ -382,7 +294,7 @@ const appColorOf = (a) => a.color || a.theme?.color || '#2AC78F'
             <div v-else-if="valid" class="bsummary">
               <b>{{ count }}</b> ventana{{ count === 1 ? '' : 's' }} · <b>{{ durLabel }}</b> c/u<span v-if="repText" class="bsummary__rep"> · {{ repText }}</span>
             </div>
-            <div v-else class="bsummary bsummary--empty">Elige especialistas, apps, periodo y días</div>
+            <div v-else class="bsummary bsummary--empty">Elige especialistas, periodo y días</div>
             <div class="modal__foot-actions">
               <button class="mbtn" @click="$emit('close')" :disabled="creating">Cancelar</button>
               <button class="mbtn mbtn--primary" :disabled="!valid || creating" @click="submit">
@@ -396,72 +308,3 @@ const appColorOf = (a) => a.color || a.theme?.color || '#2AC78F'
     </Transition>
   </Teleport>
 </template>
-
-<style scoped>
-.bam__note {
-  display: flex;
-  align-items: center;
-  gap: 0.35rem;
-  font-size: 0.7rem;
-  color: var(--muted);
-}
-
-.bam__note i { font-size: 0.9rem; flex-shrink: 0; }
-
-/* ── Periodo (Desde – Hasta) ── */
-.periodrow {
-  display: flex;
-  align-items: flex-end;
-  gap: 0.5rem;
-}
-
-.periodrow__sep {
-  color: var(--muted);
-  font-size: 0.85rem;
-  padding-bottom: 0.55rem;
-}
-
-.periodbox {
-  display: flex;
-  flex-direction: column;
-  gap: 0.2rem;
-}
-
-.periodbox__lbl {
-  font-size: 0.62rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--muted);
-}
-
-/* Transición (gateada bajo las clases del <Transition>) */
-.modal-enter-active { transition: opacity 0.18s ease; }
-.modal-enter-active .bam { animation: bam-pop-in 0.18s cubic-bezier(0.2, 0.9, 0.3, 1.2); }
-.modal-leave-active { transition: opacity 0.15s ease; }
-.modal-leave-active .bam { animation: bam-pop-out 0.15s ease forwards; }
-.modal-enter-from, .modal-leave-to { opacity: 0; }
-
-@keyframes bam-pop-in {
-  from { transform: scale(0.93) translateY(6px); opacity: 0; }
-  to   { transform: scale(1)    translateY(0);   opacity: 1; }
-}
-@keyframes bam-pop-out {
-  from { transform: scale(1)    translateY(0);   opacity: 1; }
-  to   { transform: scale(0.93) translateY(6px); opacity: 0; }
-}
-
-@media (max-width: 480px) {
-  .modal-enter-active .bam { animation: bam-sheet-up 0.22s cubic-bezier(0.2, 0.8, 0.2, 1); }
-  .modal-leave-active .bam { animation: bam-sheet-down 0.18s ease forwards; }
-}
-
-@keyframes bam-sheet-up {
-  from { transform: translateY(100%); }
-  to   { transform: translateY(0); }
-}
-@keyframes bam-sheet-down {
-  from { transform: translateY(0); }
-  to   { transform: translateY(100%); }
-}
-</style>

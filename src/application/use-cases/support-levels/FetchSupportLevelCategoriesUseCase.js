@@ -1,1 +1,1 @@
-export { fetchAppLevelCategoriesUseCase as fetchSupportLevelCategoriesUseCase } from '../applications/FetchAppLevelCategoriesUseCase'
+export { fetchAppSupportLevelCategoriesUseCase as fetchSupportLevelCategoriesUseCase } from '../applications/FetchAppSupportLevelCategoriesUseCase'

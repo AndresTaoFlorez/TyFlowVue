@@ -35,7 +35,10 @@ Vue 3 + Vite user management dashboard with a Python REST API backend (Litestar 
 - `src/presentation/stores/` — Pinia stores (useAuthStore, useUserStore)
 - `src/presentation/components/` — Reusable UI components
 - `src/router/` — Route definitions with `requiresAuth` meta and navigation guards
-- `src/styles/` — Design tokens, CSS reset, and utility styles
+- `src/presentation/styles/` — Design tokens, CSS reset, utilities, and all component CSS (lives inside `presentation/`, sibling of `components/`)
+- `src/presentation/styles/calendar/` — One pure CSS file per calendar component (`<Component>.css`), imported from the matching `.vue`
+
+**CSS rule:** never put `<style>` inside a `.vue`. Component styles live as standalone `.css` files under `src/presentation/styles/` and are imported in `<script setup>`. The only inline styles allowed are runtime data-driven `:style` bindings (positions, per-entity colors, computed sizes); everything structural/static goes in CSS (use `data-*` attributes + CSS vars to key variants, e.g. `data-density` → `--cal-slot-h`).
 
 ### Data flow
 ```
@@ -83,7 +86,7 @@ The shell (AppTopbar + AppSidebar) is a fixed chassis with contextual outlets. V
 ## Conventions
 
 - **Path alias:** `@` maps to `src/` (configured in vite.config.js and jsconfig.json)
-- **CSS variables:** Primary color `--primary-500: #2AC78F`; full palette in `src/styles/tokens.css`
+- **CSS variables:** Primary color `--primary-500: #2AC78F`; full palette in `src/presentation/styles/tokens.css`
 - **Naming:** PascalCase components, BEM-inspired CSS classes, `useXxxStore()` for Pinia
 - **Error messages:** API errors are mapped to Spanish user-facing messages in views
 - **Commit messages:** Written in Spanish

@@ -1,5 +1,6 @@
 <script setup>
-import '@/styles/components/calendar/cal-modal.css'
+import '@/presentation/styles/calendar/WindowGroupPanel.css'
+import '@/presentation/styles/components/calendar/cal-modal.css'
 import UserAvatar from '@/presentation/components/shared/UserAvatar.vue'
 import { computed } from 'vue'
 import { fmtTime12h } from '@/presentation/helpers/formatTime'
@@ -8,38 +9,44 @@ import { fmtDateLocale } from '@/presentation/helpers/formatDate'
 const props = defineProps({
   group: { type: Object, default: null },
   specialists: { type: Array, default: () => [] },
-  applications: { type: Array, default: () => [] },
   allWindows: { type: Array, default: () => [] },
   loading: { type: Boolean, default: false },
   cutWindowIds: { type: Object, default: () => new Set() },
 })
 
-const emit = defineEmits(['close', 'select', 'toggle', 'delete', 'delete-group', 'toggle-group', 'copy', 'cut', 'disinherit', 'reinherit'])
+const emit = defineEmits(['close', 'select', 'toggle', 'delete', 'delete-group', 'toggle-group', 'copy', 'cut', 'disinherit', 'reinherit', 'add-specialist', 'context'])
 
-// Color por defecto del grupo (mismo criterio que WindowGroupBlock)
-const GROUP_COLOR = '#2AC78F'
+// ---- Menú contextual por miembro (clic derecho / long-press) ----
+// Reusa el mismo menú de ventana del calendario: emitimos { window, x, y }
+// y la vista lo enruta a onWindowContext.
+function onMemberContext(w, e) {
+  emit('context', { window: w, x: e.clientX, y: e.clientY })
+}
+
+let lpTimer = null
+let lpFired = false
+function onMemberPressStart(w, e) {
+  lpFired = false
+  const t = e.touches?.[0]
+  if (!t) return
+  const { clientX: x, clientY: y } = t
+  lpTimer = setTimeout(() => {
+    lpFired = true
+    emit('context', { window: w, x, y })
+  }, 500)
+}
+function onMemberPressEnd() { clearTimeout(lpTimer); lpTimer = null }
+function onMemberClickGuard(w, e) {
+  // Si el long-press ya disparó el menú, no abras también el detalle.
+  if (lpFired) { lpFired = false; e.preventDefault(); return }
+  emit('select', w)
+}
 
 const findSpec = (id) => props.specialists.find(s => s.specialistId === id) || { fullName: id, specialistId: id }
-const findApp = (w) => props.applications.find(a => a.id === w.applicationId)
-const appName = (w) => findApp(w)?.name || w.applicationId
-const appColor = (w) => { const a = findApp(w); return a?.color || a?.theme?.color || GROUP_COLOR }
 
 const windows = computed(() => props.group?.windows || [])
 
 const uniqueSpecCount = computed(() => new Set(windows.value.map(w => w.specialistId)).size)
-
-// App única del grupo (o null si hay varias)
-const singleApp = computed(() => {
-  const ids = new Set(windows.value.map(w => w.applicationId))
-  if (ids.size !== 1) return null
-  return findApp(windows.value[0]) || null
-})
-
-const headerColor = computed(() => singleApp.value?.color || GROUP_COLOR)
-
-const subTitle = computed(() =>
-  'Turno compartido · ' + (singleApp.value ? singleApp.value.name : 'varias aplicaciones')
-)
 
 const timeLabel = computed(() => {
   const w = windows.value[0]
@@ -63,8 +70,6 @@ const statusText = computed(() => {
 })
 
 // ---- Acciones de grupo ----
-// "Inhabilitar (N)" apaga las activas toggleables; si ninguna activa,
-// "Habilitar (N)" enciende las inactivas toggleables.
 const groupToggleTargets = computed(() => {
   const wantDisable = activeCount.value > 0
   return windows.value.filter(w => w.canToggle && w.isActive === wantDisable)
@@ -81,56 +86,66 @@ function onGroupToggle() {
   emit('toggle-group', groupToggleTargets.value)
 }
 
-// Regla de borrado: selladas (ya iniciaron o pasaron) no se eliminan; el
-// grupo solo es eliminable si TODAS sus ventanas son futuras.
+// Regla de borrado: selladas no se eliminan; el grupo solo es eliminable si
+// TODAS sus ventanas son futuras.
 const canDeleteGroup = computed(() => windows.value.every(w => w.isFuture))
+
+// Sumar un especialista al turno: solo si el grupo aún es futuro.
+const canAddSpecialist = computed(() => windows.value.length > 0 && windows.value.every(w => w.isFuture))
 </script>
 
 <template>
   <div v-if="group" class="modal-backdrop" @click.self="$emit('close')">
-    <div class="modal wgp" :style="{ '--app': headerColor }">
-      <div class="modal__top"></div>
-
+    <div class="modal wgp">
       <!-- Header -->
-      <div class="modal__head">
-        <div>
-          <div class="modal__title">{{ uniqueSpecCount }} especialistas</div>
-          <div class="modal__sub">{{ subTitle }}</div>
+      <header class="wgp__head">
+        <div class="wgp__head-icon"><i class='bx bx-group'></i></div>
+        <div class="wgp__head-text">
+          <h2 class="wgp__title">{{ uniqueSpecCount }} especialistas</h2>
+          <p class="wgp__sub">Turno compartido</p>
         </div>
-        <button class="modal__x" @click="$emit('close')" title="Cerrar">&times;</button>
+        <button class="wgp__close" @click="$emit('close')" title="Cerrar"><i class='bx bx-x'></i></button>
+      </header>
+
+      <!-- Resumen del turno -->
+      <div class="wgp__summary">
+        <div class="wgp__sum-item">
+          <i class='bx bx-time-five'></i>
+          <div>
+            <span class="wgp__sum-label">Horario</span>
+            <span class="wgp__sum-val">{{ timeLabel }}</span>
+          </div>
+        </div>
+        <div class="wgp__sum-item">
+          <i class='bx bx-calendar'></i>
+          <div>
+            <span class="wgp__sum-label">Día</span>
+            <span class="wgp__sum-val">{{ dayLabel }}</span>
+          </div>
+        </div>
+        <div class="wgp__sum-item wgp__sum-item--status">
+          <i class='bx bx-pulse'></i>
+          <div>
+            <span class="wgp__sum-label">Estado</span>
+            <span class="pill-status" :class="noneActive ? 'pill-status--inactive' : 'pill-status--active'">
+              {{ statusText }}
+            </span>
+          </div>
+        </div>
       </div>
 
-      <!-- Body -->
-      <div class="modal__body">
-        <div class="mrow">
-          <i class='bx bx-time-five'></i>
-          <span class="mrow__label">Horario</span>
-          <span class="mrow__val">{{ timeLabel }}</span>
-        </div>
-        <div class="mrow">
-          <i class='bx bx-calendar'></i>
-          <span class="mrow__label">Día</span>
-          <span class="mrow__val">{{ dayLabel }}</span>
-        </div>
-        <div v-if="singleApp" class="mrow">
-          <i class='bx bx-grid-alt'></i>
-          <span class="mrow__label">Aplicación</span>
-          <span class="mrow__val">{{ singleApp.name }}</span>
-        </div>
-        <div class="mrow">
-          <i class='bx bx-pulse'></i>
-          <span class="mrow__label">Estado</span>
-          <span class="pill-status" :class="noneActive ? 'pill-status--inactive' : 'pill-status--active'">
-            <i class='bx' :class="noneActive ? 'bx-block' : 'bxs-circle'" style="font-size:0.6rem"></i>
-            {{ statusText }}
-          </span>
-        </div>
-
-        <!-- Miembros -->
+      <!-- Miembros -->
+      <div class="modal__body wgp__body">
         <div class="mmembers">
           <div class="mmembers__head">
             <span>Especialistas en este turno</span>
-            <span class="mmembers__count">{{ windows.length }}</span>
+            <div class="mmembers__head-right">
+              <button v-if="canAddSpecialist" class="mmembers__add" :disabled="loading"
+                title="Sumar otro especialista a este turno" @click="$emit('add-specialist', group)">
+                <i class='bx bx-user-plus'></i> Agregar
+              </button>
+              <span class="mmembers__count">{{ windows.length }}</span>
+            </div>
           </div>
           <div class="mmembers__list">
             <!-- Toda la fila es el affordance de edición: clic, Tab (focus) o
@@ -140,12 +155,16 @@ const canDeleteGroup = computed(() => windows.value.every(w => w.isFuture))
               role="button"
               tabindex="0"
               :title="`Editar a ${findSpec(w.specialistId).fullName}`"
-              @click="$emit('select', w)"
+              @click="onMemberClickGuard(w, $event)"
               @focus="$emit('select', w)"
-              @keydown.enter.prevent="$emit('select', w)">
-              <UserAvatar :preferences="findSpec(w.specialistId).preferences" :name="findSpec(w.specialistId).fullName" size="22px" />
+              @keydown.enter.prevent="$emit('select', w)"
+              @contextmenu.prevent="onMemberContext(w, $event)"
+              @touchstart.passive="onMemberPressStart(w, $event)"
+              @touchend="onMemberPressEnd"
+              @touchmove.passive="onMemberPressEnd">
+              <UserAvatar :preferences="findSpec(w.specialistId).preferences" :name="findSpec(w.specialistId).fullName" size="24px" />
               <span class="mmember__name">{{ findSpec(w.specialistId).fullName }}</span>
-              <span v-if="!singleApp" class="mmember__app" :style="{ '--c': appColor(w) }">{{ appName(w) }}</span>
+              <span v-if="!w.isActive" class="mmember__off">Inactiva</span>
               <button v-if="w.canToggle" class="mmember__btn" :disabled="loading" tabindex="-1"
                 :title="w.isActive ? 'Inhabilitar' : 'Habilitar'" @click.stop="$emit('toggle', w)">
                 <i class='bx' :class="w.isActive ? 'bx-block' : 'bx-check-circle'"></i>
