@@ -7,6 +7,23 @@ const BACKOFF_MAX = 30000
 /** @type {import('vue').Ref<'disconnected'|'connecting'|'connected'|'reconnecting'>} */
 export const wsStatus = ref('disconnected')
 
+/**
+ * Build the realtime WebSocket URL from VITE_API_URL.
+ *  - Absolute base (dev, e.g. http://localhost:8181) -> swap http(s) -> ws(s).
+ *  - Relative base (prod, e.g. /api) -> same-origin; wss:// on https pages.
+ *    (A relative string is NOT a valid WebSocket() URL, so we resolve it against
+ *    window.location.)
+ */
+function resolveWsUrl() {
+  const base = import.meta.env.VITE_API_URL ?? '/api'
+  if (/^https?:\/\//i.test(base)) {
+    return base.replace(/^http/i, 'ws') + '/ws/events'
+  }
+  const proto = window.location.protocol === 'https:' ? 'wss' : 'ws'
+  const path = base.startsWith('/') ? base : `/${base}`
+  return `${proto}://${window.location.host}${path}/ws/events`
+}
+
 class WsClient {
   constructor() {
     this._ws = null
@@ -20,8 +37,7 @@ class WsClient {
     const tok = token ?? localStorage.getItem(TOKEN_KEY)
     if (!tok) return
 
-    const apiUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:8181'
-    const wsUrl = apiUrl.replace(/^http/, 'ws') + '/ws/events'
+    const wsUrl = resolveWsUrl()
     this._stopped = false
     wsStatus.value = this._retries > 0 ? 'reconnecting' : 'connecting'
 
